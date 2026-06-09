@@ -1,6 +1,7 @@
-import Anthropic from '@anthropic-ai/sdk';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 
-const client = new Anthropic();
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY ?? '');
+const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
 
 export type IdDocumentType = 'PASSPORT' | 'ID_CARD' | 'DRIVERS_LICENSE';
 
@@ -10,7 +11,7 @@ export type ExtractedIdData = {
   documentNumber: string | null;
 };
 
-const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'] as const;
+const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp'] as const;
 type AllowedMime = (typeof ALLOWED_MIME_TYPES)[number];
 
 export async function extractIdDocument(
@@ -21,37 +22,23 @@ export async function extractIdDocument(
     throw new Error('Unsupported image type. Use JPG, PNG or WebP.');
   }
 
-  const response = await client.messages.create({
-    model: 'claude-opus-4-8',
-    max_tokens: 256,
-    messages: [
-      {
-        role: 'user',
-        content: [
-          {
-            type: 'image',
-            source: {
-              type: 'base64',
-              media_type: mimeType as AllowedMime,
-              data: imageBuffer.toString('base64'),
-            },
-          },
-          {
-            type: 'text',
-            text: `Extract only these three fields from this identity document. Reply with ONLY valid JSON, no other text:
+  const result = await model.generateContent([
+    {
+      inlineData: {
+        mimeType: mimeType as AllowedMime,
+        data: imageBuffer.toString('base64'),
+      },
+    },
+    `Extract only these three fields from this identity document. Reply with ONLY valid JSON, no other text:
 {
   "name": "full name as printed on the document, or null if unreadable",
   "documentType": "PASSPORT" | "ID_CARD" | "DRIVERS_LICENSE" | null,
   "documentNumber": "document number or passport number, or null if unreadable"
 }
 Do NOT include BSN, date of birth, address, nationality, or any other information.`,
-          },
-        ],
-      },
-    ],
-  });
+  ]);
 
-  const text = response.content[0].type === 'text' ? response.content[0].text.trim() : '';
+  const text = result.response.text().trim().replace(/^```json\n?|\n?```$/g, '');
 
   try {
     const parsed = JSON.parse(text);

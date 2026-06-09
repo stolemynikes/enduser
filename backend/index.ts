@@ -45,6 +45,8 @@ await server.start();
 
 const app = express();
 
+app.set('trust proxy', 1);
+
 app.use(helmet({
   crossOriginEmbedderPolicy: false, // allow Vite in dev
   contentSecurityPolicy: IS_PROD ? undefined : false,
@@ -58,19 +60,18 @@ app.use(cors({
 
 app.use(express.json({ limit: '1mb' }));
 
-// Stricter rate limit on login attempts
-const loginLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 10,
-  message: { errors: [{ message: 'Too many login attempts, please try again later.' }] },
+// 120 requests per minute per IP across all API endpoints
+const apiLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 120,
   standardHeaders: true,
   legacyHeaders: false,
 });
 
-// General API rate limit
-const apiLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: 60,
+// Stricter limit for login: 10 attempts per 15 minutes per IP
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
   standardHeaders: true,
   legacyHeaders: false,
 });
@@ -89,20 +90,21 @@ app.post('/extract-id', memoryUpload.single('file'), async (req, res) => {
   }
 });
 
+// Login-specific rate limiter applied before GraphQL based on operation name
+app.use('/graphql', (req, res, next) => {
+  const body = req.body as { query?: string };
+  if (typeof body?.query === 'string' && body.query.includes('adminLogin')) {
+    return loginLimiter(req, res, next);
+  }
+  return next();
+});
+
 // GraphQL endpoint
 app.use(
   '/graphql',
   apiLimiter,
   expressMiddleware(server, {
     context: async ({ req }) => {
-      // Apply login rate limiter only to adminLogin mutations
-      const body = req.body as { query?: string };
-      if (typeof body?.query === 'string' && body.query.includes('adminLogin')) {
-        await new Promise<void>((resolve, reject) => {
-          loginLimiter(req, {} as any, (err?: any) => err ? reject(err) : resolve());
-        });
-      }
-
       const auth = req.headers.authorization ?? '';
       if (auth.startsWith('Bearer ')) {
         try {
