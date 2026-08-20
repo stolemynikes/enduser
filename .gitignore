@@ -1,0 +1,5 @@
+# macOS
+.DS_Store
+
+# Knowledge-graph output — regenerate with `graphify . --update --code-only`
+graphify-out/
