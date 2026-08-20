@@ -19,30 +19,225 @@ model Submission {
   country             String
   companyName         String
   vatNumber           String
+  buyerType           BuyerType        @default(COMPANY)
   substances          String
   casNumbers          String
+  /// Declared strength, e.g. "15% w/w". Free text: the buyer copies what is on
+  /// the label. Not PII, so not encrypted — the substance check reads it.
+  concentration       String?
   statement           String
   idDocumentName      String?
   idDocumentType      IdDocumentType?
   idDocumentNumber    String?
   idDataCollectedAt   DateTime?
+  // Legacy in-house OCR signals. Kept for rows captured before identity
+  // verification moved to Didit; never written for new submissions.
+  idMrzValid          Boolean?
+  idLikelySynthetic   Boolean?
+  idDocumentExpiry    DateTime?
+  // Didit hosted verification. The session id is a plain opaque UUID (not
+  // encrypted) because the webhook has to look the row up by it.
+  idVerificationSessionId String?               @unique
+  idVerificationStatus    IdVerificationStatus  @default(NOT_CHECKED)
+  idLivenessPassed        Boolean?
+  idFaceMatch             Boolean?
+  idVerificationWarnings  String?
+  idVerificationCheckedAt DateTime?
+  /// True once the Didit-side session (including the document images) has been purged.
+  idVerificationPurged    Boolean               @default(false)
   viesStatus          ViesStatus
+  viesName            String?
+  viesAddress         String?
+  viesAddressMatch    ViesAddressMatch @default(NOT_CHECKED)
+  substanceCheckStatus SubstanceCheckStatus @default(NOT_CHECKED)
+  substanceCheckNote   String?
+  substanceCheckedAt   DateTime?
   status              SubmissionStatus @default(PENDING_REVIEW)
   adminNote           String?
+  reviewedById        String?
+  reviewedByName      String?
+  reviewedAt          DateTime?
+  isTest              Boolean          @default(false)
+  company             Company?         @relation(fields: [companyId], references: [id])
+  companyId           String?
+  overrides           SubmissionOverride[]
   createdAt           DateTime         @default(now())
   updatedAt           DateTime         @updatedAt
+
+  // Postgres does not index foreign keys automatically and Prisma does not add
+  // them for it, so every tenant-scoped query was a sequential scan.
+  @@index([companyId, createdAt])
+  @@index([companyId, status])
+  @@index([status])
+  @@index([idDataCollectedAt])
+}
+
+// One row per manual override of a failing automated check (VIES / Identity /
+// Substance). Records who bypassed the check, when, and why — the audit trail
+// behind a fail-closed approval.
+model SubmissionOverride {
+  id            String           @id @default(uuid())
+  submission    Submission       @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  submissionId  String
+  category      OverrideCategory
+  reason        String
+  createdById   String
+  createdByName String
+  createdAt     DateTime         @default(now())
+
+  @@index([submissionId])
+}
+
+enum OverrideCategory {
+  VIES
+  IDENTITY
+  SUBSTANCE
+}
+
+model Company {
+  id          String          @id @default(cuid())
+  name        String
+  slug        String          @unique
+  formConfig  Json?
+  createdAt   DateTime        @default(now())
+  /// Closure is a 30-day grace period, not an instant wipe: the owner can undo
+  /// it, and only the purge at the end is irreversible.
+  deletionRequestedAt   DateTime?
+  deletionRequestedById String?
+  /// Set when the grace period expires and the tenant is purged.
+  deletedAt   DateTime?
+  members     CompanyMember[]
+  invites     CompanyInvite[]
+  submissions Submission[]
+}
+
+model CompanyUser {
+  id             String          @id @default(cuid())
+  email          String          @unique
+  passwordHash   String
+  name           String
+  emailVerifiedAt DateTime?
+  createdAt      DateTime        @default(now())
+  memberships    CompanyMember[]
+  authTokens     AuthToken[]
+}
+
+/// One-time links emailed to a user: password reset and email verification.
+/// Only the hash is stored, so a leaked database cannot be used to reset an
+/// account — the raw token exists solely in the email.
+model AuthToken {
+  id        String        @id @default(cuid())
+  user      CompanyUser   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  kind      AuthTokenKind
+  tokenHash String        @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime      @default(now())
+
+  @@index([userId, kind])
+  @@index([expiresAt])
+}
+
+enum AuthTokenKind {
+  PASSWORD_RESET
+  EMAIL_VERIFICATION
+}
+
+/// A Didit session this server started. Was an in-memory Map, which meant a
+/// restart stranded every buyer mid-verification (and cost them a second one),
+/// and made a second instance impossible.
+model VerificationSession {
+  sessionId     String               @id
+  companyId     String?
+  status        IdVerificationStatus @default(PENDING)
+  lastCheckedAt DateTime?
+  consumedAt    DateTime?
+  expiresAt     DateTime
+  createdAt     DateTime             @default(now())
+
+  @@index([expiresAt])
+}
+
+/// Webhook deliveries already processed. Didit retries, so events must be
+/// handled at most once — across restarts and across instances.
+model WebhookEvent {
+  eventId   String   @id
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([expiresAt])
+}
+
+model CompanyMember {
+  id        String      @id @default(cuid())
+  company   Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  companyId String
+  user      CompanyUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  role      CompanyRole @default(EMPLOYEE)
+  createdAt DateTime    @default(now())
+  @@unique([companyId, userId])
+  @@index([userId])
+  @@index([companyId])
+}
+
+model CompanyInvite {
+  id        String      @id @default(cuid())
+  company   Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  companyId String
+  email     String
+  role      CompanyRole @default(EMPLOYEE)
+  token     String      @unique @default(cuid())
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime    @default(now())
+
+  @@index([companyId])
+}
+
+enum CompanyRole {
+  OWNER
+  EMPLOYEE_PLUS
+  EMPLOYEE
 }
 
 enum IdDocumentType {
   PASSPORT
   ID_CARD
-  DRIVERS_LICENSE
+}
+
+// Outcome of the hosted Didit verification. IN_REVIEW means Didit escalated to
+// its own manual review; PENDING means the buyer had not finished when the
+// submission landed. Neither is green for the approval gate.
+enum IdVerificationStatus {
+  NOT_CHECKED
+  PENDING
+  IN_REVIEW
+  APPROVED
+  DECLINED
+  EXPIRED
+  ERROR
+}
+
+enum BuyerType {
+  INDIVIDUAL
+  COMPANY
 }
 
 enum ViesStatus {
   VALID
   INVALID
   ERROR
+  NOT_CHECKED
+}
+
+enum ViesAddressMatch {
+  NOT_CHECKED
+  UNAVAILABLE
+  MATCH
+  PARTIAL
+  MISMATCH
 }
 
 enum SubmissionStatus {
@@ -51,8 +246,26 @@ enum SubmissionStatus {
   DENIED
 }
 
+enum SubstanceCheckStatus {
+  NOT_CHECKED
+  PENDING
+  OK
+  FLAGGED
+  ERROR
+}
+
 model Admin {
   id       String @id @default(uuid())
   username String @unique
   password String
+}
+
+// Audit trail: one row per admin "act as company" support session.
+model SupportAccess {
+  id        String   @id @default(cuid())
+  adminId   String
+  companyId String
+  createdAt DateTime @default(now())
+
+  @@index([companyId, createdAt])
 }
