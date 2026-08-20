@@ -1,0 +1,20 @@
+# Static-host headers (Netlify / Cloudflare Pages syntax).
+#
+# The dashboards and the hosted form must never be framable — that is what makes
+# a clickjacked Approve button impossible. The embed route is the deliberate
+# exception: sellers put /embed/<slug> in an iframe on their own website.
+#
+# Nginx and other hosts need the same policy expressed their own way; see
+# SECURITY.md section 5.2.
+
+/*
+  Content-Security-Policy: frame-ancestors 'none'
+  X-Frame-Options: DENY
+  Referrer-Policy: strict-origin-when-cross-origin
+  X-Content-Type-Options: nosniff
+
+/embed/*
+  Content-Security-Policy: frame-ancestors https:
+  X-Frame-Options:
+  Referrer-Policy: strict-origin-when-cross-origin
+  X-Content-Type-Options: nosniff

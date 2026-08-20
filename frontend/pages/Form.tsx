@@ -1,6 +1,10 @@
-import { useState } from 'react';
-import { useMutation, gql } from '@apollo/client';
+import { useState, useRef, useEffect } from 'react';
+import { gql } from '@apollo/client';
+import { useMutation, useQuery } from '@apollo/client/react';
+import { useParams } from 'react-router-dom';
 import axios from 'axios';
+import { useDocumentTitle } from '../src/lib/useDocumentTitle.ts';
+import { COUNTRIES } from '../src/lib/countries.ts';
 
 const SUBMIT_STATEMENT = gql`
   mutation SubmitEndUserStatement($input: SubmitInput!) {
@@ -12,7 +16,52 @@ const SUBMIT_STATEMENT = gql`
   }
 `;
 
-type IdDocumentType = 'PASSPORT' | 'ID_CARD' | 'DRIVERS_LICENSE';
+const FORM_INFO = gql`
+  query FormInfo($slug: String!) {
+    formInfo(slug: $slug) {
+      companyName
+      configured
+      identityVerificationAvailable
+      config { orderNumber address buyerTypes casNumbers concentration idVerification customTermsMode customTermsText customTermsUrl }
+    }
+  }
+`;
+
+type FieldMode = 'REQUIRED' | 'OPTIONAL' | 'HIDDEN';
+type BuyerPolicy = 'COMPANY_ONLY' | 'INDIVIDUAL_ONLY' | 'BOTH';
+
+type FormConfig = {
+  orderNumber: FieldMode;
+  address: FieldMode;
+  buyerTypes: BuyerPolicy;
+  casNumbers: FieldMode;
+  concentration: FieldMode;
+  idVerification: FieldMode;
+  customTermsMode: 'TEXT' | 'LINK';
+  customTermsText: string;
+  customTermsUrl: string;
+};
+
+// Mirrors the backend default (backend/lib/formConfig.ts) — shown on /form
+// without a slug and while the company config is loading.
+const DEFAULT_TERMS_TEXT = `I hereby confirm that:
+— The substances, preparations and products are only used in an authorized manner (in accordance with European and national legislation), used only for research, scientific and educational purposes.
+
+The ordered substance(s):
+— Not used to manufacture or serve as a constituent or intermediate of narcotics and/or psychotropic substances.
+— Not used in medicinal products for human or veterinary use, agriculture, food or cosmetics, except as a raw material, auxiliary or operating material and/or as a research and analytical reagent.
+— Not used to develop or produce chemical weapons.
+— Not to be used for military or illegal purposes.
+— Do not re-export the item(s) to third countries without the prior consent of the export control authorities.
+— Will not be re-exported/exported or otherwise nationally or resold internationally or transferred to a destination subject to an EU, UN or US embargo, if such act would conflict with the terms of that embargo.
+— Supplies the mentioned products only to customers who can also submit such an End-use certificate. We will carefully keep all received certificates and submit them on request.
+— I am over 18 years old.`;
+
+const DEFAULT_CONFIG: FormConfig = {
+  orderNumber: 'REQUIRED', address: 'REQUIRED', buyerTypes: 'COMPANY_ONLY',
+  casNumbers: 'REQUIRED', concentration: 'OPTIONAL', idVerification: 'REQUIRED',
+  customTermsMode: 'TEXT', customTermsText: DEFAULT_TERMS_TEXT, customTermsUrl: '',
+};
 
 type FormData = {
   email: string;
@@ -27,99 +76,328 @@ type FormData = {
   vatNumber: string;
   substances: string;
   casNumbers: string;
+  concentration: string;
   statement: string;
 };
 
 const empty: FormData = {
   email: '', orderNumber: '', firstName: '', lastName: '', street: '',
   zipCode: '', place: '', country: '', companyName: '', vatNumber: '',
-  substances: '', casNumbers: '', statement: '',
+  substances: '', casNumbers: '', concentration: '', statement: '',
 };
 
-const docTypeLabels: Record<IdDocumentType, string> = {
-  PASSPORT: 'Paspoort',
-  ID_CARD: 'Identiteitskaart',
-  DRIVERS_LICENSE: 'Rijbewijs',
-};
+// Outcome of the hosted identity check. PENDING means the buyer has not
+// finished yet; everything else is terminal and lets them submit — a failed
+// check is flagged for the seller's reviewer, never an automatic refusal.
+type VerificationStatus =
+  | 'PENDING' | 'IN_REVIEW' | 'APPROVED' | 'DECLINED' | 'EXPIRED' | 'ERROR';
 
-export default function Form() {
+const VERIFY_POLL_MS = 4000;
+
+// localStorage throws in a third-party iframe when the host browser blocks
+// storage access, so every read/write goes through these.
+function readStoredTheme(): 'light' | 'dark' | null {
+  try { return (localStorage.getItem('theme-form') as 'light' | 'dark' | null) ?? null; } catch { return null; }
+}
+function storeTheme(value: 'light' | 'dark') {
+  try { localStorage.setItem('theme-form', value); } catch { /* storage blocked — theme is per-visit */ }
+}
+
+/**
+ * `embed` renders the same form for the /embed/:slug route, which is what a
+ * seller drops into their own website in an iframe. Only the presentation
+ * changes: no page chrome, no theme switcher (the host picks it with
+ * ?theme=dark), and the height is reported to the parent so it can size the
+ * frame. Everything that matters — the config, the identity session, the
+ * submit mutation — runs exactly as it does on the hosted page, in this
+ * origin, where the embedding site cannot read it.
+ */
+export default function Form({ embed = false }: { embed?: boolean }) {
+  const { slug } = useParams<{ slug?: string }>();
   const [form, setForm] = useState<FormData>(empty);
   const [agreed, setAgreed] = useState(false);
-  const [idName, setIdName] = useState('');
-  const [idType, setIdType] = useState<IdDocumentType | ''>('');
-  const [idNumber, setIdNumber] = useState('');
-  const [extractState, setExtractState] = useState<'idle' | 'extracting' | 'done' | 'failed'>('idle');
+  const [buyerChoice, setBuyerChoice] = useState<'' | 'INDIVIDUAL' | 'COMPANY'>('');
+  // Identity is verified by Didit, not here: the document is photographed and
+  // checked on their hosted page and never passes through this app. All we hold
+  // is the session id, and even that only tells the server which session to read
+  // the decision from — the browser is never told what the document said.
+  const [verifySessionId, setVerifySessionId] = useState<string | null>(null);
+  const [verifyState, setVerifyState] = useState<'idle' | 'starting' | 'waiting' | 'done'>('idle');
+  const [verifyStatus, setVerifyStatus] = useState<VerificationStatus | null>(null);
+  // Kept only when the popup was blocked, so the buyer gets a link to click.
+  const [verifyUrl, setVerifyUrl] = useState<string | null>(null);
   const [submitState, setSubmitState] = useState<'idle' | 'submitting' | 'success' | 'error'>('idle');
   const [errorMsg, setErrorMsg] = useState('');
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+    if (embed) {
+      // The embedding page chooses, via ?theme= on the iframe src.
+      return new URLSearchParams(window.location.search).get('theme') === 'dark' ? 'dark' : 'light';
+    }
+    return readStoredTheme() ?? 'light';
+  });
+  useEffect(() => {
+    if (!embed) return;
+    document.documentElement.classList.add('eu-embed-page');
+    return () => document.documentElement.classList.remove('eu-embed-page');
+  }, [embed]);
+  useEffect(() => {
+    if (!embed) storeTheme(theme);
+    document.documentElement.classList.toggle('eu-dark-page', theme === 'dark');
+    document.body.classList.toggle('eu-dark-page', theme === 'dark');
+    return () => {
+      document.documentElement.classList.remove('eu-dark-page');
+      document.body.classList.remove('eu-dark-page');
+    };
+  }, [theme]);
+  const toggleTheme = () => setTheme(t => t === 'light' ? 'dark' : 'light');
+  const wrapClass = `eu-wrap${theme === 'dark' ? ' eu-dark' : ''}${embed ? ' eu-embed' : ''}`;
 
-  const [submitMutation] = useMutation(SUBMIT_STATEMENT);
+  // Tell the embedding page how tall the form is so it can size the iframe.
+  // The message carries a pixel height and nothing else, so it is safe to post
+  // to any parent origin — the seller's site is not known here.
+  useEffect(() => {
+    if (!embed) return;
+    const post = () => {
+      const height = Math.ceil(document.documentElement.scrollHeight);
+      window.parent?.postMessage({ type: 'eustatement:height', height }, '*');
+    };
+    post();
+    const observer = new ResizeObserver(post);
+    observer.observe(document.documentElement);
+    return () => observer.disconnect();
+  }, [embed]);
 
-  const set = (field: keyof FormData) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const verifyWindowRef = useRef<Window | null>(null);
+
+  const [submitMutation] = useMutation<any>(SUBMIT_STATEMENT);
+
+  const { data: formInfoData } = useQuery<any>(FORM_INFO, { variables: { slug }, skip: !slug });
+  const companyDisplayName: string | undefined = formInfoData?.formInfo?.companyName;
+  useDocumentTitle(companyDisplayName ? `${companyDisplayName} — Statement` : 'End-User Statement');
+  const cfg: FormConfig = formInfoData?.formInfo?.config ?? DEFAULT_CONFIG;
+  // False only when the platform has no verification provider configured.
+  // Assumed available while the query is in flight so the button does not flash.
+  const idVerificationAvailable: boolean = formInfoData?.formInfo?.identityVerificationAvailable ?? true;
+  const show = (m: FieldMode) => m !== 'HIDDEN';
+  const req = (m: FieldMode) => m === 'REQUIRED';
+
+  // Buyer type: forced by the company's policy, or chosen by the buyer when both
+  // are accepted. A company buyer must provide company name + VAT (VIES-checked).
+  const showBuyerToggle = cfg.buyerTypes === 'BOTH';
+  const buyerType: '' | 'INDIVIDUAL' | 'COMPANY' =
+    cfg.buyerTypes === 'COMPANY_ONLY' ? 'COMPANY'
+    : cfg.buyerTypes === 'INDIVIDUAL_ONLY' ? 'INDIVIDUAL'
+    : buyerChoice;
+  const isCompany = buyerType === 'COMPANY';
+
+  const set = (field: keyof FormData) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) =>
     setForm(prev => ({ ...prev, [field]: e.target.value }));
 
-  const handlePhotoSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (file.size > 10 * 1024 * 1024) { setErrorMsg('Afbeelding mag maximaal 10 MB zijn.'); return; }
-    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
-      setErrorMsg('Gebruik een JPG, PNG of WebP afbeelding.');
-      return;
-    }
-
-    setErrorMsg('');
-    setExtractState('extracting');
-
-    try {
-      const fd = new globalThis.FormData();
-      fd.append('file', file);
-      const { data } = await axios.post('/extract-id', fd);
-      setIdName(data.name ?? '');
-      setIdType(data.documentType ?? '');
-      setIdNumber(data.documentNumber ?? '');
-      setExtractState('done');
-    } catch {
-      setExtractState('failed');
-    }
-
-    // Reset file input so the same file can be reselected if needed
-    e.target.value = '';
+  const stopPolling = () => {
+    if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
   };
+
+  // Stop polling if the buyer navigates away mid-verification.
+  useEffect(() => stopPolling, []);
+
+  const pollVerification = (sessionId: string) => {
+    stopPolling();
+    pollRef.current = setInterval(async () => {
+      try {
+        const { data } = await axios.get(`/verification-status/${sessionId}`);
+        const status: VerificationStatus = data.status;
+        setVerifyStatus(status);
+        if (status !== 'PENDING') {
+          stopPolling();
+          setVerifyState('done');
+          setVerifyUrl(null);
+          verifyWindowRef.current?.close();
+          verifyWindowRef.current = null;
+        }
+      } catch (err: any) {
+        // The session is gone (expired, or the server restarted) — send the
+        // buyer back to the start rather than spinning forever.
+        if (err?.response?.status === 404) {
+          stopPolling();
+          setVerifySessionId(null);
+          setVerifyState('idle');
+          setVerifyStatus(null);
+          setErrorMsg('Your verification session expired. Please start it again.');
+        }
+      }
+    }, VERIFY_POLL_MS);
+  };
+
+  const startVerification = async () => {
+    setErrorMsg('');
+    setVerifyState('starting');
+    setVerifyStatus(null);
+    try {
+      const { data } = await axios.post('/verification-session', { companySlug: slug ?? '' });
+      setVerifySessionId(data.sessionId);
+      setVerifyUrl(null);
+      // Opened from the click handler so the popup blocker allows it. Didit's
+      // page refuses to be framed, so when the popup is blocked the fallback
+      // must leave this document: a new tab when embedded (the iframe may not
+      // navigate its host), this tab otherwise.
+      const opened = window.open(data.url, 'didit-verification', 'width=520,height=760');
+      if (opened) {
+        verifyWindowRef.current = opened;
+      } else if (embed) {
+        setVerifyUrl(data.url);
+      } else {
+        window.location.href = data.url;
+      }
+      setVerifyState('waiting');
+      setVerifyStatus('PENDING');
+      pollVerification(data.sessionId);
+    } catch {
+      setVerifyState('idle');
+      setErrorMsg('Could not start identity verification. Please try again.');
+    }
+  };
+
+  // A finished check — whatever the outcome — is enough to submit. A declined
+  // or escalated result is passed on to the seller as a flag; the form never
+  // refuses a buyer on the strength of an automated check.
+  const verificationFinished = verifyState === 'done' && !!verifySessionId && verifyStatus !== 'PENDING';
+
+
+  // What the buyer still has to do before the form can be sent. Same list for
+  // the hosted form, a company's /{slug} form and the embedded one — they are
+  // this component. The server re-checks all of it; this is here so nobody
+  // submits a half-filled form, and in particular so nobody spends an identity
+  // verification on a submission that was going to be rejected anyway.
+  const filled = (v: string) => v.trim().length > 0;
+  const emailLooksValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim());
+  const missing: string[] = [];
+  if (!emailLooksValid) missing.push('a valid email address');
+  if (!filled(form.firstName)) missing.push('first name');
+  if (!filled(form.lastName)) missing.push('last name');
+  if (req(cfg.orderNumber) && !filled(form.orderNumber)) missing.push('order number');
+  if (showBuyerToggle && !buyerChoice) missing.push('whether you are an individual or a company');
+  if (isCompany && !filled(form.companyName)) missing.push('company name');
+  if (isCompany && !filled(form.vatNumber)) missing.push('VAT number');
+  if (req(cfg.address)) {
+    if (!filled(form.street)) missing.push('street');
+    if (!filled(form.zipCode)) missing.push('zip code');
+    if (!filled(form.place)) missing.push('place / city');
+    if (!filled(form.country)) missing.push('country');
+  }
+  if (!filled(form.substances)) missing.push('substance name');
+  if (req(cfg.casNumbers) && !filled(form.casNumbers)) missing.push('CAS number');
+  if (req(cfg.concentration) && !filled(form.concentration)) missing.push('concentration');
+  if (!filled(form.statement)) missing.push('statement');
+  if (show(cfg.idVerification) && !verificationFinished) missing.push('identity verification');
+  if (!agreed) missing.push('agreement to the terms');
+  const canSubmit = missing.length === 0 && (!show(cfg.idVerification) || idVerificationAvailable);
+  // A verification is a real, finite resource, so it is not offered until the
+  // rest of the form is filled in — an abandoned half-form should not cost one.
+  // The terms checkbox is deliberately not in here: it is the last thing the
+  // buyer ticks, after verifying.
+  const missingBeforeVerify = missing.filter(
+    m => m !== 'identity verification' && m !== 'agreement to the terms',
+  );
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!agreed) { setErrorMsg('U moet akkoord gaan met de voorwaarden.'); return; }
-    if (!idName.trim() || !idType || !idNumber.trim()) {
-      setErrorMsg('Vul uw documentgegevens in (naam, type en nummer).');
+    // Also reached by pressing Enter in a field, where the disabled button is
+    // no defence.
+    if (missing.length > 0) {
+      setErrorMsg(`Please complete the form first — still missing: ${missing.join(', ')}.`);
+      return;
+    }
+    if (!agreed) { setErrorMsg('You must agree to the terms and conditions.'); return; }
+    if (showBuyerToggle && !buyerChoice) {
+      setErrorMsg('Please select whether you are an individual or a company.');
+      return;
+    }
+    if (isCompany && (!form.companyName.trim() || !form.vatNumber.trim())) {
+      setErrorMsg('Please fill in your company name and VAT number.');
+      return;
+    }
+    if (show(cfg.idVerification) && !idVerificationAvailable) {
+      setErrorMsg('Identity verification is temporarily unavailable — this form cannot be submitted right now.');
+      return;
+    }
+    if (show(cfg.idVerification) && !verificationFinished) {
+      setErrorMsg('Please complete the identity verification step.');
       return;
     }
 
     setErrorMsg('');
     setSubmitState('submitting');
 
+    // Omit fields the company has hidden from its form
+    const input: Record<string, unknown> = {
+      email: form.email,
+      firstName: form.firstName,
+      lastName: form.lastName,
+      substances: form.substances,
+      statement: form.statement,
+      agreedToTerms: true,
+      ...(slug ? { companySlug: slug } : {}),
+    };
+    if (show(cfg.orderNumber)) input.orderNumber = form.orderNumber;
+    if (show(cfg.address)) {
+      input.street = form.street;
+      input.zipCode = form.zipCode;
+      input.place = form.place;
+      input.country = form.country;
+    }
+    input.buyerType = buyerType;
+    if (isCompany) {
+      input.companyName = form.companyName;
+      input.vatNumber = form.vatNumber;
+    }
+    if (show(cfg.casNumbers)) input.casNumbers = form.casNumbers;
+    if (show(cfg.concentration)) input.concentration = form.concentration;
+    if (show(cfg.idVerification)) {
+      // The only identity value the browser sends. Everything about the
+      // document is read from Didit by the server against this session.
+      input.diditSessionId = verifySessionId;
+    }
+
     try {
-      await submitMutation({
-        variables: {
-          input: {
-            ...form,
-            idDocumentName: idName.trim(),
-            idDocumentType: idType,
-            idDocumentNumber: idNumber.trim(),
-            agreedToTerms: true,
-          },
-        },
-      });
+      await submitMutation({ variables: { input } });
       setSubmitState('success');
+      if (embed) window.parent?.postMessage({ type: 'eustatement:submitted' }, '*');
     } catch (err: any) {
       setSubmitState('error');
       setErrorMsg(err?.message ?? 'Er is iets misgegaan. Probeer het opnieuw.');
     }
   };
 
+  // Forms are served at the root (/{slug}), so an unknown slug doubles as the
+  // 404 page; a known slug whose owner hasn't finished setup shows a "not
+  // ready" page. /form (no slug) keeps rendering the standard form.
+  if (slug && formInfoData && (formInfoData.formInfo == null || formInfoData.formInfo.configured === false)) {
+    const notFound = formInfoData.formInfo == null;
+    return (
+      <>
+        <style>{styles}</style>
+        <div className={wrapClass}>
+          <div className="eu-success">
+            <div className="eu-success-icon eu-notready-icon">…</div>
+            <h2 className="eu-success-title">{notFound ? 'Form Not Found' : 'Form Not Available Yet'}</h2>
+            <p className="eu-success-body">
+              {notFound
+                ? <>There&rsquo;s no form at this address — please check the link.</>
+                : <>This form isn&rsquo;t set up yet — please check back later.</>}
+            </p>
+            <p className="eu-success-note">If you received this link from a supplier, contact them for assistance.</p>
+          </div>
+        </div>
+      </>
+    );
+  }
+
   if (submitState === 'success') {
     return (
       <>
         <style>{styles}</style>
-        <div className="eu-wrap">
+        <div className={wrapClass}>
           <div className="eu-success">
             <div className="eu-success-icon">✓</div>
             <h2 className="eu-success-title">Statement Received</h2>
@@ -136,60 +414,120 @@ export default function Form() {
 
   const busy = submitState === 'submitting';
 
+  let sectionNo = 0;
+  const sec = () => String(++sectionNo).padStart(2, '0');
+
   return (
     <>
       <style>{styles}</style>
-      <div className="eu-wrap">
+      <div className={wrapClass}>
         <header className="eu-header">
+          {!embed && (
+          <button className="eu-theme-btn" onClick={toggleTheme} title="Toggle theme" aria-label="Toggle theme">
+            {theme === 'light' ? (
+              <svg viewBox="0 0 20 20" fill="currentColor" width="15" height="15">
+                <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z"/>
+              </svg>
+            ) : (
+              <svg viewBox="0 0 20 20" fill="currentColor" width="15" height="15">
+                <path fillRule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" clipRule="evenodd"/>
+              </svg>
+            )}
+          </button>
+          )}
           <div className="eu-header-badge">OFFICIAL DOCUMENT</div>
           <h1 className="eu-title">End-User Statement</h1>
           <p className="eu-subtitle">Chemical Substances — Regulated Use Declaration</p>
+          {companyDisplayName && <p className="eu-company-line">Submitted to {companyDisplayName}</p>}
           <div className="eu-header-rule" />
         </header>
 
         <form className="eu-form" onSubmit={handleSubmit} noValidate>
 
-          {/* SECTION 1 – Contact */}
+          {/* SECTION – Buyer type (only when the company accepts both) */}
+          {showBuyerToggle && (
+            <section className="eu-section">
+              <div className="eu-section-label"><span>{sec()}</span> Buyer Type</div>
+              <p className="eu-id-note">Are you ordering as a private individual or on behalf of a company?</p>
+              <div className="eu-buyer-seg" role="radiogroup" aria-label="Buyer type">
+                <button type="button" role="radio" aria-checked={buyerChoice === 'INDIVIDUAL'}
+                  className={`eu-buyer-btn${buyerChoice === 'INDIVIDUAL' ? ' eu-buyer-active' : ''}`}
+                  onClick={() => setBuyerChoice('INDIVIDUAL')}>Individual</button>
+                <button type="button" role="radio" aria-checked={buyerChoice === 'COMPANY'}
+                  className={`eu-buyer-btn${buyerChoice === 'COMPANY' ? ' eu-buyer-active' : ''}`}
+                  onClick={() => setBuyerChoice('COMPANY')}>Company</button>
+              </div>
+            </section>
+          )}
+
+          {/* SECTION – Contact */}
           <section className="eu-section">
-            <div className="eu-section-label"><span>01</span> Contact Information</div>
+            <div className="eu-section-label"><span>{sec()}</span> Contact Information</div>
             <div className="eu-grid-2">
-              <Field label="Email" id="email" type="email" value={form.email} onChange={set('email')} />
-              <Field label="Order Number" id="orderNumber" value={form.orderNumber} onChange={set('orderNumber')} />
-              <Field label="First Name" id="firstName" value={form.firstName} onChange={set('firstName')} />
-              <Field label="Last Name" id="lastName" value={form.lastName} onChange={set('lastName')} />
+              <Field label="Email" id="email" type="email" value={form.email} onChange={set('email')} autoComplete="email" />
+              {show(cfg.orderNumber) && (
+                <Field label="Order Number" id="orderNumber" value={form.orderNumber} onChange={set('orderNumber')}
+                  required={req(cfg.orderNumber)} />
+              )}
+              <Field label="First Name" id="firstName" value={form.firstName} onChange={set('firstName')} autoComplete="given-name" />
+              <Field label="Last Name" id="lastName" value={form.lastName} onChange={set('lastName')} autoComplete="family-name" />
             </div>
           </section>
 
-          {/* SECTION 2 – Address */}
-          <section className="eu-section">
-            <div className="eu-section-label"><span>02</span> Address</div>
-            <div className="eu-grid-1">
-              <Field label="Street" id="street" value={form.street} onChange={set('street')} />
-            </div>
-            <div className="eu-grid-3">
-              <Field label="Zip Code" id="zipCode" value={form.zipCode} onChange={set('zipCode')} />
-              <Field label="Place / City" id="place" value={form.place} onChange={set('place')} />
-              <Field label="Country" id="country" value={form.country} onChange={set('country')} />
-            </div>
-          </section>
+          {/* SECTION – Company (only for company buyers) */}
+          {isCompany && (
+            <section className="eu-section">
+              <div className="eu-section-label"><span>{sec()}</span> Company Details</div>
+              <div className="eu-grid-2">
+                <Field label="Company Name" id="companyName" value={form.companyName} onChange={set('companyName')}
+                  required autoComplete="organization" />
+                <Field label="VAT Number" id="vatNumber" value={form.vatNumber} onChange={set('vatNumber')}
+                  required hint="Required for VIES verification (e.g. NL123456789B01)" />
+              </div>
+            </section>
+          )}
 
-          {/* SECTION 3 – Company */}
-          <section className="eu-section">
-            <div className="eu-section-label"><span>03</span> Company Details</div>
-            <div className="eu-grid-2">
-              <Field label="Company Name" id="companyName" value={form.companyName} onChange={set('companyName')} />
-              <Field label="VAT Number" id="vatNumber" value={form.vatNumber} onChange={set('vatNumber')}
-                hint="Required for VIES verification (e.g. NL123456789B01)" />
-            </div>
-          </section>
+          {/* SECTION – Address */}
+          {show(cfg.address) && (
+            <section className="eu-section">
+              <div className="eu-section-label"><span>{sec()}</span> Address</div>
+              <div className="eu-grid-1">
+                <Field label="Street" id="street" value={form.street} onChange={set('street')} required={req(cfg.address)} autoComplete="street-address" />
+              </div>
+              <div className="eu-grid-3">
+                <Field label="Zip Code" id="zipCode" value={form.zipCode} onChange={set('zipCode')} required={req(cfg.address)} autoComplete="postal-code" />
+                <Field label="Place / City" id="place" value={form.place} onChange={set('place')} required={req(cfg.address)} autoComplete="address-level2" />
+                <div className="eu-field">
+                  <label className="eu-label" htmlFor="country">
+                    Country {req(cfg.address) ? <span className="eu-req">*</span> : <span className="eu-optional">(optional)</span>}
+                  </label>
+                  <select className="eu-input eu-select" id="country" value={form.country}
+                    onChange={set('country')} required={req(cfg.address)} autoComplete="country-name">
+                    <option value="">— Select —</option>
+                    {COUNTRIES.map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
+              </div>
+            </section>
+          )}
 
-          {/* SECTION 4 – Substance */}
+          {/* SECTION – Substance */}
           <section className="eu-section">
-            <div className="eu-section-label"><span>04</span> Substance Information</div>
-            <div className="eu-grid-2">
+            <div className="eu-section-label"><span>{sec()}</span> Substance Information</div>
+            <div className={show(cfg.casNumbers) ? 'eu-grid-2' : 'eu-grid-1'}>
               <Field label="Name of Substance(s)" id="substances" value={form.substances} onChange={set('substances')} />
-              <Field label="CAS Number of the Substance" id="casNumbers" value={form.casNumbers} onChange={set('casNumbers')} />
+              {show(cfg.casNumbers) && (
+                <Field label="CAS Number of the Substance" id="casNumbers" value={form.casNumbers} onChange={set('casNumbers')}
+                  required={req(cfg.casNumbers)} />
+              )}
             </div>
+            {show(cfg.concentration) && (
+              <div className="eu-grid-1">
+                <Field label="Concentration" id="concentration" value={form.concentration}
+                  onChange={set('concentration')} required={req(cfg.concentration)}
+                  hint="As printed on the label, e.g. 15% w/w — restricted-precursor limits are concentration-based" />
+              </div>
+            )}
             <div className="eu-grid-1">
               <div className="eu-field">
                 <label className="eu-label" htmlFor="statement">Statement <span className="eu-req">*</span></label>
@@ -199,97 +537,135 @@ export default function Form() {
             </div>
           </section>
 
-          {/* SECTION 5 – Identity */}
+          {/* SECTION – Identity */}
+          {show(cfg.idVerification) && (
           <section className="eu-section">
-            <div className="eu-section-label"><span>05</span> Identiteitsdocument</div>
+            <div className="eu-section-label"><span>{sec()}</span> Identity Verification</div>
             <p className="eu-id-note">
-              Upload een foto van uw paspoort, identiteitskaart of rijbewijs. De gegevens worden automatisch uitgelezen — de foto wordt niet bewaard.
+              Your passport or identity card is checked by Didit, our identity verification provider.
+              A secure window opens where you photograph your document and take a short selfie.
+              The photos stay with Didit — this form never receives or stores them, and only the
+              outcome plus the details printed on your document are kept.
             </p>
-            <div className="eu-file-area">
-              <label className={`eu-file-label ${extractState === 'extracting' ? 'eu-file-label--busy' : ''}`} htmlFor="idPhoto">
-                <div className="eu-file-icon">
-                  {extractState === 'extracting' ? (
-                    <span className="eu-spinner eu-spinner--dark" />
-                  ) : extractState === 'done' ? (
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                      <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" strokeLinecap="round" strokeLinejoin="round"/>
-                    </svg>
-                  ) : (
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                      <path d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" strokeLinecap="round" strokeLinejoin="round"/>
-                      <circle cx="12" cy="13" r="3" strokeLinecap="round"/>
-                    </svg>
-                  )}
-                </div>
-                <div className="eu-file-text">
-                  {extractState === 'extracting' ? (
-                    <span className="eu-file-prompt">Gegevens uitlezen…</span>
-                  ) : extractState === 'done' ? (
-                    <>
-                      <span className="eu-file-name">Gegevens uitgelezen</span>
-                      <span className="eu-file-change">Nieuwe foto uploaden</span>
-                    </>
-                  ) : extractState === 'failed' ? (
-                    <>
-                      <span className="eu-file-name" style={{ color: 'var(--accent)' }}>Uitgelezen mislukt — vul handmatig in</span>
-                      <span className="eu-file-change">Opnieuw proberen</span>
-                    </>
-                  ) : (
-                    <>
-                      <span className="eu-file-prompt">Foto uploaden <span className="eu-req">*</span></span>
-                      <span className="eu-file-hint">JPG of PNG — max 10 MB — foto wordt direct verwijderd</span>
-                    </>
-                  )}
-                </div>
-              </label>
-              <input id="idPhoto" type="file" accept="image/jpeg,image/png,image/webp"
-                onChange={handlePhotoSelect} style={{ display: 'none' }}
-                disabled={extractState === 'extracting'} />
-            </div>
 
-            <div className="eu-id-fields">
-              <div className="eu-field">
-                <label className="eu-label" htmlFor="idName">Naam zoals op document <span className="eu-req">*</span></label>
-                <input className="eu-input" id="idName" type="text" value={idName}
-                  onChange={e => setIdName(e.target.value)} required />
+            {verifyState === 'idle' && !idVerificationAvailable && (
+              <div className="eu-id-warning">
+                <svg viewBox="0 0 20 20" fill="currentColor" width="16" height="16" style={{ flexShrink: 0, marginTop: 1 }}>
+                  <path fillRule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd"/>
+                </svg>
+                <div>
+                  <div className="eu-id-warning-title">Identity verification is temporarily unavailable</div>
+                  <div className="eu-id-warning-note">
+                    This form requires it, so it cannot be submitted right now. Please try again
+                    later or contact {companyDisplayName ?? 'the seller'}.
+                  </div>
+                </div>
               </div>
-              <div className="eu-field">
-                <label className="eu-label" htmlFor="idType">Documenttype <span className="eu-req">*</span></label>
-                <select className="eu-input eu-select" id="idType" value={idType}
-                  onChange={e => setIdType(e.target.value as IdDocumentType | '')}>
-                  <option value="">— Selecteer —</option>
-                  {(Object.entries(docTypeLabels) as [IdDocumentType, string][]).map(([val, label]) => (
-                    <option key={val} value={val}>{label}</option>
-                  ))}
-                </select>
+            )}
+
+            {verifyState === 'idle' && idVerificationAvailable && missingBeforeVerify.length > 0 && (
+              <p className="eu-missing-note">
+                Fill in the rest of the form first, then verify — still missing:{' '}
+                {missingBeforeVerify.join(', ')}.
+              </p>
+            )}
+
+            {verifyState === 'idle' && idVerificationAvailable && (
+              <div className="eu-file-options">
+                <button type="button" className="eu-file-btn eu-file-btn--camera"
+                  disabled={missingBeforeVerify.length > 0} onClick={startVerification}>
+                  <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" width="16" height="16">
+                    <path d="M10 2.5l6 2.5v4.5c0 3.5-2.4 6.6-6 8-3.6-1.4-6-4.5-6-8V5l6-2.5z" strokeLinecap="round" strokeLinejoin="round"/>
+                    <path d="M7.5 10l1.8 1.8L13 8" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                  Verify my identity
+                </button>
               </div>
-              <div className="eu-field">
-                <label className="eu-label" htmlFor="idNumber">Documentnummer <span className="eu-req">*</span></label>
-                <input className="eu-input" id="idNumber" type="text" value={idNumber}
-                  onChange={e => setIdNumber(e.target.value)} required />
+            )}
+
+            {verifyState === 'starting' && (
+              <div className="eu-file-extracting">
+                <span className="eu-spinner eu-spinner--dark" />
+                <span>Opening secure verification…</span>
               </div>
-            </div>
+            )}
+
+            {verifyState === 'waiting' && (
+              <div className="eu-verify-waiting">
+                <div className="eu-file-extracting">
+                  <span className="eu-spinner eu-spinner--dark" />
+                  <span>Waiting for you to finish verification…</span>
+                </div>
+                <p className="eu-verify-hint">
+                  Complete the steps in the verification window, then come back to this page.
+                  It updates automatically.
+                </p>
+                {verifyUrl && (
+                  <p className="eu-verify-hint">
+                    The verification window was blocked by your browser —{' '}
+                    <a className="eu-terms-extlink" href={verifyUrl} target="_blank" rel="noopener noreferrer">
+                      open it in a new tab ↗
+                    </a>
+                  </p>
+                )}
+                <button type="button" className="eu-file-redo-btn" onClick={startVerification}>
+                  Window closed? Start again
+                </button>
+              </div>
+            )}
+
+            {verifyState === 'done' && verifyStatus === 'APPROVED' && (
+              <div className="eu-file-done">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" width="20" height="20">
+                  <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+                <span>Identity verified</span>
+              </div>
+            )}
+
+            {verifyState === 'done' && verifyStatus === 'IN_REVIEW' && (
+              <div className="eu-id-ok">
+                <svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14" style={{ flexShrink: 0 }}>
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-11a1 1 0 10-2 0v4a1 1 0 002 0V7zm-1 7a1 1 0 100 2 1 1 0 000-2z" clipRule="evenodd"/>
+                </svg>
+                <span>Your document is being reviewed manually. You can submit the form now — the seller will see the result.</span>
+              </div>
+            )}
+
+            {verifyState === 'done' && verifyStatus !== 'APPROVED' && verifyStatus !== 'IN_REVIEW' && (
+              <div className="eu-id-warning">
+                <svg viewBox="0 0 20 20" fill="currentColor" width="16" height="16" style={{ flexShrink: 0, marginTop: 1 }}>
+                  <path fillRule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd"/>
+                </svg>
+                <div>
+                  <div className="eu-id-warning-title">Verification not passed</div>
+                  <div className="eu-id-warning-note">
+                    You can still submit this form — it will be flagged for manual review by the seller.
+                    If you think something went wrong, you can{' '}
+                    <button type="button" className="eu-file-redo-btn" onClick={startVerification}>try again</button>.
+                  </div>
+                </div>
+              </div>
+            )}
           </section>
+          )}
 
-          {/* SECTION 6 – Terms */}
+          {/* SECTION – Terms */}
           <section className="eu-section eu-section-terms">
-            <div className="eu-section-label"><span>06</span> Terms &amp; Conditions</div>
+            <div className="eu-section-label"><span>{sec()}</span> Terms &amp; Conditions</div>
             <div className="eu-terms-box">
-              <p className="eu-terms-intro">I hereby confirm that:</p>
-              <ul className="eu-terms-list">
-                <li>The substances, preparations and products are only used in an authorized manner (in accordance with European and national legislation), used only for research, scientific and educational purposes.</li>
-              </ul>
-              <p className="eu-terms-intro" style={{ marginTop: '1rem' }}>The ordered substance(s):</p>
-              <ul className="eu-terms-list">
-                <li>Not used to manufacture or serve as a constituent or intermediate of narcotics and/or psychotropic substances.</li>
-                <li>Not used in medicinal products for human or veterinary use, agriculture, food or cosmetics, except as a raw material, auxiliary or operating material and/or as a research and analytical reagent.</li>
-                <li>Not used to develop or produce chemical weapons.</li>
-                <li>Not to be used for military or illegal purposes.</li>
-                <li>Do not re-export the item(s) to third countries without the prior consent of the export control authorities.</li>
-                <li>Will not be re-exported/exported or otherwise nationally or resold internationally or transferred to a destination subject to an EU, UN or US embargo, if such act would conflict with the terms of that embargo.</li>
-                <li>Supplies the mentioned products only to customers who can also submit such an End-use certificate. We will carefully keep all received certificates and submit them on request.</li>
-                <li>I am over 18 years old.</li>
-              </ul>
+              {cfg.customTermsMode === 'LINK' && cfg.customTermsUrl ? (
+                <>
+                  <p className="eu-terms-intro">Terms &amp; conditions of {companyDisplayName ?? 'the seller'}:</p>
+                  <p className="eu-terms-custom">
+                    <a className="eu-terms-extlink" href={cfg.customTermsUrl} target="_blank" rel="noreferrer">
+                      Read {companyDisplayName ?? 'the seller'}&rsquo;s terms and conditions ↗
+                    </a>
+                  </p>
+                </>
+              ) : (
+                <p className="eu-terms-custom">{cfg.customTermsText || DEFAULT_TERMS_TEXT}</p>
+              )}
             </div>
             <label className="eu-checkbox-label">
               <input type="checkbox" checked={agreed} onChange={e => setAgreed(e.target.checked)} className="eu-checkbox" />
@@ -305,16 +681,21 @@ export default function Form() {
 
           {/* Error */}
           {(submitState === 'error' || errorMsg) && (
-            <div className="eu-error-bar">{errorMsg}</div>
+            <div className="eu-error-bar" role="alert">{errorMsg}</div>
           )}
 
           {/* Submit */}
+          {missing.length > 0 && (
+            <p className="eu-missing-note" aria-live="polite">
+              Still to complete: {missing.join(', ')}.
+            </p>
+          )}
           <div className="eu-submit-row">
-            <button type="submit" className="eu-btn" disabled={busy}>
+            <button type="submit" className="eu-btn" disabled={busy || !canSubmit}>
               {busy ? (
                 <span className="eu-btn-inner">
                   <span className="eu-spinner" />
-                  Verklaring indienen…
+                  Submitting…
                 </span>
               ) : (
                 <span className="eu-btn-inner">
@@ -337,15 +718,18 @@ export default function Form() {
 }
 
 function Field({
-  label, id, type = 'text', value, onChange, hint,
+  label, id, type = 'text', value, onChange, hint, required = true, autoComplete,
 }: {
   label: string; id: string; type?: string; value: string;
   onChange: (e: React.ChangeEvent<HTMLInputElement>) => void; hint?: string;
+  required?: boolean; autoComplete?: string;
 }) {
   return (
     <div className="eu-field">
-      <label className="eu-label" htmlFor={id}>{label} <span className="eu-req">*</span></label>
-      <input className="eu-input" id={id} type={type} value={value} onChange={onChange} required />
+      <label className="eu-label" htmlFor={id}>
+        {label} {required ? <span className="eu-req">*</span> : <span className="eu-optional">(optional)</span>}
+      </label>
+      <input className="eu-input" id={id} type={type} value={value} onChange={onChange} required={required} autoComplete={autoComplete} />
       {hint && <span className="eu-hint">{hint}</span>}
     </div>
   );
@@ -374,6 +758,20 @@ const styles = `
   }
 
   html, body { background: var(--paper); overflow-x: hidden; }
+
+  /* Embedded in a seller's own page: no page background or outer chrome, and
+     no vertical scrollbar of its own — the parent sizes the frame from the
+     height we post to it. */
+  html.eu-embed-page, html.eu-embed-page body { background: transparent; }
+  .eu-file-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+
+  .eu-missing-note {
+    font-size: 11.5px; line-height: 1.6; color: var(--text-light);
+    border-left: 2px solid var(--border-dark); padding-left: 10px; margin-bottom: 4px;
+  }
+
+  .eu-wrap.eu-embed { padding: 0 0 1rem; max-width: none; background: transparent; }
+  @media (max-width: 640px) { .eu-wrap.eu-embed { padding: 0 0 1rem; } }
 
   .eu-wrap {
     font-family: 'JetBrains Mono', 'Courier New', monospace;
@@ -422,6 +820,21 @@ const styles = `
     margin-bottom: 1.5rem;
     word-break: break-word;
     overflow-wrap: break-word;
+  }
+  .eu-company-line {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    color: var(--text-mid, var(--text-light));
+    text-transform: uppercase;
+    margin: -0.9rem 0 1.5rem;
+  }
+  .eu-optional {
+    font-style: italic;
+    font-weight: 300;
+    text-transform: none;
+    letter-spacing: 0;
+    opacity: 0.65;
   }
   .eu-header-rule {
     width: 100%;
@@ -488,8 +901,21 @@ const styles = `
     .eu-btn { width: 100%; }
     .eu-file-hint { font-size: 9px; }
     .eu-terms-box { padding: 1rem; max-height: 200px; }
-    .eu-terms-list li { font-size: 10.5px; }
+    .eu-terms-custom { font-size: 10.5px; }
   }
+
+  /* BUYER TYPE SEGMENTED CONTROL */
+  .eu-buyer-seg { display: flex; gap: 0.75rem; }
+  .eu-buyer-btn {
+    flex: 1; font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 500;
+    letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--text-mid); background: var(--paper);
+    border: 1.5px solid var(--border); border-radius: var(--r);
+    padding: 12px 16px; cursor: pointer;
+    transition: border-color 0.15s, background 0.15s, color 0.15s;
+  }
+  .eu-buyer-btn:hover { border-color: var(--border-dark); }
+  .eu-buyer-active { border-color: var(--navy); background: var(--section-bg); color: var(--navy); font-weight: 700; }
 
   /* FIELDS */
   .eu-field { display: flex; flex-direction: column; gap: 5px; }
@@ -527,6 +953,12 @@ const styles = `
     box-shadow: 0 0 0 3px rgba(26, 49, 96, 0.08);
   }
   .eu-textarea { resize: vertical; min-height: 90px; }
+  .eu-input-readonly, .eu-input-readonly:hover {
+    opacity: 0.7;
+    cursor: not-allowed;
+    border-style: dashed;
+    border-color: var(--border);
+  }
 
   /* ID NOTE */
   .eu-id-note {
@@ -535,6 +967,54 @@ const styles = `
     margin-bottom: 1rem;
     line-height: 1.6;
     letter-spacing: 0;
+  }
+
+  /* ID VALIDATION BANNERS */
+  .eu-id-warning {
+    display: flex;
+    gap: 0.75rem;
+    align-items: flex-start;
+    background: #fff7ed;
+    border: 1px solid #fed7aa;
+    border-left: 3px solid #f97316;
+    border-radius: var(--r);
+    padding: 0.75rem 1rem;
+    margin-top: 1rem;
+    color: #9a3412;
+    font-size: 11.5px;
+    line-height: 1.5;
+  }
+  .eu-id-warning-title {
+    font-weight: 600;
+    margin-bottom: 0.25rem;
+    letter-spacing: 0.03em;
+  }
+  .eu-id-warning-note {
+    font-size: 10.5px;
+    color: #c2410c;
+    font-style: italic;
+  }
+  .eu-id-ok {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 0.75rem;
+    font-size: 11px;
+    color: #15803d;
+    letter-spacing: 0.03em;
+  }
+
+  /* ID PHOTO PREVIEW */
+  .eu-id-preview {
+    margin-top: 1rem;
+    display: flex; justify-content: center;
+  }
+  .eu-id-preview-img {
+    max-width: 100%; max-height: 220px;
+    border-radius: 6px;
+    border: 1px solid var(--border-dark);
+    object-fit: contain;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.1);
   }
 
   /* ID FIELDS */
@@ -558,33 +1038,58 @@ const styles = `
     cursor: pointer;
   }
 
-  /* FILE UPLOAD */
-  .eu-file-area { margin-top: 0.25rem; }
-  .eu-file-label {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
+  /* IDENTITY VERIFICATION */
+  .eu-file-extracting {
+    display: flex; align-items: center; gap: 0.875rem;
+    padding: 1.25rem 1.5rem;
     border: 1.5px dashed var(--border-dark);
     border-radius: var(--r);
-    padding: 1.25rem 1.5rem;
-    cursor: pointer;
     background: var(--paper);
-    transition: border-color 0.15s, background 0.15s;
+    font-size: 12px; color: var(--text-mid);
+    margin-top: 0.25rem;
   }
-  .eu-file-label:hover:not(.eu-file-label--busy) { border-color: var(--navy); background: #f0ede8; }
-  .eu-file-label--busy { cursor: default; opacity: 0.75; }
-  .eu-file-icon {
-    width: 36px;
-    height: 36px;
-    flex-shrink: 0;
-    color: var(--navy-mid);
+  .eu-file-done {
+    display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem;
+    padding: 0.875rem 1.25rem;
+    border: 1.5px solid #86efac;
+    background: #f0fdf4;
+    border-radius: var(--r);
+    font-size: 12px; color: #15803d;
+    margin-top: 0.25rem;
   }
-  .eu-file-icon svg { width: 100%; height: 100%; }
-  .eu-file-text { display: flex; flex-direction: column; gap: 2px; }
-  .eu-file-prompt { font-size: 12px; color: var(--text); }
-  .eu-file-name { font-size: 12px; color: var(--navy); font-weight: 500; word-break: break-all; }
-  .eu-file-hint, .eu-file-change { font-size: 10px; color: var(--text-light); letter-spacing: 0.03em; }
-  .eu-file-err { margin-top: 0.5rem; font-size: 11px; color: var(--accent); }
+  .eu-file-redo-btn {
+    background: none; border: none; padding: 0; cursor: pointer;
+    font-family: inherit; font-size: 12px; color: var(--navy-mid);
+    text-decoration: underline; text-underline-offset: 2px;
+  }
+  .eu-file-redo-btn:hover { color: var(--navy); }
+
+  .eu-file-options {
+    display: flex; align-items: center; gap: 0.75rem;
+    flex-wrap: wrap;
+    margin-top: 0.25rem;
+  }
+  .eu-file-btn {
+    display: inline-flex; align-items: center; gap: 0.5rem;
+    font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 500;
+    letter-spacing: 0.06em; text-transform: uppercase;
+    color: var(--navy); background: var(--white);
+    border: 1.5px solid var(--border-dark); border-radius: var(--r);
+    padding: 10px 18px; cursor: pointer;
+    transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+    text-decoration: none;
+  }
+  .eu-file-btn:hover { border-color: var(--navy); background: #f0ede8; }
+  .eu-file-btn--camera { color: var(--navy-mid); }
+
+  .eu-verify-waiting {
+    display: flex; flex-direction: column; align-items: flex-start; gap: 0.625rem;
+    margin-top: 0.25rem;
+  }
+  .eu-verify-waiting .eu-file-extracting { margin-top: 0; width: 100%; }
+  .eu-verify-hint {
+    font-size: 11.5px; color: var(--text-mid); line-height: 1.6; margin: 0;
+  }
 
   /* TERMS */
   .eu-section-terms { background: #fcfbf8; }
@@ -607,28 +1112,20 @@ const styles = `
     margin-bottom: 0.5rem;
     letter-spacing: 0.02em;
   }
-  .eu-terms-list {
-    list-style: none;
-    padding-left: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-  }
-  .eu-terms-list li {
-    padding-left: 1.2rem;
-    position: relative;
+  .eu-terms-custom {
     font-size: 11px;
     color: var(--text-mid);
     line-height: 1.6;
-    letter-spacing: 0;
+    white-space: pre-line;
   }
-  .eu-terms-list li::before {
-    content: '—';
-    position: absolute;
-    left: 0;
-    color: var(--gold);
-    font-size: 10px;
+  .eu-terms-custom + .eu-terms-custom { margin-top: 0.75rem; }
+  .eu-terms-extlink {
+    color: var(--navy);
+    font-weight: 500;
+    text-decoration: underline;
+    text-underline-offset: 2px;
   }
+  .eu-terms-extlink:hover { color: var(--gold); }
   .eu-checkbox-label {
     display: flex;
     align-items: flex-start;
@@ -746,6 +1243,11 @@ const styles = `
     justify-content: center;
     margin: 0 auto 1.25rem;
   }
+  .eu-notready-icon {
+    background: #f8f6f1;
+    border-color: var(--border-dark, #d6d0c4);
+    color: var(--text-mid);
+  }
   .eu-success-title {
     font-family: 'Libre Baskerville', Georgia, serif;
     font-size: 1.6rem;
@@ -780,4 +1282,58 @@ const styles = `
     color: var(--text-light);
     text-transform: uppercase;
   }
+
+  /* THEME TOGGLE */
+  .eu-header { position: relative; }
+  .eu-theme-btn {
+    position: absolute; top: 0; right: 0;
+    background: transparent; border: 1px solid var(--border-dark);
+    border-radius: 50%; width: 32px; height: 32px;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--text-light); cursor: pointer;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+  }
+  .eu-theme-btn:hover { background: var(--section-bg); color: var(--text-mid); border-color: var(--navy-mid); }
+
+  /* ── DARK THEME ─────────────────────────────────── */
+  .eu-dark {
+    --navy:        #7ba7e8;
+    --navy-mid:    #5b8fd4;
+    --accent:      #e85555;
+    --gold:        #c9a84c;
+    --paper:       #0d1117;
+    --white:       #161b27;
+    --border:      rgba(255,255,255,0.09);
+    --border-dark: rgba(255,255,255,0.16);
+    --text:        #e8eaf0;
+    --text-mid:    #9ca3af;
+    --text-light:  #6b7480;
+    --focus:       #7ba7e8;
+    --section-bg:  #1a2035;
+  }
+  html.eu-dark-page, body.eu-dark-page, .eu-dark { background: #0d1117; }
+  .eu-dark .eu-section { background: var(--white); }
+  .eu-dark .eu-section-terms { background: #13172280; }
+  .eu-dark .eu-terms-box { background: var(--section-bg); }
+  .eu-dark .eu-input, .eu-dark .eu-textarea {
+    background: var(--paper); color: var(--text);
+    border-color: var(--border-dark);
+  }
+  .eu-dark .eu-input:focus, .eu-dark .eu-textarea:focus {
+    background: var(--white);
+    border-color: var(--focus);
+  }
+  .eu-dark .eu-select {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M2 4l4 4 4-4' stroke='%239ca3af' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 10px center;
+  }
+  .eu-dark .eu-file-btn { background: var(--white); color: var(--text); border-color: var(--border-dark); }
+  .eu-dark .eu-file-btn:hover { background: var(--section-bg); }
+  .eu-dark .eu-error-bar { background: rgba(159,18,57,0.15); border-color: rgba(252,165,165,0.3); color: #fca5a5; }
+  .eu-dark .eu-success { background: var(--white); border-color: var(--border-dark); }
+  .eu-dark .eu-checkbox-box { background: var(--white); border-color: var(--border-dark); }
+  .eu-dark input:checked + .eu-checkbox-box { background: var(--navy-mid); border-color: var(--navy-mid); }
+  .eu-dark .eu-header-badge { color: var(--accent); border-color: var(--accent); }
+
 `;
