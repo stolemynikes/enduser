@@ -1,0 +1,55 @@
+import 'dotenv/config';
+import crypto from 'node:crypto';
+
+const PREFIX = 'enc:v1:';
+
+function loadKey(): Buffer {
+  const hex = process.env.ENCRYPTION_KEY;
+  if (!hex || !/^[0-9a-fA-F]{64}$/.test(hex)) {
+    throw new Error('ENCRYPTION_KEY must be set to 64 hex characters (generate with: openssl rand -hex 32)');
+  }
+  return Buffer.from(hex, 'hex');
+}
+
+const key = loadKey();
+
+export function encryptField(plain: string): string {
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+  const ciphertext = Buffer.concat([cipher.update(plain, 'utf8'), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return `${PREFIX}${iv.toString('base64')}:${tag.toString('base64')}:${ciphertext.toString('base64')}`;
+}
+
+export function decryptField(value: string): string {
+  if (!value.startsWith(PREFIX)) return value; // legacy plaintext row
+  const [ivB64, tagB64, dataB64] = value.slice(PREFIX.length).split(':');
+  const decipher = crypto.createDecipheriv('aes-256-gcm', key, Buffer.from(ivB64, 'base64'));
+  decipher.setAuthTag(Buffer.from(tagB64, 'base64'));
+  return Buffer.concat([decipher.update(Buffer.from(dataB64, 'base64')), decipher.final()]).toString('utf8');
+}
+
+// Submission PII fields stored encrypted at rest
+export const PII_FIELDS = [
+  'email', 'orderNumber', 'firstName', 'lastName',
+  'street', 'zipCode', 'place', 'country',
+  'companyName', 'vatNumber', 'substances', 'casNumbers',
+  'statement', 'idDocumentName', 'idDocumentNumber', 'adminNote',
+] as const;
+
+export function encryptData<T extends Record<string, unknown>>(data: T): T {
+  const out: Record<string, unknown> = { ...data };
+  for (const f of PII_FIELDS) {
+    if (typeof out[f] === 'string') out[f] = encryptField(out[f] as string);
+  }
+  return out as T;
+}
+
+export function decryptRecord<T>(record: T): T {
+  if (!record || typeof record !== 'object') return record;
+  const out: Record<string, unknown> = { ...(record as Record<string, unknown>) };
+  for (const f of PII_FIELDS) {
+    if (typeof out[f] === 'string') out[f] = decryptField(out[f] as string);
+  }
+  return out as T;
+}

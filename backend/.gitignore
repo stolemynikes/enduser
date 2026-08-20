@@ -3,3 +3,5 @@ node_modules
 .env
 .env.*
 uploads/
+# Tesseract OCR language data (large binary, downloaded/vendored, not source)
+eng.traineddata
