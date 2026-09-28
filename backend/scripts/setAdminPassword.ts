@@ -100,8 +100,14 @@ await prisma.admin.update({
   // finish() returns never, so this is only reached with a real row — the
   // compiler can't see that through the await.
   where: { id: admin!.id },
-  data: { password: await bcrypt.hash(password, COST) },
+  data: {
+    password: await bcrypt.hash(password, COST),
+    // Changing the password ends every session that was already open.
+    sessionsValidFrom: new Date(),
+    failedLogins: 0,
+    lockedUntil: null,
+  },
 });
 
-console.log(`Password updated for "${username}". Existing tokens stay valid until they expire (8h).`);
+console.log(`Password updated for "${username}". Existing sessions have been ended.`);
 await finish(0);

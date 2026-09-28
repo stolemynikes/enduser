@@ -3,11 +3,13 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import { rateLimit } from 'express-rate-limit';
+import { PrismaRateLimitStore, pruneRateLimits } from './lib/rateLimitStore.ts';
 import cron from 'node-cron';
 import crypto from 'node:crypto';
 import { ApolloServer } from '@apollo/server';
 import { expressMiddleware } from '@as-integrations/express5';
 import depthLimit from 'graphql-depth-limit';
+import { costLimit } from './lib/queryCost.ts';
 import jwt from 'jsonwebtoken';
 import { typeDefs } from './schema.ts';
 import { submissionResolvers, runSubstanceCheck } from './resolvers/submission.ts';
@@ -15,7 +17,7 @@ import { SUBSTANCE_CHECK_ENABLED } from './services/substanceCheck.ts';
 import { authResolvers } from './resolvers/auth.ts';
 import { companyResolvers } from './resolvers/company.ts';
 import { adminResolvers } from './resolvers/admin.ts';
-import { verifyCompanyToken } from './services/companyAuth.ts';
+import { contextFor } from './lib/authContext.ts';
 import {
   DIDIT_ENABLED,
   createVerificationSession,
@@ -23,7 +25,7 @@ import {
   deleteSession,
 } from './services/didit.ts';
 import {
-  atCapacity,
+  checkCapacity,
   cacheStatus,
   cachedStatus,
   isKnownSession,
@@ -34,12 +36,31 @@ import {
 import { WEBHOOK_CONFIGURED, claimEvent, pruneEvents, verifyWebhook } from './services/diditWebhook.ts';
 import { purgeDeletedCompanies, DELETION_GRACE_DAYS, RETENTION_MONTHS } from './lib/retention.ts';
 import { pruneAuthTokens } from './lib/authTokens.ts';
+import { pruneMailBudget } from './lib/mailBudget.ts';
 import { prisma } from './lib/prisma.ts';
+import { pseudonym } from './lib/tokens.ts';
 
 const IS_PROD = process.env.NODE_ENV === 'production';
-const JWT_SECRET = process.env.JWT_SECRET;
-if (!JWT_SECRET) throw new Error('JWT_SECRET env var is required');
-if (!process.env.COMPANY_JWT_SECRET) throw new Error('COMPANY_JWT_SECRET env var is required');
+// A signing secret decides who is an administrator, so its strength is checked
+// at boot the same way the encryption key's format is.
+const MIN_SECRET_LENGTH = 32;
+function requireSecret(name: string): string {
+  const value = process.env[name];
+  if (!value) throw new Error(`${name} env var is required`);
+  if (value.length < MIN_SECRET_LENGTH) {
+    throw new Error(`${name} must be at least ${MIN_SECRET_LENGTH} characters (generate with: openssl rand -hex 32)`);
+  }
+  return value;
+}
+const JWT_SECRET = requireSecret('JWT_SECRET');
+requireSecret('COMPANY_JWT_SECRET');
+
+// Behind more proxies than this, X-Forwarded-For can be forged and every
+// IP-keyed limit evaded; behind fewer, every client looks like the proxy.
+const TRUST_PROXY_HOPS = Number(process.env.TRUST_PROXY_HOPS ?? 1);
+if (!Number.isInteger(TRUST_PROXY_HOPS) || TRUST_PROXY_HOPS < 0) {
+  throw new Error('TRUST_PROXY_HOPS must be a non-negative integer');
+}
 
 const ALLOWED_ORIGIN: string | false = process.env.FRONTEND_URL ?? (IS_PROD ? false : '*');
 
@@ -99,8 +120,10 @@ const server = new ApolloServer({
   introspection: !IS_PROD,
   // Reject one-request query batching (amplification vector).
   allowBatchedHttpRequests: false,
-  // Deeply nested queries are a DoS vector; our schema needs depth ~4.
-  validationRules: [depthLimit(8)],
+  // Depth bounds how far a query reaches; cost bounds how much it asks for.
+  // Without the second, aliases multiplied both work and side effects while the
+  // per-request rate limiters saw one request.
+  validationRules: [depthLimit(8), costLimit()],
   includeStacktraceInErrorResponses: !IS_PROD,
   formatError: (formatted) => {
     if (!IS_PROD) return formatted;
@@ -116,7 +139,7 @@ await server.start();
 
 const app = express();
 
-app.set('trust proxy', 1);
+app.set('trust proxy', TRUST_PROXY_HOPS);
 
 app.use(helmet({
   crossOriginEmbedderPolicy: false,
@@ -137,47 +160,33 @@ app.use((req, res, next) => {
   return jsonParser(req, res, next);
 });
 
-const apiLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: 120,
-  standardHeaders: true,
-  legacyHeaders: false,
+// Every limiter counts in Postgres: budgets survive a restart and are shared
+// across instances.
+const limiter = (name: string, windowMs: number, max: number) => rateLimit({
+  windowMs, max, standardHeaders: true, legacyHeaders: false,
+  store: new PrismaRateLimitStore(name),
 });
 
-const loginLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 10,
-  standardHeaders: true,
-  legacyHeaders: false,
-});
+const apiLimiter = limiter('api', 60 * 1000, 120);
+
+const loginLimiter = limiter('login', 15 * 60 * 1000, 10);
 
 // Starting a verification creates a paid Didit session, so this is a cost
 // control as much as an abuse control: 10 per minute per IP.
-const extractLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: 10,
-  standardHeaders: true,
-  legacyHeaders: false,
-});
+const extractLimiter = limiter('verify-start', 60 * 1000, 10);
 
 // Polling runs for as long as the buyer is inside the hosted flow, so it needs
 // far more headroom than starting one. The store's own 3s refresh floor is what
 // keeps this from being amplified into requests against Didit.
-const statusLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: 60,
-  standardHeaders: true,
-  legacyHeaders: false,
-});
+const statusLimiter = limiter('verify-status', 60 * 1000, 60);
 
 // Public, unauthenticated, and each submission triggers costly outbound work
 // (VIES lookup, PubChem substance check) — keep this well below the API limit.
-const submitLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 10,
-  standardHeaders: true,
-  legacyHeaders: false,
-});
+const submitLimiter = limiter('submit', 15 * 60 * 1000, 10);
+
+// The webhook route had no limiter at all, and rejecting a forged delivery is
+// not free — see services/diditWebhook.ts for the ordering that makes it cheap.
+const webhookLimiter = limiter('webhook', 60 * 1000, 120);
 
 // Start a hosted identity verification. Public and unauthenticated, so it is
 // rate-limited and bounded by the session store's capacity. The document never
@@ -188,11 +197,6 @@ app.post('/verification-session', extractLimiter, async (req, res) => {
     res.status(503).json({ error: 'Identity verification is not configured.' });
     return;
   }
-  if (await atCapacity()) {
-    res.status(503).json({ error: 'Server busy, please try again shortly.' });
-    return;
-  }
-
   // The form's company decides which tenant the session belongs to; the session
   // can then only be spent on that company's form.
   const slug = typeof (req.body as { companySlug?: unknown })?.companySlug === 'string'
@@ -204,6 +208,21 @@ app.post('/verification-session', extractLimiter, async (req, res) => {
     companyId = company?.id ?? null;
   }
 
+  // Budgets are per caller and per tenant. The previous single global bucket
+  // was itself the vulnerability: filling it stopped every seller's buyers from
+  // verifying, and burned the monthly allowance doing so.
+  const ipHash = req.ip ? pseudonym(req.ip) : null;
+  const capacity = await checkCapacity(ipHash, companyId);
+  if (!capacity.ok) {
+    console.warn(`[didit] verification refused — ${capacity.reason} capacity reached`);
+    res.status(429).json({
+      error: capacity.reason === 'ip'
+        ? 'Too many verifications started from this device. Finish the one you started, or try again shortly.'
+        : 'Identity verification is busy, please try again shortly.',
+    });
+    return;
+  }
+
   try {
     // vendor_data is echoed back by Didit and stored on their side, so it is a
     // random reference — never the buyer's email, name or our submission id.
@@ -211,7 +230,7 @@ app.post('/verification-session', extractLimiter, async (req, res) => {
       vendorData: crypto.randomBytes(16).toString('hex'),
       callbackUrl: VERIFICATION_CALLBACK,
     });
-    await registerSession(sessionId, companyId);
+    await registerSession(sessionId, companyId, ipHash);
     res.json({ sessionId, url });
   } catch (err: any) {
     console.error(`[didit] session creation failed: ${err?.message ?? 'unknown error'}`);
@@ -242,7 +261,7 @@ app.get('/verification-status/:sessionId', statusLimiter, async (req, res) => {
 // Didit webhook. Mounted with express.raw so the signature is checked against
 // the exact bytes received — see services/diditWebhook.ts. Nothing in the body
 // is trusted: on a valid signature the decision is re-fetched from the API.
-app.post('/didit-webhook', express.raw({ type: '*/*', limit: '1mb' }), async (req, res) => {
+app.post('/didit-webhook', webhookLimiter, express.raw({ type: '*/*', limit: '256kb' }), async (req, res) => {
   if (!WEBHOOK_CONFIGURED) { res.status(503).end(); return; }
 
   const raw = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
@@ -317,28 +336,11 @@ app.use(
   '/graphql',
   apiLimiter,
   expressMiddleware(server, {
-    context: async ({ req }) => {
-      const auth = req.headers.authorization ?? '';
-      if (auth.startsWith('Bearer ')) {
-        const token = auth.slice(7);
-        // Try admin token first
-        try {
-          const payload = jwt.verify(token, JWT_SECRET) as { adminId: string };
-          return { admin: true, adminId: payload.adminId };
-        } catch {}
-        // Try company member token
-        const company = verifyCompanyToken(token);
-        if (company) {
-          if (company.support) {
-            // Admin acting as this company — audit-log every operation.
-            const op = (req.body as { operationName?: string })?.operationName ?? 'anonymous operation';
-            console.log(`[support] admin ${company.adminId} → company ${company.companyId}: ${op}`);
-          }
-          return { companyUserId: company.companyUserId, companyId: company.companyId, companyRole: company.role };
-        }
-      }
-      return {};
-    },
+    context: async ({ req }) =>
+      contextFor(
+        req.headers.authorization,
+        (req.body as { operationName?: string })?.operationName ?? 'anonymous operation',
+      ),
   })
 );
 
@@ -355,8 +357,11 @@ cron.schedule('0 2 * * *', async () => {
   const sessions = await pruneSessions();
   const events = await pruneEvents();
   const tokens = await pruneAuthTokens();
-  if (sessions || events || tokens) {
-    console.log(`Maintenance: pruned ${sessions} verification session(s), ${events} webhook event(s), ${tokens} auth token(s)`);
+  const limits = await pruneRateLimits();
+  const mail = await pruneMailBudget();
+  if (sessions || events || tokens || limits || mail) {
+    console.log(`Maintenance: pruned ${sessions} verification session(s), ${events} webhook event(s), `
+      + `${tokens} auth token(s), ${limits} rate-limit row(s), ${mail} mail budget row(s)`);
   }
 
   const purged = await purgeDeletedCompanies();

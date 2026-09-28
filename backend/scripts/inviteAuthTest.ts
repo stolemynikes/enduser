@@ -33,6 +33,9 @@ const ACCEPT = `mutation($token:String!,$name:String!,$password:String!){
 }`;
 
 async function main() {
+  // Budgets now live in Postgres and survive restarts, so a previous run's
+  // registrations would otherwise refuse this one's.
+  await prisma.rateLimitHit.deleteMany({});
   const run = Date.now();
   const hostEmail = `inv-host-${run}@test.local`;
   const guestEmail = `inv-guest-${run}@test.local`;

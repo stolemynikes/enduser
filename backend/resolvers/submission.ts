@@ -43,6 +43,8 @@ import {
   sendAdminNotification,
 } from '../services/email.ts';
 import { notifyCompanyOfSubmission, sellerName } from '../lib/notify.ts';
+import { verifyHumanOrThrow } from '../services/turnstile.ts';
+import { mailBudgetAllows } from '../lib/mailBudget.ts';
 import { statementCopy } from '../lib/statementCopy.ts';
 
 export const submissionResolvers = {
@@ -62,7 +64,11 @@ export const submissionResolvers = {
       _: unknown,
       { input }: { input: Record<string, string | boolean> }
     ) => {
-      const { agreedToTerms, ...data } = input;
+      const { agreedToTerms, turnstileToken, ...data } = input as Record<string, any>;
+      // The form is public and every submission costs outbound work — a VIES
+      // lookup, PubChem calls, mail — so the first question is whether there is
+      // a person here at all.
+      await verifyHumanOrThrow(typeof turnstileToken === 'string' ? turnstileToken : undefined);
       if (!agreedToTerms) throw new Error('You must agree to the terms and conditions.');
 
       const SHORT = 255, LONG = 2000;
@@ -116,8 +122,18 @@ export const submissionResolvers = {
       let companyId: string | undefined;
       let config: FormConfig = DEFAULT_CONFIG;
       if (companySlug) {
-        const co = await prisma.company.findUnique({ where: { slug: companySlug } });
+        const co = await prisma.company.findUnique({
+          where: { slug: companySlug },
+          include: { members: { where: { role: 'OWNER' }, select: { user: { select: { emailVerifiedAt: true } } }, take: 1 } },
+        });
         if (co) {
+          // Enforced here as well as in formInfo: a form belonging to an
+          // unconfirmed account accepts nothing, so registering under someone
+          // else's address buys an attacker a dead page rather than a working
+          // collection point.
+          if (co.deletedAt || co.members[0]?.user.emailVerifiedAt == null) {
+            throw new Error('This form is not accepting submissions yet.');
+          }
           companyId = co.id;
           config = resolveConfig(co.formConfig);
         }
@@ -290,10 +306,12 @@ export const submissionResolvers = {
 
       // No auto-decisions: every submission goes to manual review (an invalid VAT
       // is surfaced as a flag in the dashboard, not an automatic rejection).
-      // The buyer keeps their own copy — the declaration as submitted, without
-      // any identity document details.
-      const copy = await statementCopy(submission);
-      await sendSubmissionReceived(submission.email, name, seller, copy).catch(() => {});
+      // The receipt goes to an address nobody has proved they own, so it stays
+      // small and budgeted: no attachment here. The buyer's copy is attached to
+      // the approval instead, once a person has decided.
+      if (await mailBudgetAllows(submission.email, 'submission')) {
+        await sendSubmissionReceived(submission.email, name, seller).catch(() => {});
+      }
       await sendAdminNotification(submission.id, submission.companyName).catch(() => {});
       // The seller has to learn about this from something other than refreshing
       // the dashboard.

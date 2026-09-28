@@ -16,6 +16,12 @@ export const WEBHOOK_CONFIGURED = !!SECRET;
 // Didit's documented replay window.
 const MAX_SKEW_MS = 300 * 1000;
 
+// The V2 path has to parse the body, sort every key and re-serialise it twice
+// before it can decide anything — work an unauthenticated caller was able to
+// demand with an 833 KB body, at ~16 ms of server time each. Real deliveries are
+// small, so anything larger is refused before that work starts.
+const MAX_V2_BODY = 32 * 1024;
+
 // Duplicate delivery is expected (Didit retries), so an event is processed at
 // most once. Recorded in Postgres rather than memory, so a restart cannot cause
 // a redelivered event to be processed twice and two instances cannot both claim
@@ -117,6 +123,14 @@ export function verifyWebhook(raw: Buffer, headers: Record<string, unknown>): We
     return typeof v === 'string' ? v : Array.isArray(v) ? String(v[0] ?? '') : '';
   };
 
+  // Cheapest checks first: a forged delivery should cost a string comparison,
+  // not a megabyte of JSON work.
+  const rawSigHeader = header('x-signature');
+  const v2Header = header('x-signature-v2');
+  if (!rawSigHeader && !v2Header) {
+    return { ok: false, reason: 'no usable signature header' };
+  }
+
   const timestamp = Number(header('x-timestamp'));
   if (!Number.isFinite(timestamp) || timestamp <= 0) {
     return { ok: false, reason: 'missing or invalid x-timestamp' };
@@ -136,23 +150,21 @@ export function verifyWebhook(raw: Buffer, headers: Record<string, unknown>): We
     };
   }
 
-  // Preferred: signature over the exact bytes we received. Unambiguous, no
+  // Preferred: signature over the exact bytes we received. One HMAC, no
   // re-serialisation, so nothing can drift between their encoder and ours.
-  const rawSig = header('x-signature');
-  if (rawSig) {
-    return matches(hmac(raw), rawSig) ? { ok: true } : { ok: false, reason: 'x-signature mismatch' };
+  if (rawSigHeader) {
+    return matches(hmac(raw), rawSigHeader) ? { ok: true } : { ok: false, reason: 'x-signature mismatch' };
   }
 
-  const v2 = header('x-signature-v2');
-  if (v2) {
-    for (const candidate of v2Candidates(raw)) {
-      if (matches(hmac(candidate), v2)) return { ok: true };
-    }
-    return { ok: false, reason: 'x-signature-v2 mismatch' };
+  if (raw.length > MAX_V2_BODY) {
+    return { ok: false, reason: `body too large for the v2 signature path (${raw.length} bytes)` };
   }
+  for (const candidate of v2Candidates(raw)) {
+    if (matches(hmac(candidate), v2Header)) return { ok: true };
+  }
+  return { ok: false, reason: 'x-signature-v2 mismatch' };
 
   // X-Signature-Simple only covers the envelope, not the payload — treating it
   // as proof of authenticity would let a caller keep the outer fields and swap
-  // everything else, so it is not accepted.
-  return { ok: false, reason: 'no usable signature header' };
+  // everything else, so it is never accepted.
 }

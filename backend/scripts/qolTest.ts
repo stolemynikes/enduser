@@ -30,6 +30,9 @@ const REGISTER = `mutation($name:String!,$slug:String!,$email:String!,$password:
 const LOGIN = `mutation($email:String!,$password:String!){ companyLogin(email:$email,password:$password){ token role company{ slug } } }`;
 
 async function main() {
+  // Budgets now live in Postgres and survive restarts, so a previous run's
+  // registrations would otherwise refuse this one's.
+  await prisma.rateLimitHit.deleteMany({});
   const run = Date.now();
   const ownerEmail = `qol-${run}@test.local`;
   const slugA = `qoltest-a-${run}`;

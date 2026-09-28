@@ -32,6 +32,9 @@ const REGISTER = `mutation($name:String!,$slug:String!,$email:String!,$password:
 }`;
 
 async function main() {
+  // Budgets now live in Postgres and survive restarts, so a previous run's
+  // registrations would otherwise refuse this one's.
+  await prisma.rateLimitHit.deleteMany({});
   console.log('— Setup: register two tenants —');
   const a = await gql(REGISTER, { name: `IsoTest A ${run}`, slug: `isotest-a-${run}`, email: `iso-a-${run}@test.local`, password: 'test-password-1', yourName: 'Owner A' });
   const b = await gql(REGISTER, { name: `IsoTest B ${run}`, slug: `isotest-b-${run}`, email: `iso-b-${run}@test.local`, password: 'test-password-1', yourName: 'Owner B' });

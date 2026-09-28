@@ -322,9 +322,17 @@ export const typeDefs = `#graphql
     diditSessionId: String
     agreedToTerms: Boolean!
     companySlug: String
+    """Cloudflare Turnstile response, required once TURNSTILE_SECRET is configured."""
+    turnstileToken: String
+  }
+
+  type PublicConfig {
+    """Site key for the anti-robot check; null when it is not configured."""
+    turnstileSiteKey: String
   }
 
   type Query {
+    publicConfig: PublicConfig!
     submissions: [Submission!]!
     submission(id: ID!): Submission
     companySubmissions(
@@ -355,13 +363,13 @@ export const typeDefs = `#graphql
     recheckSubmissionSubstance(id: ID!): Submission!
     overrideSubmissionCheck(id: ID!, category: OverrideCategory!, reason: String!): Submission!
     clearSubmissionCheckOverride(id: ID!, category: OverrideCategory!): Submission!
-    adminLogin(username: String!, password: String!): AuthPayload!
-    registerCompany(name: String!, slug: String!, email: String!, password: String!, yourName: String!): CompanyAuthPayload!
-    companyLogin(email: String!, password: String!): CompanyAuthPayload!
+    adminLogin(username: String!, password: String!, turnstileToken: String): AuthPayload!
+    registerCompany(name: String!, slug: String!, email: String!, password: String!, yourName: String!, turnstileToken: String): CompanyAuthPayload!
+    companyLogin(email: String!, password: String!, turnstileToken: String): CompanyAuthPayload!
     inviteMember(email: String!, role: CompanyRole!): CompanyInviteResult!
     acceptInvite(token: String!, name: String!, password: String!): CompanyAuthPayload!
     """Always returns true — whether an account exists is not disclosed here."""
-    requestPasswordReset(email: String!): Boolean!
+    requestPasswordReset(email: String!, turnstileToken: String): Boolean!
     resetPassword(token: String!, password: String!): Boolean!
     verifyEmail(token: String!): Boolean!
     resendEmailVerification: Boolean!

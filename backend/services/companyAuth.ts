@@ -3,6 +3,8 @@ import jwt from 'jsonwebtoken';
 const SECRET = process.env.COMPANY_JWT_SECRET!;
 
 export type CompanyTokenPayload = {
+  /** Issued-at, present on verified tokens; used to refuse pre-reset sessions. */
+  iat?: number;
   companyUserId: string;
   companyId: string;
   role: string;
@@ -19,7 +21,8 @@ export function signCompanyToken(payload: CompanyTokenPayload): string {
 
 export function verifyCompanyToken(token: string): CompanyTokenPayload | null {
   try {
-    return jwt.verify(token, SECRET) as CompanyTokenPayload;
+    // Pin the algorithm rather than letting the library infer it from the key.
+    return jwt.verify(token, SECRET, { algorithms: ['HS256'] }) as CompanyTokenPayload;
   } catch {
     return null;
   }

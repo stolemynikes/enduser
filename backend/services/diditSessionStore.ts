@@ -13,9 +13,16 @@ import { prisma } from '../lib/prisma.ts';
 import type { DiditVerificationStatus } from './didit.ts';
 
 const TTL_MS = 60 * 60 * 1000; // 1 hour — hosted flow plus finishing the form
-// Bounds concurrent sessions so the public "start verification" endpoint cannot
-// be used to run up the bill; the rate limiter is the first line of defence.
-const MAX_LIVE_SESSIONS = 1000;
+
+// Capacity used to be a single global bucket of 1000. That bucket was itself
+// the vulnerability: anyone willing to open sessions could fill it and every
+// seller's identity step answered "server busy" for an hour, while the monthly
+// verification allowance burned. Budgets are now per caller and per tenant, so
+// one abuser exhausts only their own share.
+const MAX_PER_IP = 3;
+const MAX_PER_COMPANY = 50;
+/** A ceiling well above legitimate concurrent use, as a last stop. */
+const MAX_LIVE_SESSIONS = 5000;
 // Minimum gap between decision fetches for one session, so a browser polling in
 // a tight loop cannot be turned into an amplifier against Didit.
 const POLL_INTERVAL_MS = 3000;
@@ -25,16 +32,31 @@ function liveWhere(sessionId: string) {
   return { sessionId, consumedAt: null, expiresAt: { gt: new Date() } };
 }
 
-export async function atCapacity(): Promise<boolean> {
-  const live = await prisma.verificationSession.count({
-    where: { consumedAt: null, expiresAt: { gt: new Date() } },
-  });
-  return live >= MAX_LIVE_SESSIONS;
+export type CapacityVerdict = { ok: true } | { ok: false; reason: 'ip' | 'company' | 'global' };
+
+/**
+ * May this caller start another verification? Checked per address and per
+ * tenant before the global ceiling, so a flood is contained to whoever is
+ * causing it.
+ */
+export async function checkCapacity(ipHash: string | null, companyId: string | null): Promise<CapacityVerdict> {
+  const live = { consumedAt: null, expiresAt: { gt: new Date() } };
+  const [fromIp, forCompany, total] = await Promise.all([
+    ipHash ? prisma.verificationSession.count({ where: { ...live, ipHash } }) : Promise.resolve(0),
+    companyId ? prisma.verificationSession.count({ where: { ...live, companyId } }) : Promise.resolve(0),
+    prisma.verificationSession.count({ where: live }),
+  ]);
+  if (fromIp >= MAX_PER_IP) return { ok: false, reason: 'ip' };
+  if (companyId && forCompany >= MAX_PER_COMPANY) return { ok: false, reason: 'company' };
+  if (total >= MAX_LIVE_SESSIONS) return { ok: false, reason: 'global' };
+  return { ok: true };
 }
 
-export async function registerSession(sessionId: string, companyId: string | null): Promise<void> {
+export async function registerSession(
+  sessionId: string, companyId: string | null, ipHash: string | null,
+): Promise<void> {
   await prisma.verificationSession.create({
-    data: { sessionId, companyId, expiresAt: new Date(Date.now() + TTL_MS) },
+    data: { sessionId, companyId, ipHash, expiresAt: new Date(Date.now() + TTL_MS) },
   });
 }
 
