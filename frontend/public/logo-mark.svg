@@ -1,0 +1,9 @@
+<!-- The mark on its own, transparent ground, for dark surfaces. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" fill="none">
+  <g stroke-linecap="round">
+    <path d="M11.5 4.5H7A2.5 2.5 0 0 0 4.5 7v18A2.5 2.5 0 0 0 7 27.5h4.5" stroke="#f0f2f8" stroke-width="2.6"/>
+    <path d="M20.5 4.5H25A2.5 2.5 0 0 1 27.5 7v18a2.5 2.5 0 0 1-2.5 2.5h-4.5" stroke="#f0f2f8" stroke-width="2.6"/>
+    <path d="M12 13.4h8" stroke="#5b9cf6" stroke-width="2.8"/>
+    <path d="M12 19.2h5" stroke="#5d6577" stroke-width="2.8"/>
+  </g>
+</svg>
