@@ -1,6 +1,6 @@
 # Project status — work completed & security posture
 
-_Last updated: 2026-08-03_
+_Last updated: 2026-09-28_
 
 A single reference covering what has been built and verified in this codebase,
 the tooling added around it, and the security position with its open items.
@@ -273,7 +273,30 @@ Chosen from the audit's QoL list and built in one pass. Twelve items:
 Covered by `backend/scripts/qolTest.ts` (31 assertions: reset, verification,
 paging, test isolation, redaction, switching, closure and purge).
 
-### 1.9 Verification tooling
+### 1.9 Security audit and hardening (2026-09-27/28)
+
+A full review from both sides of the login, with every finding demonstrated
+against a running instance before it was fixed. Sixteen issues closed; the
+details and the before/after table are in SECURITY.md §2.12.
+
+The three that mattered most: one HTTP request could carry any number of aliased
+`submitEndUserStatement` mutations while the rate limiter saw a single request;
+authorization trusted the JWT's claims, so removing a member or demoting an owner
+did nothing for up to 30 days; and anyone could fill a global 1000-session bucket
+and stop every seller's identity verification for an hour while burning the
+monthly allowance.
+
+Also added: Cloudflare Turnstile on the public form, both logins, registration
+and password reset — inert until `TURNSTILE_SECRET` and `TURNSTILE_SITE_KEY` are
+set, so development is unchanged.
+
+`npm test` now runs all eight suites (134 assertions), including
+`securityRegressionTest.ts`, which re-runs each exploit and asserts it fails.
+
+**Environment variables added:** `TURNSTILE_SECRET`, `TURNSTILE_SITE_KEY`
+(optional; bot protection off when absent) and `TRUST_PROXY_HOPS` (defaults to 1).
+
+### 1.10 Verification tooling
 
 `backend/scripts/crossTenantTest.ts` — an executable adversarial test that
 registers two real tenants through the live GraphQL API, seeds a submission for

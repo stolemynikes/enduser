@@ -1,6 +1,6 @@
 # Security — implementation status & roadmap
 
-_Last updated: 2026-08-03_
+_Last updated: 2026-09-28_
 
 This document records the security work implemented in this codebase, how it was
 verified, and what remains. It is the reference for anyone picking up the
@@ -210,6 +210,52 @@ be framed by anyone, not only by the seller. The exposure is bounded: the form
 holds no session, performs no state-changing action on a click, and a
 submission still requires the buyer to type every field and pass a hosted
 identity check. Only `/embed/*` should be framable — see §5.2.
+
+---
+
+## 2.12 Findings from the 2026-09-27 audit, and what closed them
+
+A full review, static and live, including an explicit pass from an
+unauthenticated attacker's position. Every exploit below was demonstrated
+against a running instance first and is now an assertion in
+`backend/scripts/securityRegressionTest.ts` (20 checks).
+
+| What was wrong | Why it mattered | What it is now |
+|---|---|---|
+| One request could carry many aliased mutations | The submit limiter counts requests, so a single request created a submission per copy — proven with 3, bounded only by the 1 MB body | A document may contain one mutation (`lib/queryCost.ts`) |
+| Authorization read the JWT's claims | A removed member kept access and a demoted owner kept owner powers for the 30-day token lifetime — both proven | Membership and role are read from the database on every request (`lib/authContext.ts`) |
+| A password reset left sessions open | Resetting *because* a token was stolen did not dislodge the thief | `sessionsValidFrom` refuses tokens issued earlier, with one second of grace for `iat` granularity |
+| No breadth limit on queries | 50 aliased list queries returned 10,000 decrypted rows; 100 aliased public lookups needed no account | Field count, row budget and mutation count are bounded per document |
+| Invite tokens were `cuid()` | Four consecutive invites shared 14 of 25 characters | 32 random bytes, stored only as a SHA-256 digest |
+| The receipt email carried the PDF | The public form would send an attachment to any address, unproven | The copy is attached to the approval instead, and recipients have a budget |
+| One global verification bucket | Filling 1000 sessions stopped every seller's identity step for an hour and burned the monthly allowance — proven with a 503 | Budgets are per address and per tenant, with a far higher global ceiling |
+| The webhook had no rate limit | Rejecting a forged delivery cost ~16 ms of parsing and hashing, unauthenticated and unmetered | Limited, size-capped, and ordered so a forgery costs a string comparison |
+| Logins were limited per IP only | Credential stuffing spread across hosts never met a limit | Per-account lockout after 8 failures, plus Turnstile |
+| Registration named existing accounts | An enumeration oracle | One vague message, and login compares against a dummy hash so timing matches |
+| Ciphertext was not bound to its column | A value moved between columns decrypted cleanly | AES-GCM now binds the column name as additional data (`enc:v2:`), v1 still readable |
+| Secrets were unchecked at boot | A one-character `JWT_SECRET` would have been accepted | Both signing secrets must be at least 32 characters |
+| `trust proxy` was hardcoded | Wrong hop count means forgeable client addresses | `TRUST_PROXY_HOPS`, validated at boot |
+| Limiters lived in process memory | A restart cleared every budget; a second instance doubled them | Counted in Postgres (`lib/rateLimitStore.ts`) |
+| No CSP on the frontend | Any XSS could read the tokens in `localStorage` | `script-src 'self'`, plus HSTS and a permissions policy |
+| Signing up needed no proof of the address | Anyone could register with someone else's address, claim a slug trading on their name, and run a live form on this domain collecting buyers' details under a brand they did not own — proven | A form only goes live once the owner's address is confirmed, enforced in `formInfo` and again in the submit mutation |
+| A committed script created a platform admin | `backend/scripts/.tmp-verify.ts` made an admin with the password `placeholder`; anyone able to run a script against the database had a one-command path to full access | Removed. Scripts with database access are part of the attack surface and are reviewed as such |
+
+Verified clean in the same pass and unchanged since: tenant isolation, guards on
+every resolver, JWT forgery (`alg=none` and wrong-secret both refused, algorithms
+now pinned), outbound URL injection, ReDoS in the statement screener, email
+header injection, and personal data in logs.
+
+**Injection and privilege escalation** have their own suite
+(`backend/scripts/injectionTest.ts`), because "can someone reach the database, or
+make themselves an administrator" deserves evidence rather than assurance. Eight
+classic payloads are sent at the public form lookup, both logins and the
+verification-status route; afterwards every table is still present, no
+administrator exists that did not before, and nobody has been promoted. A company
+named `'; DROP TABLE "Submission"; --` is stored and returned character for
+character. Unknown input fields (`isTest`, `status`, `companyId`, a `role`
+argument) are refused by the schema, no mutation creates or grants platform
+admin, and the only writes to the `Admin` table are command-line scripts that are
+not reachable over HTTP.
 
 ---
 
