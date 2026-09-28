@@ -4,10 +4,12 @@ import { useMutation } from '@apollo/client/react';
 import { useNavigate, Link } from 'react-router-dom';
 import { PasswordInput } from '../src/components/PasswordInput.tsx';
 import { useDocumentTitle } from '../src/lib/useDocumentTitle.ts';
+import { Wordmark } from '../src/components/Mark.tsx';
+import { Turnstile } from '../src/components/Turnstile.tsx';
 
 const REGISTER_COMPANY = gql`
-  mutation RegisterCompany($name: String!, $slug: String!, $email: String!, $password: String!, $yourName: String!) {
-    registerCompany(name: $name, slug: $slug, email: $email, password: $password, yourName: $yourName) {
+  mutation RegisterCompany($name: String!, $slug: String!, $email: String!, $password: String!, $yourName: String!, $turnstileToken: String) {
+    registerCompany(name: $name, slug: $slug, email: $email, password: $password, yourName: $yourName, turnstileToken: $turnstileToken) {
       token
       role
       company { id name slug }
@@ -34,6 +36,7 @@ export default function CompanyRegister() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [password2, setPassword2] = useState('');
+  const [botToken, setBotToken] = useState('');
   const [error, setError] = useState('');
   const [register, { loading }] = useMutation<any>(REGISTER_COMPANY);
 
@@ -54,7 +57,7 @@ export default function CompanyRegister() {
     if (password.length < 8) { setError('Password must be at least 8 characters.'); return; }
     if (password2 !== password) { setError('Passwords don’t match.'); return; }
     try {
-      const { data } = await register({ variables: { name: companyName, slug, email, password, yourName } });
+      const { data } = await register({ variables: { name: companyName, slug, email, password, yourName, turnstileToken: botToken || undefined } });
       localStorage.setItem('companyToken', data.registerCompany.token);
       localStorage.setItem('companyRole', data.registerCompany.role);
       localStorage.setItem('companyName', data.registerCompany.company.name);
@@ -71,7 +74,7 @@ export default function CompanyRegister() {
       <div className="cr-wrap">
         <div className="cr-card">
           <div className="cr-logo">
-            <span className="cr-brand">eu<span className="cr-brand-accent">statement</span></span>
+            <Wordmark size={20} textClassName="cr-brand" accentClassName="cr-brand-accent" />
             <span className="cr-logo-tag">COMPANY</span>
           </div>
           <h1 className="cr-title">Register your company</h1>
@@ -132,7 +135,8 @@ export default function CompanyRegister() {
                 <span className="cr-pw-note cr-pw-strong"><span className="cr-check">✓</span> Passwords match</span>
               )}
             </div>
-            {error && <div className="cr-error" role="alert">{error}</div>}
+            <Turnstile onToken={setBotToken} theme="dark" />
+                {error && <div className="cr-error" role="alert">{error}</div>}
             <button className="cr-btn" type="submit" disabled={loading || !slug || !passwordOk}>
               {loading ? 'Creating account…' : 'Create company account'}
             </button>

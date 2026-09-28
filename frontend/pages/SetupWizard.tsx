@@ -1,6 +1,7 @@
 import { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { useQuery, useMutation } from '@apollo/client/react';
 import gsap from 'gsap';
+import { Mark } from '../src/components/Mark.tsx';
 import {
   type FormConfigT, type FieldMode, type BuyerPolicy,
   CONFIG_KEYS, CONFIG_ROWS, TERMS_MODES, modeLabels, ID_HIDDEN_WARNING,
@@ -148,7 +149,7 @@ export default function SetupWizard({ companyName, companySlug, onDone }: Props)
         <div className="wz-progress"><div className="wz-progress-fill" style={{ width: `${(revealed / (TOTAL_STEPS - 1)) * 100}%` }} /></div>
         <div className="wz-col">
           <div className="wz-intro">
-            <span className="wz-wordmark">eu<b>statement</b></span>
+            <span className="wz-wordmark"><Mark size={18} /> eu<b>statement</b></span>
             <h1 className="wz-title">Welcome, {companyName}</h1>
             <p className="wz-sub">
               Let&rsquo;s set up your end-user statement form — a few quick choices and
@@ -267,7 +268,8 @@ export default function SetupWizard({ companyName, companySlug, onDone }: Props)
                 {draft.idVerification === 'REQUIRED' ? 'on' : 'off'}, terms as{' '}
                 {draft.customTermsMode === 'TEXT' ? 'text' : 'a link'}. You can change all of
                 this later under <b>Form Settings</b> — where you also find the code to put
-                the form straight on your own website.
+                the form straight on your own website. Your form goes live once you confirm your
+                email address.
               </p>
               {saveError && <span className="wz-error">{saveError}</span>}
               <button className="wz-launch-btn" onClick={launch} disabled={saving}>
@@ -304,7 +306,7 @@ const styles = `
   .wz-col { max-width: 640px; margin: 0 auto; padding: 4rem 1.5rem 6rem; display: flex; flex-direction: column; gap: 14px; }
 
   .wz-intro { display: flex; flex-direction: column; gap: 10px; margin-bottom: 1.5rem; }
-  .wz-wordmark { font-size: 14px; font-weight: 800; letter-spacing: -0.02em; }
+  .wz-wordmark { font-size: 14px; font-weight: 800; letter-spacing: -0.02em; display: flex; align-items: center; gap: 8px; }
   .wz-wordmark b { color: var(--wz-blue); font-weight: 800; }
   .wz-title { font-size: 26px; font-weight: 800; letter-spacing: -0.03em; }
   .wz-sub { font-size: 13.5px; color: var(--wz-text-mid); line-height: 1.6; max-width: 480px; }

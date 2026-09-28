@@ -4,10 +4,12 @@ import { useMutation } from '@apollo/client/react';
 import { useNavigate, Link } from 'react-router-dom';
 import { PasswordInput } from '../src/components/PasswordInput.tsx';
 import { useDocumentTitle } from '../src/lib/useDocumentTitle.ts';
+import { Wordmark } from '../src/components/Mark.tsx';
+import { Turnstile } from '../src/components/Turnstile.tsx';
 
 const COMPANY_LOGIN = gql`
-  mutation CompanyLogin($email: String!, $password: String!) {
-    companyLogin(email: $email, password: $password) {
+  mutation CompanyLogin($email: String!, $password: String!, $turnstileToken: String) {
+    companyLogin(email: $email, password: $password, turnstileToken: $turnstileToken) {
       token
       role
       company { id name slug }
@@ -20,6 +22,7 @@ export default function CompanyLogin() {
   useDocumentTitle('Sign in — EU Statement');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [botToken, setBotToken] = useState('');
   // ?expired=1 is set when a lapsed token bounced the user out of the dashboard.
   const [error, setError] = useState(
     new URLSearchParams(window.location.search).has('expired')
@@ -32,7 +35,7 @@ export default function CompanyLogin() {
     e.preventDefault();
     setError('');
     try {
-      const { data } = await login({ variables: { email, password } });
+      const { data } = await login({ variables: { email, password, turnstileToken: botToken || undefined } });
       localStorage.setItem('companyToken', data.companyLogin.token);
       localStorage.setItem('companyRole', data.companyLogin.role);
       localStorage.setItem('companyName', data.companyLogin.company.name);
@@ -49,7 +52,7 @@ export default function CompanyLogin() {
       <div className="cl-wrap">
         <div className="cl-card">
           <div className="cl-logo">
-            <span className="cl-brand">eu<span className="cl-brand-accent">statement</span></span>
+            <Wordmark size={20} textClassName="cl-brand" accentClassName="cl-brand-accent" />
             <span className="cl-logo-tag">COMPANY</span>
           </div>
           <h1 className="cl-title">Sign in</h1>
@@ -65,6 +68,7 @@ export default function CompanyLogin() {
               <PasswordInput id="cl-password" className="cl-input" value={password}
                 onChange={setPassword} required autoComplete="current-password" />
             </div>
+            <Turnstile onToken={setBotToken} theme="dark" />
             {error && <div className="cl-error" role="alert">{error}</div>}
             <p className="cl-forgot"><a href="/forgot">Forgotten your password?</a></p>
             <button className="cl-btn" type="submit" disabled={loading}>

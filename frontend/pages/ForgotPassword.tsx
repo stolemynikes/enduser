@@ -3,15 +3,18 @@ import { gql } from '@apollo/client';
 import { useMutation } from '@apollo/client/react';
 import { useDocumentTitle } from '../src/lib/useDocumentTitle.ts';
 import { authStyles } from '../src/lib/authStyles.ts';
+import { Wordmark } from '../src/components/Mark.tsx';
+import { Turnstile } from '../src/components/Turnstile.tsx';
 
 const REQUEST_RESET = gql`
-  mutation RequestPasswordReset($email: String!) { requestPasswordReset(email: $email) }
+  mutation RequestPasswordReset($email: String!, $turnstileToken: String) { requestPasswordReset(email: $email, turnstileToken: $turnstileToken) }
 `;
 
 export default function ForgotPassword() {
   useDocumentTitle('Reset your password');
   const [email, setEmail] = useState('');
   const [sent, setSent] = useState(false);
+  const [botToken, setBotToken] = useState('');
   const [error, setError] = useState('');
 
   const [request, { loading }] = useMutation<any>(REQUEST_RESET, {
@@ -22,7 +25,7 @@ export default function ForgotPassword() {
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    request({ variables: { email: email.trim() } });
+    request({ variables: { email: email.trim(), turnstileToken: botToken || undefined } });
   };
 
   return (
@@ -31,7 +34,7 @@ export default function ForgotPassword() {
       <div className="au-wrap">
         <div className="au-card">
           <div className="au-logo">
-            <span className="au-brand">eu<span className="au-brand-accent">statement</span></span>
+            <Wordmark size={20} textClassName="au-brand" accentClassName="au-brand-accent" />
           </div>
           {sent ? (
             <>
@@ -54,6 +57,7 @@ export default function ForgotPassword() {
                   <input id="fp-email" className="au-input" type="email" value={email}
                     onChange={e => setEmail(e.target.value)} required autoComplete="email" autoFocus />
                 </div>
+                <Turnstile onToken={setBotToken} theme="dark" />
                 {error && <div className="au-error" role="alert">{error}</div>}
                 <button className="au-btn" type="submit" disabled={loading || !email.trim()}>
                   {loading ? 'Sending…' : 'Send the link'}

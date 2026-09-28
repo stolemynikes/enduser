@@ -7,6 +7,7 @@ import { formatDate, relativeTime } from '../src/lib/format.ts';
 import { useDocumentTitle } from '../src/lib/useDocumentTitle.ts';
 import { useModalDismiss } from '../src/lib/useModalDismiss.ts';
 import { approvable, blockingCategories, categoryFailing, isExpired, isPending, CATEGORY_LABEL } from '../src/lib/approvalGate.ts';
+import { Mark } from '../src/components/Mark.tsx';
 
 const GET_SUBMISSIONS = gql`
   query GetSubmissions {
@@ -382,7 +383,7 @@ export default function Dashboard() {
         <nav className="db-sidebar">
           <div className="db-sb-top">
             <div className="db-sb-brand">
-              <span className="db-nav-wordmark">eu<b>statement</b></span>
+              <span className="db-nav-wordmark"><Mark size={17} /> eu<b>statement</b></span>
               <div className="db-sb-meta">
                 <span className="db-nav-tag">ADMIN</span>
                 <span className="db-nav-title">End-User Statements</span>
@@ -1397,7 +1398,7 @@ const dashStyles = `
   .db-sb-top { flex: 1; display: flex; flex-direction: column; padding: 1.25rem 0.75rem 0; }
   .db-sb-bottom { padding: 0.75rem; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 2px; }
   .db-sb-brand { padding: 0 0.5rem 1.25rem; }
-  .db-nav-wordmark { font-size: 14px; font-weight: 800; letter-spacing: -0.02em; color: var(--text); display: block; margin-bottom: 0.625rem; }
+  .db-nav-wordmark { font-size: 14px; font-weight: 800; letter-spacing: -0.02em; color: var(--text); display: flex; align-items: center; gap: 8px; margin-bottom: 0.625rem; }
   .db-nav-wordmark b { color: var(--blue); font-weight: 800; }
   .db-sb-meta { display: flex; flex-direction: column; gap: 5px; align-items: flex-start; }
   .db-nav-tag {

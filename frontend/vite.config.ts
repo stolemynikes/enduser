@@ -11,6 +11,20 @@ export default defineConfig({
     headers: {
       'X-Content-Type-Options': 'nosniff',
       'Referrer-Policy': 'strict-origin-when-cross-origin',
+      // Kept close to public/_headers so a policy violation shows up in
+      // development rather than on the day it ships. Vite's dev client needs
+      // inline scripts and a websocket, which production does not.
+      'Content-Security-Policy': [
+        "default-src 'self'",
+        "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+        "font-src 'self' https://fonts.gstatic.com",
+        "img-src 'self' data:",
+        "connect-src 'self' ws: wss:",
+        "frame-src https://verify.didit.me",
+        "base-uri 'none'",
+        "object-src 'none'",
+      ].join('; '),
     },
     proxy: {
       '/graphql': 'http://localhost:3000',

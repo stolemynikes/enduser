@@ -5,6 +5,8 @@ import { useParams } from 'react-router-dom';
 import axios from 'axios';
 import { useDocumentTitle } from '../src/lib/useDocumentTitle.ts';
 import { COUNTRIES } from '../src/lib/countries.ts';
+import { Turnstile } from '../src/components/Turnstile.tsx';
+import { useTurnstileRequired } from '../src/lib/useTurnstile.ts';
 
 const SUBMIT_STATEMENT = gql`
   mutation SubmitEndUserStatement($input: SubmitInput!) {
@@ -126,6 +128,7 @@ export default function Form({ embed = false }: { embed?: boolean }) {
   const [verifyStatus, setVerifyStatus] = useState<VerificationStatus | null>(null);
   // Kept only when the popup was blocked, so the buyer gets a link to click.
   const [verifyUrl, setVerifyUrl] = useState<string | null>(null);
+  const [botToken, setBotToken] = useState('');
   const [submitState, setSubmitState] = useState<'idle' | 'submitting' | 'success' | 'error'>('idle');
   const [errorMsg, setErrorMsg] = useState('');
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
@@ -269,6 +272,7 @@ export default function Form({ embed = false }: { embed?: boolean }) {
   // this component. The server re-checks all of it; this is here so nobody
   // submits a half-filled form, and in particular so nobody spends an identity
   // verification on a submission that was going to be rejected anyway.
+  const botCheckPending = useTurnstileRequired(botToken);
   const filled = (v: string) => v.trim().length > 0;
   const emailLooksValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim());
   const missing: string[] = [];
@@ -291,6 +295,7 @@ export default function Form({ embed = false }: { embed?: boolean }) {
   if (!filled(form.statement)) missing.push('statement');
   if (show(cfg.idVerification) && !verificationFinished) missing.push('identity verification');
   if (!agreed) missing.push('agreement to the terms');
+  if (botCheckPending) missing.push('the anti-robot check');
   const canSubmit = missing.length === 0 && (!show(cfg.idVerification) || idVerificationAvailable);
   // A verification is a real, finite resource, so it is not offered until the
   // rest of the form is filled in — an abandoned half-form should not cost one.
@@ -358,6 +363,7 @@ export default function Form({ embed = false }: { embed?: boolean }) {
       // document is read from Didit by the server against this session.
       input.diditSessionId = verifySessionId;
     }
+    if (botToken) input.turnstileToken = botToken;
 
     try {
       await submitMutation({ variables: { input } });
@@ -384,7 +390,7 @@ export default function Form({ embed = false }: { embed?: boolean }) {
             <p className="eu-success-body">
               {notFound
                 ? <>There&rsquo;s no form at this address — please check the link.</>
-                : <>This form isn&rsquo;t set up yet — please check back later.</>}
+                : <>This form isn&rsquo;t open for submissions yet — please check back later.</>}
             </p>
             <p className="eu-success-note">If you received this link from a supplier, contact them for assistance.</p>
           </div>
@@ -683,6 +689,9 @@ export default function Form({ embed = false }: { embed?: boolean }) {
           {(submitState === 'error' || errorMsg) && (
             <div className="eu-error-bar" role="alert">{errorMsg}</div>
           )}
+
+          {/* Anti-robot check — renders nothing unless the server asks for it */}
+          <Turnstile onToken={setBotToken} theme={theme === 'dark' ? 'dark' : 'light'} />
 
           {/* Submit */}
           {missing.length > 0 && (

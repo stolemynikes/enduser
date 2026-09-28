@@ -4,6 +4,7 @@ import { useMutation } from '@apollo/client/react';
 import { useParams } from 'react-router-dom';
 import { useDocumentTitle } from '../src/lib/useDocumentTitle.ts';
 import { authStyles } from '../src/lib/authStyles.ts';
+import { Wordmark } from '../src/components/Mark.tsx';
 
 const VERIFY = gql`mutation VerifyEmail($token: String!) { verifyEmail(token: $token) }`;
 
@@ -28,7 +29,7 @@ export default function VerifyEmail() {
       <div className="au-wrap">
         <div className="au-card">
           <div className="au-logo">
-            <span className="au-brand">eu<span className="au-brand-accent">statement</span></span>
+            <Wordmark size={20} textClassName="au-brand" accentClassName="au-brand-accent" />
           </div>
           {state === 'working' && <><h1 className="au-title">Confirming…</h1><p className="au-sub">One moment.</p></>}
           {state === 'done' && (

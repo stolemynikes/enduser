@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { useDocumentTitle } from '../src/lib/useDocumentTitle.ts';
+import { Wordmark } from '../src/components/Mark.tsx';
 
 gsap.registerPlugin(ScrollTrigger);
 
@@ -108,7 +109,7 @@ export default function LandingPage() {
 
         {/* ============ NAV ============ */}
         <nav className="lp-nav">
-          <span className="lp-brand">eu<span className="lp-brand-accent">statement</span></span>
+          <Wordmark size={20} textClassName="lp-brand" accentClassName="lp-brand-accent" />
           <div className="lp-nav-right">
             <Link to="/login" className="lp-nav-link">Sign in</Link>
             <Link to="/register" className="lp-nav-cta">Get started</Link>

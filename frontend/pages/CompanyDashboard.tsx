@@ -9,6 +9,7 @@ import { useDocumentTitle } from '../src/lib/useDocumentTitle.ts';
 import { useModalDismiss } from '../src/lib/useModalDismiss.ts';
 import { approvable, blockingCategories, categoryFailing, isExpired, isPending, CATEGORY_LABEL } from '../src/lib/approvalGate.ts';
 import SetupWizard from './SetupWizard';
+import { Mark } from '../src/components/Mark.tsx';
 import {
   type FormConfigT, CONFIG_KEYS, CONFIG_ROWS, TERMS_MODES, modeLabels,
   BUYER_TYPE_OPTIONS, BUYER_TYPE_LABEL, BUYER_TYPE_DESC,
@@ -687,7 +688,7 @@ export default function CompanyDashboard() {
         <nav className="cd-sidebar">
           <div className="cd-sb-top">
             <div className="cd-sb-brand">
-              <span className="cd-nav-wordmark">eu<b>statement</b></span>
+              <span className="cd-nav-wordmark"><Mark size={17} /> eu<b>statement</b></span>
               <div className="cd-sb-meta">
                 <span className="cd-nav-tag">{roleLabels[role]}</span>
                 <span className="cd-nav-title">{companyName}</span>
@@ -767,8 +768,9 @@ export default function CompanyDashboard() {
           {account && !account.emailVerified && !verificationDismissed && (
             <div className="cd-banner">
               <span>
-                <b>Confirm your email address.</b> Decisions, invitations and password resets go to{' '}
-                {account.email} — until it is confirmed we cannot be sure they arrive.
+                <b>Confirm your email address to put your form live.</b> Until {account.email} is
+                confirmed, your public form turns visitors away — and decisions, invitations and
+                password resets cannot be relied on to reach you.
               </span>
               <span className="cd-banner-actions">
                 <button className="cd-banner-btn" disabled={resending} onClick={() => resendVerification()}>
@@ -1525,7 +1527,7 @@ const styles = `
   .cd-sb-top { flex: 1; display: flex; flex-direction: column; padding: 1.25rem 0.75rem 0; }
   .cd-sb-bottom { padding: 0.75rem; border-top: 1px solid var(--cd-border); display: flex; flex-direction: column; gap: 2px; }
   .cd-sb-brand { padding: 0 0.5rem 1.25rem; }
-  .cd-nav-wordmark { font-size: 14px; font-weight: 800; letter-spacing: -0.02em; color: var(--cd-text); display: block; margin-bottom: 0.625rem; }
+  .cd-nav-wordmark { font-size: 14px; font-weight: 800; letter-spacing: -0.02em; color: var(--cd-text); display: flex; align-items: center; gap: 8px; margin-bottom: 0.625rem; }
   .cd-nav-wordmark b { color: var(--cd-blue); font-weight: 800; }
   .cd-sb-meta { display: flex; flex-direction: column; gap: 5px; align-items: flex-start; }
   .cd-nav-tag {

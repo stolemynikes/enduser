@@ -4,10 +4,12 @@ import { useMutation } from '@apollo/client/react';
 import { useNavigate } from 'react-router-dom';
 import { PasswordInput } from '../src/components/PasswordInput.tsx';
 import { useDocumentTitle } from '../src/lib/useDocumentTitle.ts';
+import { Wordmark } from '../src/components/Mark.tsx';
+import { Turnstile } from '../src/components/Turnstile.tsx';
 
 const ADMIN_LOGIN = gql`
-  mutation AdminLogin($username: String!, $password: String!) {
-    adminLogin(username: $username, password: $password) {
+  mutation AdminLogin($username: String!, $password: String!, $turnstileToken: String) {
+    adminLogin(username: $username, password: $password, turnstileToken: $turnstileToken) {
       token
     }
   }
@@ -17,6 +19,7 @@ export default function AdminLogin() {
   useDocumentTitle('Admin sign in — EU Statement');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [botToken, setBotToken] = useState('');
   const [error, setError] = useState(
     new URLSearchParams(window.location.search).has('expired')
       ? 'Your session expired — please sign in again.'
@@ -29,7 +32,7 @@ export default function AdminLogin() {
     e.preventDefault();
     setError('');
     try {
-      const { data } = await login({ variables: { username, password } });
+      const { data } = await login({ variables: { username, password, turnstileToken: botToken || undefined } });
       localStorage.setItem('adminToken', data.adminLogin.token);
       navigate('/admin/dashboard');
     } catch {
@@ -42,7 +45,7 @@ export default function AdminLogin() {
       <style>{loginStyles}</style>
       <div className="al-wrap">
         <div className="al-card">
-          <span className="al-brand">eu<span className="al-brand-accent">statement</span></span>
+          <Wordmark size={20} textClassName="al-brand" accentClassName="al-brand-accent" />
           <div className="al-icon">
             <svg viewBox="0 0 24 24" fill="none" stroke="#5b9cf6" strokeWidth="1.8" width="22" height="22">
               <rect x="3" y="11" width="18" height="11" rx="2" strokeLinecap="round"/>
@@ -63,6 +66,7 @@ export default function AdminLogin() {
               <PasswordInput className="al-input" id="password" value={password}
                 onChange={setPassword} required autoComplete="current-password" />
             </div>
+            <Turnstile onToken={setBotToken} theme="dark" />
             {error && <div className="al-error" role="alert">{error}</div>}
             <button className="al-btn" type="submit" disabled={loading}>
               {loading ? 'Signing in…' : 'Sign In'}

@@ -5,6 +5,7 @@ import { useParams } from 'react-router-dom';
 import { PasswordInput } from '../src/components/PasswordInput.tsx';
 import { useDocumentTitle } from '../src/lib/useDocumentTitle.ts';
 import { authStyles } from '../src/lib/authStyles.ts';
+import { Wordmark } from '../src/components/Mark.tsx';
 
 const RESET = gql`
   mutation ResetPassword($token: String!, $password: String!) { resetPassword(token: $token, password: $password) }
@@ -37,7 +38,7 @@ export default function ResetPassword() {
       <div className="au-wrap">
         <div className="au-card">
           <div className="au-logo">
-            <span className="au-brand">eu<span className="au-brand-accent">statement</span></span>
+            <Wordmark size={20} textClassName="au-brand" accentClassName="au-brand-accent" />
           </div>
           {done ? (
             <>

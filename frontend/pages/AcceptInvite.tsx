@@ -4,6 +4,7 @@ import { useMutation } from '@apollo/client/react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { PasswordInput } from '../src/components/PasswordInput.tsx';
 import { useDocumentTitle } from '../src/lib/useDocumentTitle.ts';
+import { Wordmark } from '../src/components/Mark.tsx';
 
 const ACCEPT_INVITE = gql`
   mutation AcceptInvite($token: String!, $name: String!, $password: String!) {
@@ -46,7 +47,7 @@ export default function AcceptInvite() {
       <div className="ai-wrap">
         <div className="ai-card">
           <div className="ai-logo">
-            <span className="ai-brand">eu<span className="ai-brand-accent">statement</span></span>
+            <Wordmark size={20} textClassName="ai-brand" accentClassName="ai-brand-accent" />
             <span className="ai-logo-tag">INVITATION</span>
           </div>
           <h1 className="ai-title">Accept invitation</h1>
