@@ -117,6 +117,13 @@ model CompanyUser {
   passwordHash   String
   name           String
   emailVerifiedAt DateTime?
+  /// Tokens issued before this instant are refused. Bumped on password reset,
+  /// so a stolen session dies when the owner reacts to the theft.
+  sessionsValidFrom DateTime?
+  /// Per-account brute-force state. The IP limiter alone cannot see an attack
+  /// spread across many addresses.
+  failedLogins   Int             @default(0)
+  lockedUntil    DateTime?
   createdAt      DateTime        @default(now())
   memberships    CompanyMember[]
   authTokens     AuthToken[]
@@ -150,6 +157,10 @@ enum AuthTokenKind {
 model VerificationSession {
   sessionId     String               @id
   companyId     String?
+  /// Hashed client address. Capacity is budgeted per address and per tenant, so
+  /// one caller cannot fill a single global bucket and stop every seller's
+  /// identity step.
+  ipHash        String?
   status        IdVerificationStatus @default(PENDING)
   lastCheckedAt DateTime?
   consumedAt    DateTime?
@@ -157,6 +168,8 @@ model VerificationSession {
   createdAt     DateTime             @default(now())
 
   @@index([expiresAt])
+  @@index([ipHash, expiresAt])
+  @@index([companyId, expiresAt])
 }
 
 /// Webhook deliveries already processed. Didit retries, so events must be
@@ -188,7 +201,10 @@ model CompanyInvite {
   companyId String
   email     String
   role      CompanyRole @default(EMPLOYEE)
-  token     String      @unique @default(cuid())
+  /// SHA-256 of a 32-byte random token. The previous cuid() default leaked its
+  /// own structure — consecutive invites shared most of their characters — and
+  /// the raw value should never be at rest anyway.
+  tokenHash String      @unique
   expiresAt DateTime
   usedAt    DateTime?
   createdAt DateTime    @default(now())
@@ -258,9 +274,36 @@ model Admin {
   id       String @id @default(uuid())
   username String @unique
   password String
+  sessionsValidFrom DateTime?
+  failedLogins Int      @default(0)
+  lockedUntil  DateTime?
 }
 
 // Audit trail: one row per admin "act as company" support session.
+/// Rate-limit counters. In memory they were per-process — a restart cleared
+/// every budget and a second instance doubled them all.
+model RateLimitHit {
+  key         String
+  windowStart DateTime
+  count       Int      @default(0)
+  expiresAt   DateTime
+
+  @@id([key, windowStart])
+  @@index([expiresAt])
+}
+
+/// Outbound mail budget per recipient, so the public form cannot be turned into
+/// a mailer aimed at someone else's inbox.
+model MailBudget {
+  recipientHash String
+  kind          String
+  sentAt        DateTime @default(now())
+  id            String   @id @default(cuid())
+
+  @@index([recipientHash, kind, sentAt])
+  @@index([sentAt])
+}
+
 model SupportAccess {
   id        String   @id @default(cuid())
   adminId   String
