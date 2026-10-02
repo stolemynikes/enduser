@@ -5,3 +5,4 @@ node_modules
 uploads/
 # Tesseract OCR language data (large binary, downloaded/vendored, not source)
 eng.traineddata
+preview/

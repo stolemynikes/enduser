@@ -5,13 +5,22 @@ function esc(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST,
-  port: Number(process.env.SMTP_PORT) || 587,
-  auth: process.env.SMTP_USER
-    ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS }
-    : undefined,
-});
+// Preview mode captures what would have been sent instead of connecting to a
+// mail server, so the templates can be looked at without a mailbox and without
+// delivering anything. Refused outside development: a flag that silently stops
+// mail going out is not something production should be able to turn on.
+const PREVIEW = process.env.MAIL_PREVIEW === '1' && process.env.NODE_ENV !== 'production';
+if (PREVIEW) console.warn('[mail] MAIL_PREVIEW=1 — messages are rendered, not sent.');
+
+const transporter = PREVIEW
+  ? nodemailer.createTransport({ jsonTransport: true })
+  : nodemailer.createTransport({
+      host: process.env.SMTP_HOST,
+      port: Number(process.env.SMTP_PORT) || 587,
+      auth: process.env.SMTP_USER
+        ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS }
+        : undefined,
+    });
 
 const FROM_ADDRESS = process.env.SMTP_FROM ?? 'noreply@enduser.com';
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL ?? 'admin@enduser.com';
@@ -55,7 +64,7 @@ export async function sendSubmissionReceived(
   to: string, name: string, sellerName?: string, copy?: StatementCopy,
 ) {
   const who = sellerName ?? 'the supplier';
-  await transporter.sendMail({
+  return transporter.sendMail({
     from: sellerFrom(sellerName), to,
     subject: sellerName
       ? `${sellerName} received your end-user statement`
@@ -71,7 +80,7 @@ export async function sendSubmissionReceived(
 export async function sendApproved(
   to: string, name: string, sellerName?: string, copy?: StatementCopy,
 ) {
-  await transporter.sendMail({
+  return transporter.sendMail({
     from: sellerFrom(sellerName), to,
     subject: 'Your end-user statement has been approved',
     html: layout(`<p>Dear ${esc(name)},</p>
@@ -83,7 +92,7 @@ export async function sendApproved(
 }
 
 export async function sendDenied(to: string, name: string, reason: string, sellerName?: string) {
-  await transporter.sendMail({
+  return transporter.sendMail({
     from: sellerFrom(sellerName), to,
     subject: 'Your end-user statement has been declined',
     html: layout(`<p>Dear ${esc(name)},</p>
@@ -104,7 +113,7 @@ export async function sendNewSubmissionToCompany(
 ) {
   if (recipients.length === 0) return;
   const from = buyerCompany ? `${buyerName} (${buyerCompany})` : buyerName;
-  await transporter.sendMail({
+  return transporter.sendMail({
     from: { name: PLATFORM, address: FROM_ADDRESS },
     // One address per message rather than a shared To line, so recipients do not
     // see each other and each mail can be filtered on its own.
@@ -120,7 +129,7 @@ export async function sendNewSubmissionToCompany(
 }
 
 export async function sendCompanyInvite(to: string, inviterName: string, companyName: string, inviteUrl: string) {
-  await transporter.sendMail({
+  return transporter.sendMail({
     from: sellerFrom(companyName), to,
     subject: `You've been invited to join ${companyName}`,
     html: layout(`<p>Hi,</p>
@@ -133,7 +142,7 @@ export async function sendCompanyInvite(to: string, inviterName: string, company
 }
 
 export async function sendPasswordReset(to: string, name: string, resetUrl: string) {
-  await transporter.sendMail({
+  return transporter.sendMail({
     from: { name: PLATFORM, address: FROM_ADDRESS }, to,
     subject: 'Reset your password',
     html: layout(`<p>Hi ${esc(name)},</p>
@@ -146,7 +155,7 @@ export async function sendPasswordReset(to: string, name: string, resetUrl: stri
 }
 
 export async function sendEmailVerification(to: string, name: string, verifyUrl: string) {
-  await transporter.sendMail({
+  return transporter.sendMail({
     from: { name: PLATFORM, address: FROM_ADDRESS }, to,
     subject: 'Confirm your email address',
     html: layout(`<p>Hi ${esc(name)},</p>
@@ -158,7 +167,7 @@ export async function sendEmailVerification(to: string, name: string, verifyUrl:
 }
 
 export async function sendAdminNotification(submissionId: string, companyName: string) {
-  await transporter.sendMail({
+  return transporter.sendMail({
     from: { name: PLATFORM, address: FROM_ADDRESS },
     to: ADMIN_EMAIL,
     subject: 'New end-user statement pending review',
