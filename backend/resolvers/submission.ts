@@ -47,11 +47,28 @@ import { verifyHumanOrThrow } from '../services/turnstile.ts';
 import { mailBudgetAllows } from '../lib/mailBudget.ts';
 import { statementCopy } from '../lib/statementCopy.ts';
 
+/** Minimum gap between manual substance re-runs for one submission. */
+const RECHECK_COOLDOWN_MS = 30_000;
+
 export const submissionResolvers = {
   Query: {
-    submissions: (_: unknown, __: unknown, ctx: { admin?: boolean }) => {
+    /**
+     * The platform-wide queue. Paged: unbounded, this decrypted every
+     * submission in the database into one response, so a single click turned
+     * into a memory spike proportional to the whole platform's history.
+     */
+    submissions: (
+      _: unknown,
+      { limit, offset }: { limit?: number; offset?: number },
+      ctx: { admin?: boolean },
+    ) => {
       if (!ctx.admin) throw new Error('Unauthorized');
-      return prisma.submission.findMany({ orderBy: { createdAt: 'desc' }, include: { overrides: true } });
+      return prisma.submission.findMany({
+        orderBy: { createdAt: 'desc' },
+        include: { overrides: true },
+        take: Math.min(Math.max(limit ?? 200, 1), 200),
+        skip: Math.max(offset ?? 0, 0),
+      });
     },
     submission: (_: unknown, { id }: { id: string }, ctx: { admin?: boolean }) => {
       if (!ctx.admin) throw new Error('Unauthorized');
@@ -312,7 +329,11 @@ export const submissionResolvers = {
       if (await mailBudgetAllows(submission.email, 'submission')) {
         await sendSubmissionReceived(submission.email, name, seller).catch(() => {});
       }
-      await sendAdminNotification(submission.id, submission.companyName).catch(() => {});
+      // Same reasoning as the seller notification: the public form decides how
+      // often this fires, so it gets a budget rather than a promise.
+      if (await mailBudgetAllows('platform-queue', 'admin-notify')) {
+        await sendAdminNotification(submission.id, submission.companyName).catch(() => {});
+      }
       // The seller has to learn about this from something other than refreshing
       // the dashboard.
       void notifyCompanyOfSubmission(companyId, {
@@ -351,14 +372,16 @@ export const submissionResolvers = {
     ) => {
       if (!ctx.admin) throw new Error('Unauthorized');
 
+      const note = typeof reason === 'string' ? reason.trim().slice(0, 1000) : '';
+      if (!note) throw new Error('A reason is required.');
       const submission = await prisma.submission.update({
         where: { id },
-        data: { status: 'DENIED', adminNote: reason, reviewedById: ctx.adminId ?? 'admin', reviewedByName: 'Admin', reviewedAt: new Date() },
+        data: { status: 'DENIED', adminNote: note, reviewedById: ctx.adminId ?? 'admin', reviewedByName: 'Admin', reviewedAt: new Date() },
         include: { overrides: true },
       });
 
       const name = `${submission.firstName} ${submission.lastName}`;
-      await sendDenied(submission.email, name, reason, await sellerName(submission.companyId)).catch(() => {});
+      await sendDenied(submission.email, name, note, await sellerName(submission.companyId)).catch(() => {});
 
       return submission;
     },
@@ -384,6 +407,19 @@ export const submissionResolvers = {
     recheckSubmissionSubstance: async (_: unknown, { id }: { id: string }, ctx: { admin?: boolean }) => {
       if (!ctx.admin) throw new Error('Unauthorized');
       if (!SUBSTANCE_CHECK_ENABLED) throw new Error('Substance check is not configured.');
+      // Every re-run is outbound work against PubChem — see the company-side
+      // mutation for why a held-down button must not become an amplifier.
+      const current = await prisma.submission.findUnique({
+        where: { id },
+        select: { substanceCheckStatus: true, substanceCheckedAt: true },
+      });
+      if (!current) throw new Error('Submission not found.');
+      if (current.substanceCheckStatus === 'PENDING') {
+        throw new Error('The substance check is already running.');
+      }
+      if (current.substanceCheckedAt && Date.now() - current.substanceCheckedAt.getTime() < RECHECK_COOLDOWN_MS) {
+        throw new Error('This check just ran — wait a moment before running it again.');
+      }
       const submission = await prisma.submission.update({
         where: { id },
         data: { substanceCheckStatus: 'PENDING' },

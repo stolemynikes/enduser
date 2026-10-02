@@ -4,7 +4,7 @@
   "main": "index.ts",
   "type": "module",
   "scripts": {
-    "test": "tsx scripts/cipherTest.ts && tsx scripts/statementPdfTest.ts && tsx scripts/substanceCheckTest.ts && tsx scripts/diditWebhookTest.ts && tsx scripts/securityRegressionTest.ts && tsx scripts/injectionTest.ts && tsx scripts/crossTenantTest.ts && tsx scripts/inviteAuthTest.ts && tsx scripts/qolTest.ts",
+    "test": "tsx scripts/cipherTest.ts && tsx scripts/statementPdfTest.ts && tsx scripts/substanceCheckTest.ts && tsx scripts/diditWebhookTest.ts && tsx scripts/securityRegressionTest.ts && tsx scripts/injectionTest.ts && tsx scripts/crossTenantTest.ts && tsx scripts/inviteAuthTest.ts && tsx scripts/qolTest.ts && tsx scripts/hardeningTest.ts",
     "dev": "nodemon --exec tsx index.ts",
     "typecheck": "tsc --noEmit",
     "test:offline": "tsx scripts/cipherTest.ts && tsx scripts/statementPdfTest.ts"

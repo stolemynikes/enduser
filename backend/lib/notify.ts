@@ -1,6 +1,7 @@
 // Who hears about a submission, and under whose name.
 import { prisma } from './prisma.ts';
 import { sendNewSubmissionToCompany } from '../services/email.ts';
+import { mailBudgetAllows } from './mailBudget.ts';
 
 /** Owners and Employee+ — the roles that can actually act on a statement. */
 const REVIEWER_ROLES = ['OWNER', 'EMPLOYEE_PLUS'] as const;
@@ -21,6 +22,10 @@ export async function notifyCompanyOfSubmission(
 ): Promise<void> {
   if (!companyId) return;
   try {
+    // The trigger is a public form, so the volume is decided by whoever is
+    // filling it in. Budgeted per tenant: a flood of submissions must not
+    // become a flood of mail out of our domain into a seller's inbox.
+    if (!(await mailBudgetAllows(companyId, 'seller-notify'))) return;
     const company = await prisma.company.findUnique({
       where: { id: companyId },
       select: {

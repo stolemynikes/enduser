@@ -27,6 +27,9 @@ export const adminResolvers = {
       const companies = await prisma.company.findMany({
         include: { _count: { select: { members: true, submissions: { where: { isTest: false } } } } },
         orderBy: { createdAt: 'desc' },
+        // The query-cost rule charges this field 100 rows; serve no more than
+        // it is charged for, so the budget and the resolver agree.
+        take: 200,
       });
       const perCompany = await prisma.submission.groupBy({
         by: ['companyId'],
@@ -54,9 +57,18 @@ export const adminResolvers = {
       }));
     },
 
+    /**
+     * Platform statistics. Everything here is either an aggregate the database
+     * computes, or a bounded window of rows — it used to pull every submission
+     * and every company into memory to count them, which is a self-inflicted
+     * outage the day the platform succeeds.
+     */
     adminInsights: async (_: unknown, __: unknown, ctx: Ctx) => {
       requireAdmin(ctx);
-      const [byStatus, byVies, totalCompanies, mrzInvalid, likelySynthetic, reviewed, subDates, companyDates] =
+      // The chart covers 12 weeks, so only 12 weeks of rows are read.
+      const chartFrom = weekStart(new Date());
+      chartFrom.setDate(chartFrom.getDate() - 11 * 7);
+      const [byStatus, byVies, totalCompanies, mrzInvalid, likelySynthetic, reviewed, totalSubmissions, subDates, companyDates] =
         await Promise.all([
           prisma.submission.groupBy({ by: ['status'], _count: { _all: true }, where: { isTest: false } }),
           prisma.submission.groupBy({ by: ['viesStatus'], _count: { _all: true }, where: { isTest: false } }),
@@ -73,12 +85,23 @@ export const adminResolvers = {
               OR: [{ idLikelySynthetic: true }, { idLivenessPassed: false }, { idFaceMatch: false }],
             },
           }),
+          // Average time to review, over the most recent decisions rather than
+          // all of them. The figure is indistinguishable; the memory is not.
           prisma.submission.findMany({
             where: { status: { in: ['APPROVED', 'DENIED'] }, isTest: false },
             select: { createdAt: true, updatedAt: true },
+            orderBy: { updatedAt: 'desc' },
+            take: 2000,
           }),
-          prisma.submission.findMany({ where: { isTest: false }, select: { createdAt: true } }),
-          prisma.company.findMany({ select: { createdAt: true } }),
+          prisma.submission.count({ where: { isTest: false } }),
+          prisma.submission.findMany({
+            where: { isTest: false, createdAt: { gte: chartFrom } },
+            select: { createdAt: true },
+          }),
+          prisma.company.findMany({
+            where: { createdAt: { gte: chartFrom } },
+            select: { createdAt: true },
+          }),
         ]);
 
       const statusCount = (s: string) => byStatus.find(g => g.status === s)?._count._all ?? 0;
@@ -109,7 +132,7 @@ export const adminResolvers = {
 
       return {
         totalCompanies,
-        totalSubmissions: subDates.length,
+        totalSubmissions,
         pendingReview: statusCount('PENDING_REVIEW'),
         approved: statusCount('APPROVED'),
         denied: statusCount('DENIED'),
@@ -134,6 +157,7 @@ export const adminResolvers = {
       ctx: Ctx,
     ) => {
       requireAdmin(ctx);
+      if (typeof vat !== 'string' || vat.length > 50) throw new Error('VAT number is too long.');
       const countryCode = vat.replace(/[^A-Za-z]/g, '').slice(0, 2).toUpperCase();
       const lookup = await checkVies(countryCode, vat);
       const hasAddress = !!(street?.trim() || zipCode?.trim() || place?.trim());
@@ -151,7 +175,16 @@ export const adminResolvers = {
       ctx: Ctx,
     ) => {
       requireAdmin(ctx);
-      return checkSubstanceUse({ substances, casNumbers, concentration, statement, buyerType });
+      // Mirrors the public form's caps: the test tool reaches the same outbound
+      // services, so it gets the same bounds.
+      const cap = (v: unknown, max: number) => (typeof v === 'string' ? v.slice(0, max) : '');
+      return checkSubstanceUse({
+        substances: cap(substances, 255),
+        casNumbers: cap(casNumbers, 255),
+        concentration: cap(concentration, 100),
+        statement: cap(statement, 2000),
+        buyerType,
+      });
     },
   },
 

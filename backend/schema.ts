@@ -333,7 +333,7 @@ export const typeDefs = `#graphql
 
   type Query {
     publicConfig: PublicConfig!
-    submissions: [Submission!]!
+    submissions(limit: Int = 200, offset: Int = 0): [Submission!]!
     submission(id: ID!): Submission
     companySubmissions(
       status: SubmissionStatus

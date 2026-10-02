@@ -16,15 +16,21 @@ export const authResolvers = {
     ) => {
       await verifyHumanOrThrow(turnstileToken);
 
-      const admin = await prisma.admin.findUnique({ where: { username } });
+      const admin = typeof username === 'string' && username.length <= 200
+        ? await prisma.admin.findUnique({ where: { username } })
+        : null;
       const minutes = lockedFor(admin);
-      if (minutes > 0) throw new Error(LOCKED_MESSAGE(minutes));
 
       const valid = await bcrypt.compare(password, admin?.password ?? DUMMY_HASH);
+
+      // Tell a wrong guess nothing. Announcing the lock before checking the
+      // password confirmed the account exists and that it is under attack —
+      // and let a guesser keep the lock alive for free.
       if (!admin || !valid) {
-        if (admin) await recordFailure('admin', admin);
+        if (admin && minutes === 0) await recordFailure('admin', admin);
         throw new Error('Invalid credentials');
       }
+      if (minutes > 0) throw new Error(LOCKED_MESSAGE(minutes));
       await recordSuccess('admin', admin.id);
 
       // Startup (index.ts) guarantees JWT_SECRET is set — never fall back to a

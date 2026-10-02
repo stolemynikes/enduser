@@ -49,6 +49,10 @@ async function main() {
     process.exit(1);
   }
   const hostToken = host.data.registerCompany.token;
+  // Inviting now requires the inviting owner to have confirmed their own
+  // address, so the fixture puts the host in the state a real seller is in
+  // after clicking the confirmation link.
+  await prisma.companyUser.update({ where: { email: hostEmail }, data: { emailVerifiedAt: new Date() } });
   console.log('  two tenants registered; the guest email already has an account');
 
   console.log('— Host invites the existing account —');

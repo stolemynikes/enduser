@@ -98,6 +98,9 @@ async function availableSlug(base: string) {
 
 const APP_URL = () => (process.env.FRONTEND_URL ?? 'http://localhost:5173').replace(/\/+$/, '');
 
+/** Minimum gap between manual substance re-runs for one submission. */
+const RECHECK_COOLDOWN_MS = 30_000;
+
 /** Emails a fresh confirmation link. Never throws — signup must not fail on mail. */
 async function sendVerification(user: { id: string; email: string; name: string }) {
   try {
@@ -111,6 +114,33 @@ async function sendVerification(user: { id: string; email: string; name: string 
 
 function buildAuthPayload(token: string, company: { id: string; name: string; slug: string }, role: string) {
   return { token, company: { id: company.id, name: company.name, slug: company.slug }, role };
+}
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const EMAIL_MAX = 254;
+
+/**
+ * One canonical form for every address this server stores or looks up.
+ *
+ * Without it, "Victim@Example.com" and "victim@example.com" are two different
+ * accounts in Postgres: an invite addressed to the capitalised form missed the
+ * existing account entirely and created a second one, so the password check
+ * that is supposed to prove ownership had nothing to check against.
+ */
+function normalizeEmail(raw: unknown): string {
+  const address = typeof raw === 'string' ? raw.trim().toLowerCase() : '';
+  if (!address || address.length > EMAIL_MAX || !EMAIL_RE.test(address)) {
+    throw new Error('Please enter a valid email address.');
+  }
+  return address;
+}
+
+/** Free text that will be stored, rendered in a dashboard, or put in an email. */
+function boundedText(raw: unknown, max: number, label: string): string {
+  const value = typeof raw === 'string' ? raw.trim() : '';
+  if (!value) throw new Error(`${label} is required.`);
+  if (value.length > max) throw new Error(`${label} must be ${max} characters or fewer.`);
+  return value;
 }
 
 // Password policy is enforced server-side too — the 8-char minimum in the
@@ -278,16 +308,18 @@ export const companyResolvers = {
         { name: string; slug: string; email: string; password: string; yourName: string; turnstileToken?: string }
     ) => {
       await verifyHumanOrThrow(turnstileToken);
-      const slugBase = slug.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+      // The company name is shown on a public form and inside every email this
+      // tenant causes to be sent, so it is bounded here rather than wherever it
+      // is rendered.
+      const companyName = boundedText(name, 120, 'Company name');
+      const ownerName = boundedText(yourName, 120, 'Your name');
+      const slugBase = slug.toLowerCase().slice(0, 100).replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
       if (!slugBase) throw new Error('Invalid slug');
       const slugClean = await availableSlug(slugBase);
 
       assertPasswordStrength(password);
 
-      const address = email.trim().toLowerCase();
-      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address)) {
-        throw new Error('Please enter a valid email address.');
-      }
+      const address = normalizeEmail(email);
       const existingUser = await prisma.companyUser.findUnique({ where: { email: address } });
       if (existingUser) {
         // Deliberately vague: telling a stranger which addresses have accounts
@@ -299,13 +331,13 @@ export const companyResolvers = {
 
       const company = await prisma.company.create({
         data: {
-          name,
+          name: companyName,
           slug: slugClean,
           members: {
             create: {
               role: 'OWNER',
               user: {
-                create: { email: address, passwordHash, name: yourName },
+                create: { email: address, passwordHash, name: ownerName },
               },
             },
           },
@@ -323,21 +355,28 @@ export const companyResolvers = {
       { email, password, turnstileToken }: { email: string; password: string; turnstileToken?: string },
     ) => {
       await verifyHumanOrThrow(turnstileToken);
-      const user = await prisma.companyUser.findUnique({
-        where: { email: email.trim().toLowerCase() },
-        include: { memberships: { include: { company: true } } },
-      });
+      const address = typeof email === 'string' ? email.trim().toLowerCase() : '';
+      const user = address
+        ? await prisma.companyUser.findUnique({
+            where: { email: address },
+            include: { memberships: { include: { company: true } } },
+          })
+        : null;
 
       const minutes = lockedFor(user);
-      if (minutes > 0) throw new Error(LOCKED_MESSAGE(minutes));
 
       // Always run a comparison, so an unknown address and a wrong password
       // take the same time and cannot be told apart.
       const valid = await bcrypt.compare(password, user?.passwordHash ?? DUMMY_HASH);
+
+      // The lockout notice is only shown to someone who got the password right.
+      // Announcing it to a wrong guess turned the lock into an oracle: it said
+      // "this address has an account, and someone is attacking it".
       if (!user || !valid) {
-        if (user) await recordFailure('companyUser', user);
+        if (user && minutes === 0) await recordFailure('companyUser', user);
         throw new Error('Invalid email or password');
       }
+      if (minutes > 0) throw new Error(LOCKED_MESSAGE(minutes));
       await recordSuccess('companyUser', user.id);
 
       if (user.memberships.length === 0) throw new Error('No company membership found');
@@ -357,13 +396,31 @@ export const companyResolvers = {
       ctx: Ctx
     ) => {
       const { companyId, companyUserId } = requireOwner(ctx);
+      const address = normalizeEmail(email);
 
       const m = await membershipOrThrow(companyId, companyUserId);
       const company = m.company;
       const inviterName = m.user.name;
 
+      // Inviting is an outbound email, in this tenant's name, to an address the
+      // tenant chose. Registration is free and instant, so the only thing that
+      // separates a seller from a phishing operator here is having proved they
+      // own the address they signed up with.
+      if (!m.user.emailVerifiedAt) {
+        throw new Error('Confirm your own email address before inviting colleagues.');
+      }
+
+      // Two budgets: one so a single inbox cannot be targeted repeatedly, one
+      // so a tenant cannot spray many inboxes once each.
+      if (!(await mailBudgetAllows(companyId, 'invite-tenant'))) {
+        throw new Error('Too many invitations sent recently. Try again tomorrow.');
+      }
+      if (!(await mailBudgetAllows(address, 'invite'))) {
+        throw new Error('An invitation was already sent to that address recently.');
+      }
+
       // Delete any existing unused invite for this email+company
-      await prisma.companyInvite.deleteMany({ where: { companyId, email, usedAt: null } });
+      await prisma.companyInvite.deleteMany({ where: { companyId, email: address, usedAt: null } });
 
       // The raw token exists in the email and nowhere else; only its hash is
       // stored, and it carries no structure an attacker can learn from.
@@ -371,7 +428,7 @@ export const companyResolvers = {
       const invite = await prisma.companyInvite.create({
         data: {
           companyId,
-          email,
+          email: address,
           role: role as any,
           tokenHash: hashToken(inviteToken),
           expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
@@ -381,7 +438,7 @@ export const companyResolvers = {
       const frontendUrl = process.env.FRONTEND_URL ?? 'http://localhost:5173';
       const inviteUrl = `${frontendUrl}/invite/${inviteToken}`;
 
-      await sendCompanyInvite(email, inviterName, company.name, inviteUrl).catch(() => {});
+      await sendCompanyInvite(address, inviterName, company.name, inviteUrl).catch(() => {});
 
       return { ok: true, inviteUrl };
     },
@@ -398,6 +455,7 @@ export const companyResolvers = {
       }
 
       assertPasswordStrength(password);
+      const memberName = boundedText(name, 120, 'Your name');
 
       const passwordHash = await bcrypt.hash(password, 12);
 
@@ -412,7 +470,7 @@ export const companyResolvers = {
           throw new Error('An account already exists for this email — enter its password to accept the invite.');
         }
       } else {
-        user = await prisma.companyUser.create({ data: { email: invite.email, passwordHash, name } });
+        user = await prisma.companyUser.create({ data: { email: invite.email, passwordHash, name: memberName } });
       }
 
       // Add membership (or update role if already a member)
@@ -437,10 +495,15 @@ export const companyResolvers = {
       { email, turnstileToken }: { email: string; turnstileToken?: string },
     ) => {
       await verifyHumanOrThrow(turnstileToken);
-      const user = await prisma.companyUser.findUnique({
-        where: { email: email.trim().toLowerCase() },
-        select: { id: true, email: true, name: true },
-      });
+      const address = typeof email === 'string' ? email.trim().toLowerCase() : '';
+      // Still returns true for a malformed address: which addresses this
+      // endpoint considers valid is not information it needs to give away.
+      const user = address && EMAIL_RE.test(address) && address.length <= EMAIL_MAX
+        ? await prisma.companyUser.findUnique({
+            where: { email: address },
+            select: { id: true, email: true, name: true },
+          })
+        : null;
       // The budget is per address, so flooding someone else's inbox with reset
       // links is not something this endpoint will do, however many callers ask.
       if (user && await mailBudgetAllows(user.email, 'reset')) {
@@ -635,14 +698,16 @@ export const companyResolvers = {
       ctx: Ctx
     ) => {
       const { companyId, companyUserId } = requireOwnerOrPlus(ctx);
+      // Goes into the buyer's email and the stored note — bound it at the edge.
+      const note = boundedText(reason, 1000, 'A reason');
       const m = await membershipOrThrow(companyId, companyUserId);
       const updated = await tenantSubmissions(companyId).update(
         id,
-        { status: 'DENIED', adminNote: reason, reviewedById: companyUserId, reviewedByName: m.user.name, reviewedAt: new Date() },
+        { status: 'DENIED', adminNote: note, reviewedById: companyUserId, reviewedByName: m.user.name, reviewedAt: new Date() },
         { overrides: true },
       );
       await sendDenied(
-        updated.email, `${updated.firstName} ${updated.lastName}`, reason, m.company.name,
+        updated.email, `${updated.firstName} ${updated.lastName}`, note, m.company.name,
       ).catch(() => {});
       return updated;
     },
@@ -650,7 +715,18 @@ export const companyResolvers = {
     recheckCompanySubmissionSubstance: async (_: unknown, { id }: { id: string }, ctx: Ctx) => {
       const { companyId } = requireOwnerOrPlus(ctx);
       if (!SUBSTANCE_CHECK_ENABLED) throw new Error('Substance check is not configured.');
-      const updated = await tenantSubmissions(companyId).update(
+      const scoped = tenantSubmissions(companyId);
+      const current = await scoped.getOwned(id);
+      // Each re-run is outbound work against PubChem. A button held down was an
+      // unbounded amplifier pointed at them, in this platform's name, so a run
+      // already in flight and a run that just finished both refuse a new one.
+      if (current.substanceCheckStatus === 'PENDING') {
+        throw new Error('The substance check is already running.');
+      }
+      if (current.substanceCheckedAt && Date.now() - current.substanceCheckedAt.getTime() < RECHECK_COOLDOWN_MS) {
+        throw new Error('This check just ran — wait a moment before running it again.');
+      }
+      const updated = await scoped.update(
         id,
         { substanceCheckStatus: 'PENDING' },
         { overrides: true },
@@ -665,9 +741,10 @@ export const companyResolvers = {
       ctx: Ctx
     ) => {
       const { companyId, companyUserId } = requireOwnerOrPlus(ctx);
+      const why = boundedText(reason, 1000, 'A reason');
       await tenantSubmissions(companyId).getOwned(id);
       const m = await membershipOrThrow(companyId, companyUserId);
-      return applyOverride(id, category, reason, companyUserId, m.user.name);
+      return applyOverride(id, category, why, companyUserId, m.user.name);
     },
 
     clearCompanySubmissionCheckOverride: async (

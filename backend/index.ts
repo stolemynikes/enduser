@@ -40,7 +40,30 @@ import { pruneMailBudget } from './lib/mailBudget.ts';
 import { prisma } from './lib/prisma.ts';
 import { pseudonym } from './lib/tokens.ts';
 
+// Is this instance reachable by someone who is not sitting at this machine?
+//
+// NODE_ENV is a developer's convenience, and it was still "development" on an
+// instance published to the internet through a tunnel — which quietly means
+// introspection on, stack traces with absolute paths in every error, and the
+// backend's own CSP switched off. The deployment answers that question better
+// than the environment name does: if the public URL is not a loopback address,
+// the hardening is on regardless of NODE_ENV.
+function publiclyReachable(): boolean {
+  const url = process.env.FRONTEND_URL;
+  if (!url) return false;
+  try {
+    const { hostname } = new URL(url);
+    return !/^(localhost|127\.0\.0\.1|\[::1\]|0\.0\.0\.0)$/i.test(hostname) && !hostname.endsWith('.local');
+  } catch {
+    return false;
+  }
+}
+
 const IS_PROD = process.env.NODE_ENV === 'production';
+const IS_EXPOSED = IS_PROD || publiclyReachable();
+// Everything that leaks schema or internals keys off this, not off NODE_ENV.
+const HARDENED = IS_EXPOSED;
+
 // A signing secret decides who is an administrator, so its strength is checked
 // at boot the same way the encryption key's format is.
 const MIN_SECRET_LENGTH = 32;
@@ -53,7 +76,18 @@ function requireSecret(name: string): string {
   return value;
 }
 const JWT_SECRET = requireSecret('JWT_SECRET');
-requireSecret('COMPANY_JWT_SECRET');
+const COMPANY_SECRET = requireSecret('COMPANY_JWT_SECRET');
+
+// Two token audiences, two keys. Set to the same value, a company token would
+// be handed to the admin verifier (and vice versa) and the separation between
+// "runs this tenant" and "runs the platform" would rest on nothing but which
+// claims happen to be present.
+if (JWT_SECRET === COMPANY_SECRET) {
+  throw new Error('JWT_SECRET and COMPANY_JWT_SECRET must be different values');
+}
+if (process.env.ENCRYPTION_KEY === JWT_SECRET || process.env.ENCRYPTION_KEY === COMPANY_SECRET) {
+  throw new Error('ENCRYPTION_KEY must not be reused as a signing secret');
+}
 
 // Behind more proxies than this, X-Forwarded-For can be forged and every
 // IP-keyed limit evaded; behind fewer, every client looks like the proxy.
@@ -62,7 +96,7 @@ if (!Number.isInteger(TRUST_PROXY_HOPS) || TRUST_PROXY_HOPS < 0) {
   throw new Error('TRUST_PROXY_HOPS must be a non-negative integer');
 }
 
-const ALLOWED_ORIGIN: string | false = process.env.FRONTEND_URL ?? (IS_PROD ? false : '*');
+const ALLOWED_ORIGIN: string | false = process.env.FRONTEND_URL ?? (IS_EXPOSED ? false : '*');
 
 // Where Didit sends the buyer back after the hosted flow. It only needs to be
 // a page that tells them to return to the form — no result is read from it.
@@ -117,16 +151,16 @@ const INTERNAL_ERROR = /\n|prisma|postgres|ECONN|ETIMEDOUT|EAI_AGAIN|Invalid `/i
 const server = new ApolloServer({
   typeDefs,
   resolvers,
-  introspection: !IS_PROD,
+  introspection: !HARDENED,
   // Reject one-request query batching (amplification vector).
   allowBatchedHttpRequests: false,
   // Depth bounds how far a query reaches; cost bounds how much it asks for.
   // Without the second, aliases multiplied both work and side effects while the
   // per-request rate limiters saw one request.
   validationRules: [depthLimit(8), costLimit()],
-  includeStacktraceInErrorResponses: !IS_PROD,
+  includeStacktraceInErrorResponses: !HARDENED,
   formatError: (formatted) => {
-    if (!IS_PROD) return formatted;
+    if (!HARDENED) return formatted;
     // "Did you mean …?" suggestions aid field enumeration.
     const message = formatted.message.replace(/ Did you mean .*$/s, '');
     if (INTERNAL_ERROR.test(message)) {
@@ -143,7 +177,7 @@ app.set('trust proxy', TRUST_PROXY_HOPS);
 
 app.use(helmet({
   crossOriginEmbedderPolicy: false,
-  contentSecurityPolicy: IS_PROD ? undefined : false,
+  contentSecurityPolicy: HARDENED ? undefined : false,
 }));
 
 app.use(cors({
@@ -187,6 +221,10 @@ const submitLimiter = limiter('submit', 15 * 60 * 1000, 10);
 // The webhook route had no limiter at all, and rejecting a forged delivery is
 // not free — see services/diditWebhook.ts for the ordering that makes it cheap.
 const webhookLimiter = limiter('webhook', 60 * 1000, 120);
+
+// Outbound mail triggered by an authenticated caller: invitations and
+// re-sends. Low, because no legitimate use needs more.
+const mailLimiter = limiter('mail-out', 60 * 60 * 1000, 20);
 
 // Start a hosted identity verification. Public and unauthenticated, so it is
 // rate-limited and bounded by the session store's capacity. The document never
@@ -324,10 +362,19 @@ app.post('/didit-webhook', webhookLimiter, express.raw({ type: '*/*', limit: '25
 // tighter budgets than the general API limit.
 const CREDENTIAL_OPS =
   /adminLogin|companyLogin|registerCompany|acceptInvite|requestPasswordReset|resetPassword|verifyEmail/;
+// Mutations that make this server send mail to an address the caller chose.
+// Signing up is free, so "authenticated" is not a budget — an owner who has
+// just registered could otherwise push 120 invitations a minute at arbitrary
+// inboxes, carrying their own wording, from our sending domain.
+const MAIL_OPS = /inviteMember|resendEmailVerification/;
 app.use('/graphql', (req, res, next) => {
-  const query = (req.body as { query?: string })?.query;
+  // GraphQL over GET carries the document in the query string. Apollo refuses
+  // mutations there, but reading both keeps the routing honest if that changes.
+  const query = (req.body as { query?: string })?.query
+    ?? (typeof req.query?.query === 'string' ? req.query.query : undefined);
   if (typeof query !== 'string') return next();
   if (CREDENTIAL_OPS.test(query)) return loginLimiter(req, res, next);
+  if (MAIL_OPS.test(query)) return mailLimiter(req, res, next);
   if (query.includes('submitEndUserStatement')) return submitLimiter(req, res, next);
   return next();
 });
@@ -370,6 +417,15 @@ cron.schedule('0 2 * * *', async () => {
 
 app.listen(3000, () => {
   console.log('Backend running at http://localhost:3000/graphql');
+  if (IS_EXPOSED) {
+    console.log(`[security] hardened mode: introspection off, errors masked (FRONTEND_URL=${process.env.FRONTEND_URL})`);
+    if (!process.env.TURNSTILE_SECRET) {
+      console.warn('[security] TURNSTILE_SECRET is not set — bot protection is INERT on a publicly reachable instance.');
+    }
+    if (!IS_PROD) {
+      console.warn('[security] NODE_ENV is not "production" on a publicly reachable instance — set it.');
+    }
+  }
   if (!DIDIT_ENABLED) {
     console.warn('[didit] DIDIT_API_KEY / DIDIT_WORKFLOW_ID not set — identity verification is disabled.');
   } else if (!WEBHOOK_CONFIGURED) {

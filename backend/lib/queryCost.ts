@@ -22,6 +22,14 @@ const MAX_FIELDS = 300;
 const MAX_ROWS = 500;
 /** Assumed page size when a list field names no limit. */
 const DEFAULT_ROWS = 100;
+/**
+ * What a list field may actually return when the page size arrives in a
+ * variable. Validation runs before variables are coerced, so a document asking
+ * `limit: $l` used to be charged the default 100 while the resolver happily
+ * served its own maximum of 200 — five aliases cost 1000 rows against a 500
+ * budget. An unknown page size is now charged at the ceiling.
+ */
+const MAX_PAGE = 200;
 
 const LIST_FIELDS = new Set(['companySubmissions', 'submissions', 'adminCompanies', 'companyMembers']);
 
@@ -52,10 +60,13 @@ export function costLimit() {
         if (!LIST_FIELDS.has(node.name.value)) return;
 
         const limitArg = node.arguments?.find(a => a.name.value === 'limit');
-        // A variable's value is not known at validation time; assume the page
-        // size rather than letting a variable slip past the budget.
-        const asked = limitArg?.value.kind === Kind.INT ? Number(limitArg.value.value) : DEFAULT_ROWS;
-        rows += Number.isFinite(asked) ? asked : DEFAULT_ROWS;
+        // No limit argument at all: the resolver's own default applies.
+        // A literal: charge what it says. Anything else (a variable, an
+        // expression) is unknown here, so charge the most it could become.
+        const asked = limitArg == null
+          ? DEFAULT_ROWS
+          : limitArg.value.kind === Kind.INT ? Number(limitArg.value.value) : MAX_PAGE;
+        rows += Number.isFinite(asked) ? asked : MAX_PAGE;
         if (rows > MAX_ROWS) {
           context.reportError(new GraphQLError(
             `Query asks for too many rows at once (limit ${MAX_ROWS}). Use paging.`,

@@ -25,6 +25,9 @@ const SERVICE_ERRORS = new Set([
   'SERVICE_UNAVAILABLE', 'TIMEOUT', 'IP_BLOCKED', 'SERVER_BUSY',
 ]);
 
+// Keys come from buyer-supplied VAT numbers, so the cache needs a ceiling —
+// unbounded, every distinct malformed number submitted is a permanent entry.
+const CACHE_MAX = 5000;
 const cache = new Map<string, { result: ViesLookup; expiresAt: number }>();
 
 /** Returns [country, number] parsed from the VAT (prefix wins), or null. */
@@ -84,7 +87,10 @@ export async function checkVies(countryCode: string, vatNumber: string): Promise
     };
 
     // Only cache definitive verdicts; let transient errors retry next time.
-    if (status !== 'ERROR') cache.set(key, { result, expiresAt: Date.now() + CACHE_TTL_MS });
+    if (status !== 'ERROR') {
+      if (cache.size >= CACHE_MAX) cache.clear();
+      cache.set(key, { result, expiresAt: Date.now() + CACHE_TTL_MS });
+    }
     return result;
   } catch {
     return { status: 'ERROR', name: null, address: null };

@@ -259,6 +259,39 @@ not reachable over HTTP.
 
 ---
 
+## 2.13 Findings from the 2026-10-02 white-hat pass, and what closed them
+
+A second adversarial pass over the hardened build, looking specifically for ways
+round the controls 2.12 added. Each item below was reproduced against a running
+instance and is now an assertion in `backend/scripts/hardeningTest.ts`
+(12 checks).
+
+| What was wrong | Why it mattered | What it is now |
+|---|---|---|
+| `inviteMember` was an outbound mailer | Registration is free and instant, and an owner needed no confirmed address to use it. One throwaway signup could send invitations to arbitrary inboxes, in its own chosen company name, from this platform's sending domain — 120 a minute, unbudgeted. The reputational damage lands on our domain, not the sender's | Inviting requires the owner's own address to be confirmed; recipients are validated and normalised; two budgets apply (3 per address per hour, 20 per tenant per day) and a dedicated limiter caps mail-sending operations at 20 per hour |
+| The page size could be smuggled past the query budget | Validation runs before variables are coerced, so `limit: $l` was charged the default 100 while the resolver served its own maximum of 200. Five aliases returned 1000 decrypted rows against a 500-row budget — proven | An unknown page size is charged at the ceiling (`MAX_PAGE`), so the budget and the resolver agree |
+| The lockout notice was an account oracle | A wrong guess against a locked account was told the account was locked, which confirms both that the address has an account and that it is under attack. It also let a guesser keep the lock alive against the real owner for free | The notice is shown only to someone who got the password right; a wrong guess gets the same message as an unknown address, and does not extend the lock |
+| The substance re-check had no throttle | Every press is outbound work against PubChem, in this platform's name, with no cooldown and no in-flight check — an authenticated amplifier pointed at a third party | A run already in flight is refused, and so is one within 30 seconds of the last |
+| `submissions` and `adminInsights` were unbounded | The platform queue decrypted every submission in the database into one response, and the insights query pulled every submission and every company into memory to count them. A single click became a memory spike proportional to the whole platform's history | `submissions` is paged (200 maximum), `adminCompanies` is capped, counts are aggregates, the review-time average reads the most recent 2000 decisions and the chart reads only the 12 weeks it draws |
+| Hardening keyed off `NODE_ENV` | The instance published through a tunnel still had `NODE_ENV=development`: introspection answered the full schema, every error carried a stack trace with absolute filesystem paths, and the backend's own CSP was off — all three confirmed live | Hardening keys off whether the deployment is publicly reachable (`FRONTEND_URL` is not a loopback address), so a non-production environment name can no longer leave a public instance verbose |
+| The two signing secrets could be set to the same value | A company token would then be accepted by the admin verifier and vice versa; the separation between "runs this tenant" and "runs the platform" would rest on which claims happen to be present | Boot refuses identical signing secrets, or either one reused as the encryption key |
+| Addresses were stored in whatever case they were typed | Postgres compares case-sensitively, so an invite addressed to `Victim@Example.com` missed the existing `victim@example.com` account and created a second one — the password check that proves ownership had nothing to check against | One canonical form (trimmed, lower-cased, validated, length-capped) everywhere an address is stored or looked up |
+| Free text that reaches an inbox was unbounded | Company and personal names, denial reasons and override reasons had no server-side ceiling; the public form's fields did | All bounded at the resolver (120 characters for names, 1000 for reasons) |
+| Seller and platform notifications were unbudgeted | Volume is decided by whoever fills in the public form, so a flood of submissions became a flood of mail out of our domain | Budgeted per tenant and per platform inbox (60 per hour) |
+| The VIES cache had no ceiling | Keys come from buyer-supplied VAT numbers, so every distinct malformed number was a permanent entry | Capped at 5000 entries, like the PubChem cache |
+| `/embed/*` omitted the permissions policy | The one framed route was the one without `camera=(), microphone=()` | Added |
+
+Re-examined in the same pass and found sound: the webhook signature path and its
+ordering, the verification session store's single-use and tenant-ownership
+checks, the mass-assignment surface of `SubmitInput` (no `isTest`, `status`,
+`companyId` or identity field is accepted from the client), the tenant wrapper,
+outbound URL construction in both the VIES and PubChem clients, the statement
+screener (regex, not a language model — there is no prompt to inject), email
+escaping, and the fail-open choices in the rate-limit store and mail budget,
+which remain the right trade-off.
+
+---
+
 ## 3. Fixes applied in the latest review (2026-08-03)
 
 Full read-through of the auth, tenancy, crypto, resolver, upload and frontend
@@ -436,3 +469,16 @@ does not silently accumulate.
   **never** `migrate dev`.
 - Automated checks **flag only** — never auto-approve or auto-deny.
 - Any cloudflared tunnel opened for development is killed when the session ends.
+  A quick tunnel is bound to a **port**, not to a process: if the thing it was
+  opened for stops and something else takes that port, the tunnel publishes the
+  something else. Found live on 2026-10-02 — a tunnel opened for this app was
+  serving an unrelated project's build directory from port 5174.
+- Before trusting a test run, confirm the server answering it is the one you
+  just started. `tsx index.ts` cannot bind an occupied port, so a second copy
+  exits while the old one keeps serving — a full suite then passes against code
+  that is days old. Check with `lsof -nP -iTCP:3000 -sTCP:LISTEN` and expect
+  exactly one listener. Found twice now, in two different sessions.
+- `NODE_ENV` is a developer's convenience, not a security boundary: the server
+  decides whether to harden from whether `FRONTEND_URL` is publicly reachable.
+  Watch the boot lines — it says which mode it chose, and warns when bot
+  protection is inert on a public instance.

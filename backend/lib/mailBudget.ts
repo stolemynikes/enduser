@@ -17,6 +17,17 @@ const BUDGETS: Record<string, { max: number; minutes: number }> = {
   // One person forgetting their password needs one or two links.
   reset: { max: 3, minutes: 60 },
   verification: { max: 3, minutes: 60 },
+  // An invitation is mail this platform sends, in a seller's wording, to an
+  // address the seller typed. Signing up is free, so the budget is what stops
+  // a throwaway account from becoming a phishing mailer on our domain.
+  invite: { max: 3, minutes: 60 },
+  // Keyed on the company rather than a recipient: a cap on how much invite
+  // mail one tenant can generate however many addresses it spreads it over.
+  'invite-tenant': { max: 20, minutes: 24 * 60 },
+  // Seller notifications and the platform's own queue alert are triggered by
+  // the public form, so they are budgeted per tenant / per inbox too.
+  'seller-notify': { max: 60, minutes: 60 },
+  'admin-notify': { max: 60, minutes: 60 },
 };
 
 /**
