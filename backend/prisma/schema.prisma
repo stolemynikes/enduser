@@ -45,6 +45,19 @@ model Submission {
   idVerificationCheckedAt DateTime?
   /// True once the Didit-side session (including the document images) has been purged.
   idVerificationPurged    Boolean               @default(false)
+  /// Deterministic fingerprints, so equal values can be found without storing a
+  /// readable one. Everything above is encrypted with a random IV, which means
+  /// the same passport number twice produces two unrelated ciphertexts and no
+  /// query can match them. These are HMACs of the normalised value: same input,
+  /// same code, and the code cannot be turned back into the value. Used only to
+  /// tell a reviewer "this buyer has been here before", never to look anything up
+  /// across tenants.
+  idDocumentNumberHash String?
+  vatNumberHash        String?
+  /// Fingerprint of the sorted, normalised CAS set — so the same substances in a
+  /// different order still match. Falls back to the substance names when no CAS
+  /// number was collected.
+  substanceKeyHash     String?
   viesStatus          ViesStatus
   viesName            String?
   viesAddress         String?
@@ -70,6 +83,11 @@ model Submission {
   @@index([companyId, status])
   @@index([status])
   @@index([idDataCollectedAt])
+  // Duplicate lookup is always scoped to one tenant — a match in another
+  // seller's queue is none of this seller's business.
+  @@index([companyId, idDocumentNumberHash])
+  @@index([companyId, vatNumberHash])
+  @@index([companyId, substanceKeyHash])
 }
 
 // One row per manual override of a failing automated check (VIES / Identity /
@@ -107,6 +125,7 @@ model Company {
   /// Set when the grace period expires and the tenant is purged.
   deletedAt   DateTime?
   members     CompanyMember[]
+  notifications Notification[]
   invites     CompanyInvite[]
   submissions Submission[]
 }
@@ -302,6 +321,45 @@ model MailBudget {
 
   @@index([recipientHash, kind, sentAt])
   @@index([sentAt])
+}
+
+/// What the dashboard's bell shows.
+///
+/// Email reaches people who may not be able to log in; this reaches people who
+/// are already looking. The two carry different things on purpose: anything that
+/// matters when you are locked out stays email, and the operational stream —
+/// a statement arrived, a check came back bad — lives here, where it used to be
+/// nothing at all.
+model Notification {
+  id        String           @id @default(cuid())
+  company   Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  companyId String
+  /// Null means everyone who can act in this company. Set when the message is
+  /// about one person ("your role changed").
+  userId    String?
+  kind      NotificationKind
+  title     String
+  body      String?
+  /// Where the bell takes you — a submission id, or null for nothing to open.
+  submissionId String?
+  readAt    DateTime?
+  createdAt DateTime         @default(now())
+
+  // The panel reads "newest first, unread first" for one tenant.
+  @@index([companyId, createdAt])
+  @@index([companyId, userId, readAt])
+}
+
+enum NotificationKind {
+  SUBMISSION_RECEIVED
+  SUBSTANCE_FLAGGED
+  VIES_INVALID
+  IDENTITY_DECLINED
+  DOCUMENT_EXPIRING
+  DUPLICATE_SEEN
+  ROLE_CHANGED
+  INVITE_ACCEPTED
+  SUPPORT_ACCESS
 }
 
 model SupportAccess {

@@ -3,6 +3,7 @@ import { signCompanyToken } from '../services/companyAuth.ts';
 import { checkVies, matchViesAddress } from '../services/vies.ts';
 import { checkSubstanceUse } from '../services/substanceCheck.ts';
 import { runSubstanceCheck } from './submission.ts';
+import { notify } from '../lib/notifications.ts';
 
 type Ctx = { admin?: boolean; adminId?: string };
 type BuyerType = 'INDIVIDUAL' | 'COMPANY';
@@ -201,6 +202,15 @@ export const adminResolvers = {
       if (!owner) throw new Error('Company or owner not found');
 
       await prisma.supportAccess.create({ data: { adminId, companyId } });
+      // The tenant is told, in their own dashboard, that platform staff opened
+      // their account. An audit row nobody can see is a record, not disclosure.
+      void notify({
+        companyId,
+        kind: 'SUPPORT_ACCESS',
+        title: 'Platform support opened your account',
+        body: 'A support session was started by EU Statement staff. '
+          + 'If you did not ask for help, reply to your last email from us.',
+      });
       console.log(`[support] admin ${adminId} opened support session for company ${owner.company.slug} (${companyId})`);
 
       const token = signCompanyToken({

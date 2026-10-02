@@ -31,7 +31,7 @@ const DEFAULT_ROWS = 100;
  */
 const MAX_PAGE = 200;
 
-const LIST_FIELDS = new Set(['companySubmissions', 'submissions', 'adminCompanies', 'companyMembers']);
+const LIST_FIELDS = new Set(['companySubmissions', 'submissions', 'adminCompanies', 'companyMembers', 'notifications']);
 
 export function costLimit() {
   return (context: ValidationContext): ASTVisitor => {

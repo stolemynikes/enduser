@@ -36,6 +36,10 @@ export type DiditDecision = {
   fullName: string | null;
   documentNumber: string | null;
   expiryDate: string | null;
+  /** ISO date of birth, when the document carried one. */
+  dateOfBirth: string | null;
+  /** Age in whole years at the moment the decision was read; null when unknown. */
+  age: number | null;
   livenessPassed: boolean | null;
   faceMatch: boolean | null;
   /** Human-readable warning summary for the reviewer; null when clean. */
@@ -152,6 +156,19 @@ function isoDate(raw: unknown): string | null {
   return Number.isNaN(Date.parse(v)) ? null : v;
 }
 
+/** Whole years between an ISO date and now. */
+export function ageFrom(isoBirthDate: string | null, now: Date = new Date()): number | null {
+  if (!isoBirthDate) return null;
+  const born = new Date(isoBirthDate);
+  if (Number.isNaN(born.getTime())) return null;
+  let years = now.getFullYear() - born.getFullYear();
+  const beforeBirthday =
+    now.getMonth() < born.getMonth() ||
+    (now.getMonth() === born.getMonth() && now.getDate() < born.getDate());
+  if (beforeBirthday) years--;
+  return years >= 0 && years < 130 ? years : null;
+}
+
 function str(raw: unknown): string | null {
   const v = String(raw ?? '').trim();
   return v && v !== 'null' && v !== 'undefined' ? v : null;
@@ -165,6 +182,7 @@ export function mapDecision(json: any): DiditDecision {
   const liveness = firstOf(json?.liveness_checks) ?? json?.liveness ?? null;
   const face = firstOf(json?.face_matches) ?? json?.face_match ?? null;
 
+  const dateOfBirth = isoDate(id.date_of_birth);
   const fullName = str(id.full_name)
     ?? str([str(id.first_name), str(id.last_name)].filter(Boolean).join(' '));
 
@@ -189,6 +207,11 @@ export function mapDecision(json: any): DiditDecision {
     fullName,
     documentNumber: str(id.document_number),
     expiryDate: isoDate(id.expiration_date),
+    dateOfBirth,
+    // Prefer our own arithmetic over a provider-supplied age: a number computed
+    // when the session was created would be stale, and the age is about to
+    // decide whether a sale is lawful.
+    age: ageFrom(dateOfBirth) ?? (Number.isInteger(id.age) ? Number(id.age) : null),
     livenessPassed: liveness ? subStatus(liveness) : null,
     faceMatch: face ? subStatus(face) : null,
     warnings: warnings.length ? [...new Set(warnings)].join('; ').slice(0, 1000) : null,

@@ -22,6 +22,8 @@ import { type OverrideCategory } from '../lib/approvalGate.ts';
 import { tenantSubmissions } from '../lib/tenant.ts';
 import { redactAllForRole, redactForRole } from '../lib/redact.ts';
 import { DIDIT_ENABLED } from '../services/didit.ts';
+import { notify } from '../lib/notifications.ts';
+import { findPriorApprovals } from '../lib/duplicates.ts';
 
 type Ctx = {
   companyUserId?: string;
@@ -201,6 +203,44 @@ export const companyResolvers = {
         scoped.count({ isTest: true }),
       ]);
       return { all, pending, approved, denied, tests };
+    },
+
+    /**
+     * The bell's contents. Scoped to this tenant, and to messages addressed to
+     * everyone or to this person specifically.
+     */
+    notifications: async (_: unknown, { limit }: { limit?: number }, ctx: Ctx) => {
+      const { companyId, companyUserId } = requireCompany(ctx);
+      const rows = await prisma.notification.findMany({
+        where: { companyId, OR: [{ userId: null }, { userId: companyUserId }] },
+        orderBy: { createdAt: 'desc' },
+        take: Math.min(Math.max(limit ?? 30, 1), 100),
+      });
+      return rows.map(n => ({
+        id: n.id, kind: n.kind, title: n.title, body: n.body,
+        submissionId: n.submissionId,
+        read: n.readAt != null,
+        createdAt: n.createdAt.toISOString(),
+      }));
+    },
+
+    /** Just the number behind the dot — cheap enough to poll. */
+    unreadNotificationCount: async (_: unknown, __: unknown, ctx: Ctx) => {
+      const { companyId, companyUserId } = requireCompany(ctx);
+      return prisma.notification.count({
+        where: { companyId, readAt: null, OR: [{ userId: null }, { userId: companyUserId }] },
+      });
+    },
+
+    /**
+     * Earlier approvals that look like this request. Read when a reviewer opens
+     * a submission, so the panel can say "you approved this in March" next to
+     * the approve button.
+     */
+    priorApprovals: async (_: unknown, { id }: { id: string }, ctx: Ctx) => {
+      const { companyId } = requireCompany(ctx);
+      const submission = await tenantSubmissions(companyId).getOwned(id);
+      return findPriorApprovals(submission as Parameters<typeof findPriorApprovals>[0]);
     },
 
     /** What the browser needs before anyone has signed in. */
@@ -482,6 +522,13 @@ export const companyResolvers = {
 
       await prisma.companyInvite.update({ where: { id: invite.id }, data: { usedAt: new Date() } });
 
+      void notify({
+        companyId: invite.companyId,
+        kind: 'INVITE_ACCEPTED',
+        title: 'An invitation was accepted',
+        body: `${memberName} joined as ${invite.role === 'EMPLOYEE_PLUS' ? 'Employee+' : String(invite.role).toLowerCase()}.`,
+      });
+
       const jwtToken = signCompanyToken({ companyUserId: user.id, companyId: invite.companyId, role: invite.role });
       return buildAuthPayload(jwtToken, invite.company, invite.role);
     },
@@ -544,6 +591,22 @@ export const companyResolvers = {
       if (!userId) throw new Error('This confirmation link is invalid or has expired — request a new one.');
       await prisma.companyUser.update({ where: { id: userId }, data: { emailVerifiedAt: new Date() } });
       return true;
+    },
+
+    markNotificationsRead: async (_: unknown, { ids }: { ids?: string[] }, ctx: Ctx) => {
+      const { companyId, companyUserId } = requireCompany(ctx);
+      // Scoped by tenant and addressee, so an id from another company's stream
+      // marks nothing.
+      const { count } = await prisma.notification.updateMany({
+        where: {
+          companyId,
+          readAt: null,
+          OR: [{ userId: null }, { userId: companyUserId }],
+          ...(ids && ids.length > 0 ? { id: { in: ids.slice(0, 200) } } : {}),
+        },
+        data: { readAt: new Date() },
+      });
+      return count;
     },
 
     resendEmailVerification: async (_: unknown, __: unknown, ctx: Ctx) => {
@@ -622,6 +685,14 @@ export const companyResolvers = {
         where: { companyId_userId: { companyId, userId } },
         data: { role: role as any },
         include: { user: true },
+      });
+      // Addressed to the one person it concerns. They can still log in, which
+      // is exactly why this belongs in the bell and not in their email.
+      void notify({
+        companyId, userId,
+        kind: 'ROLE_CHANGED',
+        title: 'Your role changed',
+        body: `You are now ${member.role === 'EMPLOYEE_PLUS' ? 'Employee+' : member.role.toLowerCase()} in this company.`,
       });
       return {
         id: member.id, userId: member.userId,

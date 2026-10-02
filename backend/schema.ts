@@ -326,6 +326,46 @@ export const typeDefs = `#graphql
     turnstileToken: String
   }
 
+  enum NotificationKind {
+    SUBMISSION_RECEIVED
+    SUBSTANCE_FLAGGED
+    VIES_INVALID
+    IDENTITY_DECLINED
+    DOCUMENT_EXPIRING
+    DUPLICATE_SEEN
+    ROLE_CHANGED
+    INVITE_ACCEPTED
+    SUPPORT_ACCESS
+  }
+
+  type Notification {
+    id: ID!
+    kind: NotificationKind!
+    title: String!
+    body: String
+    """The submission this is about, when there is one to open."""
+    submissionId: ID
+    read: Boolean!
+    createdAt: String!
+  }
+
+  """Which fingerprints agreed: DOCUMENT is the same person, VAT the same company."""
+  enum DuplicateMatchOn {
+    DOCUMENT
+    VAT
+    SUBSTANCE
+  }
+
+  type DuplicateMatch {
+    id: ID!
+    buyerName: String!
+    approvedAt: String
+    approvedByName: String
+    """How closely the stated use reads like this one, 0-100."""
+    statementMatch: Int!
+    matchedOn: [DuplicateMatchOn!]!
+  }
+
   type PublicConfig {
     """Site key for the anti-robot check; null when it is not configured."""
     turnstileSiteKey: String
@@ -342,6 +382,10 @@ export const typeDefs = `#graphql
       offset: Int = 0
     ): [Submission!]!
     companySubmissionCounts(includeTest: Boolean = false): SubmissionCounts!
+    notifications(limit: Int = 30): [Notification!]!
+    unreadNotificationCount: Int!
+    """Earlier approvals in this company that look like the same request."""
+    priorApprovals(id: ID!): [DuplicateMatch!]!
     myCompanies: [MyCompany!]!
     companyMembers: [CompanyMember!]!
     formInfo(slug: String!): PublicFormInfo
@@ -373,6 +417,8 @@ export const typeDefs = `#graphql
     resetPassword(token: String!, password: String!): Boolean!
     verifyEmail(token: String!): Boolean!
     resendEmailVerification: Boolean!
+    """Marks the given notifications read, or every one of them when no ids are given."""
+    markNotificationsRead(ids: [ID!]): Int!
     switchCompany(companyId: ID!): CompanyAuthPayload!
     requestCompanyDeletion(confirmSlug: String!): Boolean!
     cancelCompanyDeletion: Boolean!

@@ -29,6 +29,16 @@ export async function runSubstanceCheck(id: string) {
         substanceCheckedAt: new Date(),
       },
     });
+    // The check finishes after the buyer is gone and after the arrival
+    // notification has been written, so a flag needs its own line — otherwise
+    // the one result that asks for a human lands in silence.
+    if (result.status === 'FLAGGED') {
+      await notify({
+        companyId: sub.companyId, kind: 'SUBSTANCE_FLAGGED', submissionId: id,
+        title: 'Substance check flagged a statement',
+        body: `${sub.firstName} ${sub.lastName} — ${result.note}`.slice(0, 600),
+      });
+    }
   } catch (err) {
     await prisma.submission.update({
       where: { id },
@@ -46,6 +56,12 @@ import { notifyCompanyOfSubmission, sellerName } from '../lib/notify.ts';
 import { verifyHumanOrThrow } from '../services/turnstile.ts';
 import { mailBudgetAllows } from '../lib/mailBudget.ts';
 import { statementCopy } from '../lib/statementCopy.ts';
+import { matchKeys } from '../lib/matchKeys.ts';
+import { notifySubmission, notify } from '../lib/notifications.ts';
+import { findPriorApprovals } from '../lib/duplicates.ts';
+
+/** Nobody under this age may be supplied a listed precursor. */
+const MINIMUM_AGE = 18;
 
 /** Minimum gap between manual substance re-runs for one submission. */
 const RECHECK_COOLDOWN_MS = 30_000;
@@ -238,6 +254,18 @@ export const submissionResolvers = {
           throw new Error('Only passports and identity cards are accepted.');
         }
 
+        // Age is checked here and nowhere else, because here is the only place
+        // it is known: the document says so, the buyer does not. Under age the
+        // submission is refused outright rather than stored and declined — a
+        // minor's passport number is not something to keep a record of in order
+        // to say no to them.
+        if (decision.age != null && decision.age < MINIMUM_AGE) {
+          console.warn('[submit] refused: buyer is under the minimum age');
+          throw new Error(
+            `You must be at least ${MINIMUM_AGE} years old to submit an end-user statement.`,
+          );
+        }
+
         // Capped even though it comes from Didit — an upstream field should not
         // be able to decide how much we write.
         rest.idDocumentName = decision.fullName?.slice(0, SHORT) ?? null;
@@ -249,9 +277,14 @@ export const submissionResolvers = {
           status: decision.status,
           livenessPassed: decision.livenessPassed,
           faceMatch: decision.faceMatch,
-          warnings: decision.rawDocumentType && !decision.documentType
-            ? [`Unsupported document type: ${decision.rawDocumentType}`, decision.warnings].filter(Boolean).join('; ')
-            : decision.warnings,
+          warnings: [
+            decision.rawDocumentType && !decision.documentType
+              ? `Unsupported document type: ${decision.rawDocumentType}` : null,
+            // Silence here would read as "age is fine". It is not known.
+            decision.age == null && decision.status === 'APPROVED'
+              ? 'Date of birth was not supplied — age could not be verified' : null,
+            decision.warnings,
+          ].filter(Boolean).join('; ') || null,
           purged: false,
         };
 
@@ -298,6 +331,14 @@ export const submissionResolvers = {
       const submission = await prisma.submission.create({
         data: {
           ...rest,
+          // Deterministic fingerprints, so a reviewer can be told this buyer
+          // has been here before — see lib/matchKeys.ts.
+          ...matchKeys({
+            idDocumentNumber: rest.idDocumentNumber as string | null,
+            vatNumber: rest.vatNumber as string | null,
+            casNumbers: rest.casNumbers as string | null,
+            substances: rest.substances as string | null,
+          }),
           idDataCollectedAt: idCollected ? new Date() : null,
           idDocumentExpiry: idCollected && idExpiry ? new Date(idExpiry) : null,
           idVerificationSessionId: idVerification.sessionId,
@@ -335,11 +376,27 @@ export const submissionResolvers = {
         await sendAdminNotification(submission.id, submission.companyName).catch(() => {});
       }
       // The seller has to learn about this from something other than refreshing
-      // the dashboard.
+      // the dashboard: email for the inbox they already watch, and the bell for
+      // the dashboard they are already looking at.
       void notifyCompanyOfSubmission(companyId, {
         buyerName: name,
         buyerCompany: submission.companyName,
       });
+      void notifySubmission(companyId, submission);
+
+      // "You have approved this before" is worth knowing at the moment the row
+      // appears, not only once someone opens it.
+      void findPriorApprovals(submission).then(async matches => {
+        if (matches.length === 0) return;
+        const first = matches[0];
+        await notify({
+          companyId, kind: 'DUPLICATE_SEEN', submissionId: submission.id,
+          title: 'This request has been approved before',
+          body: `${name} asked for the same substances on `
+            + `${first.approvedAt ? new Date(first.approvedAt).toLocaleDateString('en-GB') : 'an earlier date'}`
+            + `${first.approvedByName ? `, approved by ${first.approvedByName}` : ''}.`,
+        });
+      }).catch(() => {});
 
       // Background — don't make the customer wait for the LLM round-trip.
       if (willCheckSubstance) void runSubstanceCheck(submission.id);

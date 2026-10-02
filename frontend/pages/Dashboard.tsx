@@ -875,10 +875,48 @@ function CompaniesTab({ companies, loading, error, busy, onOpen }: {
   companies: CompanyActivity[]; loading: boolean; error?: string;
   busy: boolean; onOpen: (id: string) => void;
 }) {
+  const [query, setQuery] = useState('');
+
   if (loading) return <div className="db-state">Loading companies…</div>;
   if (error) return <div className="db-state db-state-err">Failed to load: {error}</div>;
   if (companies.length === 0) return <div className="db-state">No companies registered yet.</div>;
+
+  // Name and slug are the two things anyone searches by, and both are already
+  // loaded — so this filters what is on screen rather than asking the server.
+  // Worth revisiting past a couple of hundred tenants, which is where the
+  // resolver's own page size stops.
+  const needle = query.trim().toLowerCase();
+  const shown = needle
+    ? companies.filter(c =>
+        c.name.toLowerCase().includes(needle) || c.slug.toLowerCase().includes(needle))
+    : companies;
+
   return (
+    <>
+      <div className="db-search-wrap">
+        <svg className="db-search-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor"
+          strokeWidth="1.8" width="15" aria-hidden="true">
+          <circle cx="8.5" cy="8.5" r="5.5" /><path d="M13.5 13.5l3 3" strokeLinecap="round" />
+        </svg>
+        <input
+          className="db-search"
+          type="search"
+          value={query}
+          onChange={e => setQuery(e.target.value)}
+          placeholder="Search companies by name or address…"
+          aria-label="Search companies"
+        />
+        {needle && (
+          <button className="db-search-clear" onClick={() => setQuery('')} aria-label="Clear search">✕</button>
+        )}
+      </div>
+      {needle && (
+        <p className="db-result-count" role="status">
+          {shown.length === 0
+            ? `No company matches “${query.trim()}”.`
+            : `${shown.length} of ${companies.length} companies`}
+        </p>
+      )}
     <div className="db-table-wrap">
       <table className="db-table">
         <thead>
@@ -893,7 +931,7 @@ function CompaniesTab({ companies, loading, error, busy, onOpen }: {
           </tr>
         </thead>
         <tbody>
-          {companies.map(c => (
+          {shown.map(c => (
             <tr key={c.id} className="db-row" onClick={() => !busy && onOpen(c.id)}>
               <td>
                 <div className="db-company">{c.name}</div>
@@ -923,6 +961,7 @@ function CompaniesTab({ companies, loading, error, busy, onOpen }: {
         </tbody>
       </table>
     </div>
+    </>
   );
 }
 

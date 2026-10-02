@@ -10,6 +10,8 @@ import { useModalDismiss } from '../src/lib/useModalDismiss.ts';
 import { approvable, blockingCategories, categoryFailing, isExpired, isPending, CATEGORY_LABEL } from '../src/lib/approvalGate.ts';
 import SetupWizard from './SetupWizard';
 import { Mark } from '../src/components/Mark.tsx';
+import { NotificationBell } from '../src/components/NotificationBell.tsx';
+import { PriorApprovals } from '../src/components/PriorApprovals.tsx';
 import {
   type FormConfigT, CONFIG_KEYS, CONFIG_ROWS, TERMS_MODES, modeLabels,
   BUYER_TYPE_OPTIONS, BUYER_TYPE_LABEL, BUYER_TYPE_DESC,
@@ -553,6 +555,18 @@ export default function CompanyDashboard() {
     navigate('/login');
   };
 
+  // Signing out sits one slip away from the theme toggle, and on a shared
+  // machine it costs whoever is reviewing their place in the queue. It asks
+  // first, and the control reads as the one destructive thing in the sidebar.
+  const handleLogout = async () => {
+    const ok = await confirm({
+      title: 'Sign out',
+      message: 'You will need your email and password to get back in.',
+      confirmLabel: 'Sign out', danger: true,
+    });
+    if (ok) logout();
+  };
+
   // Admin support session (opened from the admin Companies tab): show a
   // floating pill over both the wizard and the dashboard, with a way back.
   const supportMode = localStorage.getItem('supportMode') === '1';
@@ -571,6 +585,25 @@ export default function CompanyDashboard() {
   ) : null;
 
   const submissions: Submission[] = subData?.companySubmissions ?? [];
+
+  // Opening a notification jumps to the submission it is about. That row may
+  // not be in the page currently loaded — a filter is on, or it sits further
+  // down the queue — so the id is parked and claimed once the list holds it.
+  const [pendingOpenId, setPendingOpenId] = useState<string | null>(null);
+  const openSubmissionById = (id: string) => {
+    setTab('submissions');
+    setFilter('ALL');
+    setPendingOpenId(id);
+  };
+  useEffect(() => {
+    if (!pendingOpenId) return;
+    const row = submissions.find(r => r.id === pendingOpenId);
+    if (row) {
+      setSelected(row);
+      setModalMode('view');
+      setPendingOpenId(null);
+    }
+  }, [pendingOpenId, submissions]);
   const members: Member[] = memberData?.companyMembers ?? [];
 
   const availableFilters: Filter[] = canManage ? ['ALL', 'PENDING_REVIEW', 'APPROVED', 'DENIED'] : ['APPROVED', 'DENIED'];
@@ -702,6 +735,7 @@ export default function CompanyDashboard() {
                 </svg>
                 <span className="cd-sb-label">Submissions</span>
               </button>
+              <NotificationBell onOpenSubmission={openSubmissionById} />
               {isOwner && (
                 <>
                   <button className={`cd-sb-item${tab === 'members' ? ' cd-sb-active' : ''}`}
@@ -755,7 +789,7 @@ export default function CompanyDashboard() {
               )}
               <span className="cd-sb-label">{theme === 'dark' ? 'Light Mode' : 'Dark Mode'}</span>
             </button>
-            <button className="cd-sb-signout" onClick={logout}>
+            <button className="cd-sb-signout" onClick={() => void handleLogout()}>
               <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8">
                 <path d="M13 10H3m0 0l3-3m-3 3l3 3M10 3h5a2 2 0 012 2v10a2 2 0 01-2 2h-5" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
@@ -1160,6 +1194,7 @@ export default function CompanyDashboard() {
               </div>
               {modalMode === 'view' ? (
                 <div className="cd-modal-body">
+                  <PriorApprovals submissionId={selected.id} onOpen={openSubmissionById} />
                   <div className="cd-detail-grid">
                     <Detail label="Buyer" value={selected.buyerType === 'INDIVIDUAL' ? 'Individual' : 'Company'} />
                     <Detail label="Order #" value={selected.orderNumber || <Dim />} />
@@ -1400,10 +1435,22 @@ function needsReview(s: Submission): boolean {
 }
 
 // Traffic-light row color: green=approved, red=denied/needs-attention, yellow=pending.
-function rowColor(s: Submission): 'green' | 'red' | 'yellow' {
+/**
+ * How loudly a row is drawn.
+ *
+ * Colour used to cover the whole queue: every pending row was tinted, red when
+ * a check had failed and amber when it had not. A reviewer opening the
+ * dashboard saw a wall of colour, which is the fastest way to teach someone to
+ * stop reading it. So a tint now means a decision has been made — green
+ * approved, red denied — and a pending row is left plain unless something
+ * actually needs attention, in which case it gets a rail and nothing more.
+ * The badges in the row carry the detail either way, so none of this is the
+ * only signal.
+ */
+function rowColor(s: Submission): 'green' | 'red' | 'attention' | 'plain' {
   if (s.status === 'APPROVED') return 'green';
   if (s.status === 'DENIED') return 'red';
-  return needsReview(s) ? 'red' : 'yellow';
+  return needsReview(s) ? 'attention' : 'plain';
 }
 
 function ViesBadge({ status }: { status: string }) {
@@ -1555,7 +1602,11 @@ const styles = `
     padding: 9px 12px; cursor: pointer; display: flex; align-items: center; gap: 10px;
     width: 100%; text-align: left; transition: all 0.15s;
   }
-  .cd-sb-theme:hover, .cd-sb-signout:hover { color: var(--cd-text); background: var(--cd-surface2); }
+  .cd-sb-theme:hover { color: var(--cd-text); background: var(--cd-surface2); }
+  /* The one control in the sidebar that throws work away reads as such on
+     hover, and still asks before doing it. */
+  .cd-sb-signout:hover { color: var(--cd-accent); background: rgba(240,78,94,0.1); }
+  .cd-sb-signout:focus-visible { outline: 2px solid var(--cd-accent); outline-offset: -2px; }
   .cd-sb-theme svg, .cd-sb-signout svg { flex-shrink: 0; }
 
   .cd-main { padding: 1.5rem 1.75rem; flex: 1; min-width: 0; overflow-y: auto; overflow-x: hidden; }
@@ -1676,9 +1727,11 @@ const styles = `
   .cd-row--green { background: rgba(62,207,142,0.06); }
   .cd-row--green:hover { background: rgba(62,207,142,0.12); }
   .cd-row--green td:first-child { box-shadow: inset 3px 0 0 var(--cd-green); }
-  .cd-row--yellow { background: rgba(245,166,35,0.06); }
-  .cd-row--yellow:hover { background: rgba(245,166,35,0.12); }
-  .cd-row--yellow td:first-child { box-shadow: inset 3px 0 0 var(--cd-amber); }
+  /* Pending and clean: no tint at all. The row is work to be done, not news. */
+  .cd-row--plain td:first-child { box-shadow: inset 3px 0 0 transparent; }
+  /* Pending with a failing check: the rail marks it without washing the row,
+     so a queue of twenty rows still has twenty readable rows. */
+  .cd-row--attention td:first-child { box-shadow: inset 3px 0 0 var(--cd-amber); }
   .cd-row--red { background: rgba(240,78,94,0.06); }
   .cd-row--red:hover { background: rgba(240,78,94,0.12); }
   .cd-row--red td:first-child { box-shadow: inset 3px 0 0 var(--cd-accent); }
@@ -1877,8 +1930,6 @@ const styles = `
   }
   .cd-light .cd-row--green { background: rgba(62,207,142,0.09); }
   .cd-light .cd-row--green:hover { background: rgba(62,207,142,0.15); }
-  .cd-light .cd-row--yellow { background: rgba(245,166,35,0.1); }
-  .cd-light .cd-row--yellow:hover { background: rgba(245,166,35,0.16); }
   .cd-light .cd-row--red { background: rgba(240,78,94,0.08); }
   .cd-light .cd-row--red:hover { background: rgba(240,78,94,0.14); }
   .cd-light .cd-sidebar { background: #ffffff; border-right-color: rgba(0,0,0,0.08); }
@@ -1887,7 +1938,8 @@ const styles = `
   .cd-light .cd-setup-notice { background: #fff; }
   .cd-light .cd-sb-active { color: #111827 !important; background: var(--cd-surface3) !important; }
   .cd-light .cd-sb-theme, .cd-light .cd-sb-signout { color: #6b7280; }
-  .cd-light .cd-sb-theme:hover, .cd-light .cd-sb-signout:hover { color: #111827; background: rgba(0,0,0,0.05); }
+  .cd-light .cd-sb-theme:hover { color: #111827; background: rgba(0,0,0,0.05); }
+  .cd-light .cd-sb-signout:hover { color: #c2322f; background: rgba(240,78,94,0.1); }
   .cd-light .cd-filter-count { background: rgba(0,0,0,0.06); }
   .cd-light .cd-filter-active .cd-filter-count { background: rgba(0,0,0,0.12); }
   .cd-light .cd-search { background: #fff; }
