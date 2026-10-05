@@ -1,24 +1,25 @@
-// What leaves the server with an ordinary query.
+// Fields a resolver must not hand back.
 //
-// The identity document number does not — for anybody, in any role. Didit has
-// already established who the person is, so no review decision needs it, and it
-// is the one field that turns a leak into identity fraud because it sits beside
-// a name and an address. It comes back only from the reveal mutation, which
-// demands a fresh second factor and records the access (see lib/reveal.ts).
+// This used to be a role check: Owner and Employee+ received the identity
+// document number with every row, plain Employees did not. That left a stolen
+// owner session — which is what a phishing proxy or malware produces, with the
+// second factor already passed — reading every number in the tenant in one
+// query.
 //
-// This used to be a role check: Owner and Employee+ received it with every row,
-// plain Employees did not. That left a stolen owner session — which is what a
-// phishing proxy or malware produces, with the second factor already passed —
-// reading every number in the tenant in one query.
+// Since 2026-10-05 the number is stripped for everyone, by a field resolver on
+// Submission in index.ts, so no resolver can forget. This file is the belt to
+// that braces: resolvers that build their own row shapes still pass through
+// here, which keeps the intent visible at the call site.
+//
+// The role argument is gone on purpose. Keeping a parameter that no longer
+// decides anything reads, to the next person, like a role check that is
+// present — and a guard somebody believes in is worse than no guard.
 export type Redactable = { idDocumentNumber?: string | null };
 
-export function redactForRole<T extends Redactable>(row: T, _role: string): T {
-  // The role argument is kept so every call site still reads as a deliberate
-  // redaction rather than a mystery, and so a future field that *is*
-  // role-dependent has somewhere obvious to go.
+export function stripSensitive<T extends Redactable>(row: T): T {
   return { ...row, idDocumentNumber: null };
 }
 
-export function redactAllForRole<T extends Redactable>(rows: T[], role: string): T[] {
-  return rows.map(r => redactForRole(r, role));
+export function stripSensitiveAll<T extends Redactable>(rows: T[]): T[] {
+  return rows.map(stripSensitive);
 }

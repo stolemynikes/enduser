@@ -53,12 +53,27 @@ export const MFA_REQUIRED = process.env.REQUIRE_MFA === '1';
  * security.
  */
 export async function hasSecondFactor(kind: AccountKind, id: string): Promise<boolean> {
+  // One query, not two. This runs on every request once the requirement is on,
+  // so the app-or-passkey question is answered by selecting the flag alongside
+  // a single related row rather than by a flag lookup followed by a count.
   const account = await (prisma[kind] as any).findUnique({
-    where: { id }, select: { totpEnabledAt: true },
+    where: { id },
+    select: {
+      totpEnabledAt: true,
+      passkeys: kind === 'companyUser' ? { select: { id: true }, take: 1 } : undefined,
+    },
   });
-  if (account?.totpEnabledAt) return true;
-  const owner = kind === 'admin' ? { adminId: id } : { userId: id };
-  return (await prisma.passkey.count({ where: owner })) > 0;
+  if (!account) return false;
+  if (account.totpEnabledAt) return true;
+  // Admin passkeys have no relation on the model (the column is a plain id, so
+  // one table can serve both account kinds), so that side still needs its own
+  // look — but it is one indexed row, not a count over all of them.
+  if (kind === 'admin') {
+    return (await prisma.passkey.findFirst({
+      where: { adminId: id }, select: { id: true },
+    })) != null;
+  }
+  return (account.passkeys?.length ?? 0) > 0;
 }
 
 // --- Recovery codes ----------------------------------------------------------

@@ -609,11 +609,17 @@ export default function CompanyDashboard() {
     </>
   ) : null;
 
-  // Seller tokens last a day rather than the thirty they used to, which is
-  // what makes a token captured by a phishing proxy worth far less. Renewed
-  // while somebody is working, so a daily user never meets a sign-in form; the
-  // renewal runs through the same checks as any request, so a removed member or
-  // a password reset still ends it.
+  // Seller tokens last an hour of idleness rather than the thirty days they
+  // used to, which is what makes a token captured by a phishing proxy worth
+  // very little. Renewed while somebody is working, so an uninterrupted
+  // afternoon never meets a sign-in form; the renewal runs through the same
+  // checks as any request, so a removed member or a password reset still ends
+  // it.
+  //
+  // Two triggers, because a timer alone is not enough: an interval does not
+  // fire while a laptop is asleep, so a lid closed for twenty minutes used to
+  // come back to a session that had quietly expired. Waking the tab renews
+  // immediately; the interval covers a tab left open and visible.
   useEffect(() => {
     const renew = async () => {
       try {
@@ -627,8 +633,16 @@ export default function CompanyDashboard() {
       }
     };
     void renew();
-    const timer = setInterval(() => void renew(), 30 * 60 * 1000);
-    return () => clearInterval(timer);
+    // Comfortably inside the hour, so one missed tick is not a sign-out.
+    const timer = setInterval(() => void renew(), 15 * 60 * 1000);
+    const onWake = () => { if (document.visibilityState === 'visible') void renew(); };
+    document.addEventListener('visibilitychange', onWake);
+    window.addEventListener('focus', onWake);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', onWake);
+      window.removeEventListener('focus', onWake);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

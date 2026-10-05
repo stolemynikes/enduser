@@ -4,15 +4,19 @@ import crypto from 'node:crypto';
 const SECRET = process.env.COMPANY_JWT_SECRET!;
 
 /**
- * How long a seller's session lives.
+ * How long a seller's session lives without being used.
  *
- * It was 30 days, which is how long a token captured by a phishing proxy would
- * have kept working — and a proxy that relays the login live is what defeats a
- * one-time code, so this is the number that decides what that attack is worth.
- * A day, renewed silently while someone is working, means a daily user never
- * notices and a captured token is stale by tomorrow.
+ * It was 30 days, then a day; it is now an hour. That number decides what a
+ * token captured by a phishing proxy is worth, and a proxy relaying the sign-in
+ * live is exactly what a one-time code does not stop — so it is the single most
+ * load-bearing constant in the authentication path.
+ *
+ * An hour is an *idle* limit, not a working one: the dashboard renews while
+ * somebody is using it, including the moment a tab wakes up, so an uninterrupted
+ * afternoon never meets a sign-in form. Walk away for longer and the password
+ * is needed again, which is the trade being made deliberately.
  */
-const SESSION_HOURS = 24;
+const SESSION_MINUTES = 60;
 
 /** Support sessions are privileged admin access into a tenant — far shorter. */
 const SUPPORT_HOURS = 2;
@@ -44,7 +48,7 @@ export function signCompanyToken(payload: CompanyTokenPayload): string {
     sid: payload.sid ?? crypto.randomBytes(16).toString('base64url'),
   };
   return jwt.sign(body, SECRET, {
-    expiresIn: payload.support ? `${SUPPORT_HOURS}h` : `${SESSION_HOURS}h`,
+    expiresIn: payload.support ? `${SUPPORT_HOURS}h` : `${SESSION_MINUTES}m`,
   });
 }
 

@@ -13,6 +13,16 @@
   Strict-Transport-Security: max-age=31536000; includeSubDomains
   Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=()
 
+# Disclosure paperwork: plain text, cacheable, no policy needed beyond the
+# defaults. Served from the root so a researcher finds it where RFC 9116 says.
+/.well-known/security.txt
+  Content-Type: text/plain; charset=utf-8
+  Cache-Control: public, max-age=86400
+
+/security-policy.txt
+  Content-Type: text/plain; charset=utf-8
+  Cache-Control: public, max-age=86400
+
 # The embed is the one route sellers put in an iframe on their own website, so
 # it is the one route that may be framed.
 /embed/*

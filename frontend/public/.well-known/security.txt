@@ -1,0 +1,13 @@
+# Coordinated vulnerability disclosure for EU Statement.
+#
+# RFC 9116. If you have found a weakness in this platform, the address below is
+# the fastest way to reach somebody who can fix it. You will get a reply.
+
+Contact: mailto:security@eustatement.example
+Preferred-Languages: en, nl
+Canonical: https://eustatement.example/.well-known/security.txt
+Policy: https://eustatement.example/security-policy
+
+# Replace the date before every deploy. An expired file reads as an abandoned
+# mailbox, which is worse than no file at all.
+Expires: 2027-10-05T00:00:00.000Z

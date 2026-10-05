@@ -1,0 +1,42 @@
+Coordinated vulnerability disclosure — EU Statement
+===================================================
+
+This platform holds end-user statements for restricted chemicals, which means
+it holds buyers' names, addresses and identity document numbers. We would
+rather hear about a weakness from you than from the people whose data it is.
+
+What we ask
+-----------
+
+- Report it to security@eustatement.example before telling anyone else, and
+  give us a reasonable period to fix it.
+- Do not use more access than you need to demonstrate the problem. If you reach
+  personal data, stop, tell us what you reached, and do not keep a copy.
+- No denial-of-service testing, no spam, no social engineering of our staff or
+  our customers, and no physical attempts.
+- Do not test against the third-party services this platform depends on — the
+  identity verification provider, the EU VIES register or PubChem. They are not
+  ours to authorise, and traffic at them is billed to us or blocks our address.
+  Say so in your report and we will reproduce it ourselves.
+
+What you can expect
+-------------------
+
+- An acknowledgement within three working days.
+- An assessment, and a date by which we expect to have it fixed.
+- Credit in our release notes if you want it, and silence if you prefer.
+- No legal action against anyone who follows this policy in good faith.
+
+What is in scope
+----------------
+
+The web application, its API, and the embeddable form. Reports about missing
+security headers on static assets, or about software versions without a
+demonstrated exploit, are welcome but will usually be closed as informational.
+
+Two things we already know and have decided about, so they are not findings:
+the email addresses of seller accounts are stored unencrypted, and a public
+form's address can be discovered by trying slugs. Both are written up in
+SECURITY.md with the reasoning.
+
+Last reviewed: 2026-10-05

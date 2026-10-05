@@ -1,4 +1,5 @@
 import bcrypt from 'bcrypt';
+import crypto from 'node:crypto';
 import { prisma } from '../lib/prisma.ts';
 import { signCompanyToken } from '../services/companyAuth.ts';
 import {
@@ -20,7 +21,7 @@ import { SUBSTANCE_CHECK_ENABLED } from '../services/substanceCheck.ts';
 import { assertApprovable, applyOverride, clearOverride } from '../lib/overrides.ts';
 import { type OverrideCategory } from '../lib/approvalGate.ts';
 import { tenantSubmissions } from '../lib/tenant.ts';
-import { redactAllForRole, redactForRole } from '../lib/redact.ts';
+import { stripSensitiveAll } from '../lib/redact.ts';
 import { DIDIT_ENABLED } from '../services/didit.ts';
 import { notify } from '../lib/notifications.ts';
 import {
@@ -127,12 +128,31 @@ const RESERVED_SLUGS = new Set([
 
 // Slugs are derived from the company name and not user-editable: on a reserved
 // word or collision, append -2, -3, … instead of failing registration.
+//
+// Bounded, because the counting version was one database round trip per
+// collision with no ceiling — so a few hundred companies all called "Test"
+// made every later registration slower than the one before it. After a few
+// tries it stops counting and takes a random suffix, which collides with
+// nothing in practice and costs one query.
+const SLUG_ATTEMPTS = 8;
+
 async function availableSlug(base: string) {
-  let candidate = base;
-  for (let n = 2; RESERVED_SLUGS.has(candidate) || await prisma.company.findUnique({ where: { slug: candidate } }); n++) {
-    candidate = `${base}-${n}`;
+  const taken = async (candidate: string) =>
+    RESERVED_SLUGS.has(candidate)
+    || (await prisma.company.findUnique({ where: { slug: candidate }, select: { id: true } })) != null;
+
+  if (!(await taken(base))) return base;
+
+  for (let n = 2; n <= SLUG_ATTEMPTS; n++) {
+    const candidate = `${base}-${n}`;
+    if (!(await taken(candidate))) return candidate;
   }
-  return candidate;
+
+  for (let i = 0; i < 5; i++) {
+    const candidate = `${base}-${crypto.randomBytes(3).toString('hex')}`;
+    if (!(await taken(candidate))) return candidate;
+  }
+  throw new Error('Could not allocate an address for this company. Please try a different name.');
 }
 
 const APP_URL = () => (process.env.FRONTEND_URL ?? 'http://localhost:5173').replace(/\/+$/, '');
@@ -207,7 +227,7 @@ export const companyResolvers = {
         { status?: string; includeTest?: boolean; limit?: number; offset?: number },
       ctx: Ctx,
     ) => {
-      const { companyId, role } = requireCompany(ctx);
+      const { companyId } = requireCompany(ctx);
       const rows = await tenantSubmissions(companyId).findMany({
         where: {
           ...(status ? { status: status as never } : {}),
@@ -220,7 +240,7 @@ export const companyResolvers = {
         take: Math.min(Math.max(limit ?? 100, 1), 200),
         skip: Math.max(offset ?? 0, 0),
       });
-      return redactAllForRole(rows, role);
+      return stripSensitiveAll(rows);
     },
 
     /** Row counts per status, for the queue's tab badges and paging. */

@@ -28,21 +28,27 @@ export type RevealOutcome =
  * step is still worth more than an open field.
  */
 async function checkCredential(
-  userId: string, credential: string,
+  kind: 'companyUser' | 'admin', accountId: string, credential: string,
 ): Promise<{ ok: true } | { ok: false; reason: 'missing' | 'invalid' }> {
-  const user = await prisma.companyUser.findUnique({
-    where: { id: userId },
-    select: { passwordHash: true, ...MFA_SELECT, id: true },
-  });
-  if (!user) return { ok: false, reason: 'invalid' };
+  const account = kind === 'admin'
+    ? await prisma.admin.findUnique({
+        where: { id: accountId },
+        select: { id: true, password: true, ...MFA_SELECT },
+      })
+    : await prisma.companyUser.findUnique({
+        where: { id: accountId },
+        select: { id: true, passwordHash: true, ...MFA_SELECT },
+      });
+  if (!account) return { ok: false, reason: 'invalid' };
 
-  if (mfaEnabled(user)) {
-    const second = await checkSecondFactor('companyUser', user, credential);
+  if (mfaEnabled(account)) {
+    const second = await checkSecondFactor(kind, account, credential);
     return second.ok ? { ok: true } : { ok: false, reason: second.reason };
   }
 
   if (!credential) return { ok: false, reason: 'missing' };
-  return (await bcrypt.compare(credential, user.passwordHash))
+  const hash = 'password' in account ? account.password : account.passwordHash;
+  return (await bcrypt.compare(credential, hash))
     ? { ok: true }
     : { ok: false, reason: 'invalid' };
 }
@@ -55,7 +61,7 @@ async function checkCredential(
  * function cannot be the place a tenant boundary is forgotten.
  */
 export async function revealDocumentNumber({
-  submission, companyId, userId, userName, sessionId, adminId, credential,
+  submission, companyId, userId, userName, sessionId, adminId, credential, asAdmin,
 }: {
   submission: { id: string; idDocumentNumber: string | null };
   companyId: string;
@@ -64,8 +70,18 @@ export async function revealDocumentNumber({
   sessionId?: string | null;
   adminId?: string | null;
   credential: string;
+  /**
+   * True when a platform admin is reading this directly rather than a seller.
+   * Their own factor is what is checked — the point of the control is that a
+   * session is not enough, and whose session it is does not change that.
+   */
+  asAdmin?: boolean;
 }): Promise<RevealOutcome> {
-  const check = await checkCredential(userId, credential);
+  const check = await checkCredential(
+    asAdmin ? 'admin' : 'companyUser',
+    asAdmin ? (adminId ?? userId) : userId,
+    credential,
+  );
   if (!check.ok) return { ok: false, reason: check.reason };
 
   // Written before the value is returned, so a crash between the two leaves a
@@ -106,6 +122,20 @@ export async function revealHistory(companyId: string, limit: number) {
     bySupport: r.adminId != null,
     at: r.at.toISOString(),
   }));
+}
+
+/**
+ * Drops log rows past the retention ceiling. Called from the nightly job.
+ *
+ * The same eighteen months as a submission, deliberately, and not longer: an
+ * audit trail about data you no longer hold is data you did not need to keep.
+ * It outlives nothing it describes.
+ */
+export async function pruneRevealLog(months: number): Promise<number> {
+  const cutoff = new Date();
+  cutoff.setMonth(cutoff.getMonth() - months);
+  const { count } = await prisma.revealLog.deleteMany({ where: { at: { lt: cutoff } } });
+  return count;
 }
 
 /** How many times this tenant's numbers were read in the last day. */

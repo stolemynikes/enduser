@@ -57,6 +57,8 @@ import { verifyHumanOrThrow } from '../services/turnstile.ts';
 import { mailBudgetAllows } from '../lib/mailBudget.ts';
 import { statementCopy } from '../lib/statementCopy.ts';
 import { matchKeys } from '../lib/matchKeys.ts';
+import { revealDocumentNumber } from '../lib/reveal.ts';
+import { secondFactorError } from './auth.ts';
 import { notifySubmission, notify } from '../lib/notifications.ts';
 import { findPriorApprovals } from '../lib/duplicates.ts';
 
@@ -461,6 +463,43 @@ export const submissionResolvers = {
     ) => {
       if (!ctx.admin) throw new Error('Unauthorized');
       return clearOverride(id, category);
+    },
+
+    /**
+     * The platform admin's path to a document number.
+     *
+     * Added because closing the seller's path and leaving the admin with none
+     * meant nobody could produce the number at all — and an Article 9 report
+     * can land on the platform rather than on the seller. Same shape as the
+     * seller's: the admin's own factor, and a line in the tenant's own log, so
+     * a seller can see when we looked.
+     */
+    revealSubmissionDocumentNumber: async (
+      _: unknown,
+      { id, credential }: { id: string; credential: string },
+      ctx: { admin?: boolean; adminId?: string },
+    ) => {
+      if (!ctx.admin || !ctx.adminId) throw new Error('Unauthorized');
+      const submission = await prisma.submission.findUnique({ where: { id } });
+      if (!submission) throw new Error('Submission not found.');
+
+      const outcome = await revealDocumentNumber({
+        submission,
+        // A submission with no company still needs somewhere to file the
+        // access; the platform is the tenant of last resort.
+        companyId: submission.companyId ?? 'platform',
+        userId: ctx.adminId,
+        userName: 'Platform admin',
+        adminId: ctx.adminId,
+        asAdmin: true,
+        credential,
+      });
+      if (!outcome.ok) {
+        throw outcome.reason === 'no-credential'
+          ? new Error('This account has no way to confirm the request.')
+          : secondFactorError(outcome.reason);
+      }
+      return { submissionId: id, documentNumber: outcome.documentNumber };
     },
 
     recheckSubmissionSubstance: async (_: unknown, { id }: { id: string }, ctx: { admin?: boolean }) => {

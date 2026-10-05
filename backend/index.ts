@@ -37,6 +37,7 @@ import { WEBHOOK_CONFIGURED, claimEvent, pruneEvents, verifyWebhook } from './se
 import { purgeDeletedCompanies, DELETION_GRACE_DAYS, RETENTION_MONTHS } from './lib/retention.ts';
 import { pruneAuthTokens } from './lib/authTokens.ts';
 import { pruneMailBudget } from './lib/mailBudget.ts';
+import { pruneRevealLog } from './lib/reveal.ts';
 import { prisma } from './lib/prisma.ts';
 import { pseudonym } from './lib/tokens.ts';
 
@@ -414,6 +415,11 @@ cron.schedule('0 2 * * *', async () => {
   cutoff.setMonth(cutoff.getMonth() - RETENTION_MONTHS);
   const { count } = await prisma.submission.deleteMany({ where: { createdAt: { lt: cutoff } } });
   if (count > 0) console.log(`Retention: deleted ${count} submission(s) older than ${RETENTION_MONTHS} months`);
+
+  // The audit trail does not outlive what it describes: an access log about
+  // submissions that were deleted months ago is data kept for nothing.
+  const revealRows = await pruneRevealLog(RETENTION_MONTHS);
+  if (revealRows > 0) console.log(`Retention: deleted ${revealRows} reveal-log row(s)`);
 
   const sessions = await pruneSessions();
   const events = await pruneEvents();

@@ -181,6 +181,30 @@ const REVEAL = `mutation($id:ID!,$c:String!){
   check('another company sees none of it',
     (otherLog.data?.revealLog ?? []).length === 0, JSON.stringify(otherLog.data));
 
+  console.log('— The platform admin has its own gated path —');
+  // Closing the seller's path and leaving the admin with none meant nobody
+  // could produce the number at all, which an Article 9 report landing on the
+  // platform would need.
+  const ADMIN_REVEAL = `mutation($id:ID!,$c:String!){
+    revealSubmissionDocumentNumber(id:$id, credential:$c){ documentNumber }
+  }`;
+  const asSeller = await gql(ADMIN_REVEAL, { id: submission.id, c: PASSWORD }, freshToken);
+  check('a seller token cannot use the admin path', !!asSeller.errors?.length,
+    JSON.stringify(asSeller.data));
+  const asAnon = await gql(ADMIN_REVEAL, { id: submission.id, c: PASSWORD });
+  check('and neither can an unauthenticated caller', !!asAnon.errors?.length);
+
+  console.log('— Retention does not outlive what it describes —');
+  const { pruneRevealLog } = await import('../lib/reveal.ts');
+  await prisma.revealLog.updateMany({
+    where: { companyId: company.id },
+    data: { at: new Date(Date.now() - 19 * 30 * 24 * 60 * 60 * 1000) },
+  });
+  const pruned = await pruneRevealLog(18);
+  check('rows past eighteen months are dropped', pruned >= 2, String(pruned));
+  check('and the log is empty afterwards',
+    (await prisma.revealLog.count({ where: { companyId: company.id } })) === 0);
+
   console.log('— Cleanup —');
   await prisma.revealLog.deleteMany({ where: { companyId: company.id } });
   await prisma.submission.deleteMany({ where: { companyId: company.id } });

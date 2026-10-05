@@ -48,17 +48,23 @@ export async function notify(input: NewNotification): Promise<void> {
         submissionId: input.submissionId ?? null,
       },
     });
-    await trim(input.companyId);
+    // Trimmed occasionally rather than on every write. Counting, selecting and
+    // deleting on each notification was three queries per message to enforce a
+    // ceiling that only matters after two hundred of them.
+    if (Math.random() < 1 / 25) await trim(input.companyId);
   } catch (err: any) {
     console.error(`[notify] could not record a notification: ${err?.message ?? 'unknown error'}`);
   }
 }
 
 /**
- * Keeps a tenant's stream bounded. A busy seller would otherwise accumulate a
+ * Keeps a tenant's stream bounded. Also called from the nightly job, so a quiet
+ * tenant is tidied even if the sampled path above never fires for it.
+ *
+ * Exported for that reason. A busy seller would otherwise accumulate a
  * row per submission forever, and nobody scrolls back 10,000 messages.
  */
-async function trim(companyId: string): Promise<void> {
+export async function trim(companyId: string): Promise<void> {
   const count = await prisma.notification.count({ where: { companyId } });
   if (count <= KEEP_PER_COMPANY) return;
   const oldest = await prisma.notification.findMany({

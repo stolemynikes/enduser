@@ -480,6 +480,11 @@ export const typeDefs = `#graphql
     submitEndUserStatement(input: SubmitInput!): Submission!
     approveSubmission(id: ID!): Submission!
     denySubmission(id: ID!, reason: String!): Submission!
+    """
+    The platform admin's path to one submission's identity document number.
+    Needs their own code or password, and is recorded in the tenant's log.
+    """
+    revealSubmissionDocumentNumber(id: ID!, credential: String!): RevealedDocument!
     recheckSubmissionSubstance(id: ID!): Submission!
     overrideSubmissionCheck(id: ID!, category: OverrideCategory!, reason: String!): Submission!
     clearSubmissionCheckOverride(id: ID!, category: OverrideCategory!): Submission!
