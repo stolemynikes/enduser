@@ -15,7 +15,9 @@ import { useQuery } from '@apollo/client/react';
 const PRIOR_APPROVALS = gql`
   query PriorApprovals($id: ID!) {
     priorApprovals(id: $id) {
-      id buyerName approvedAt approvedByName statementMatch matchedOn
+      total
+      oldestAt
+      matches { id buyerName approvedAt approvedByName statementMatch matchedOn }
     }
   }
 `;
@@ -47,8 +49,17 @@ export function PriorApprovals({
     fetchPolicy: 'cache-and-network',
   });
 
-  const matches: Match[] = data?.priorApprovals ?? [];
-  if (matches.length === 0) return null;
+  const prior = data?.priorApprovals;
+  const matches: Match[] = prior?.matches ?? [];
+  const total: number = prior?.total ?? 0;
+  const oldestAt: string | null = prior?.oldestAt ?? null;
+  if (total === 0) return null;
+
+  const months = oldestAt
+    ? Math.floor((Date.now() - new Date(oldestAt).getTime()) / (30 * 24 * 60 * 60 * 1000))
+    : 0;
+  const date = (iso: string) =>
+    new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
 
   return (
     <div className="pa-block">
@@ -59,18 +70,33 @@ export function PriorApprovals({
           <path d="M3.5 10a6.5 6.5 0 1111.3 4.4" /><path d="M14.5 17v-3h3" />
           <path d="M10 6.5V10l2.5 1.5" />
         </svg>
-        {matches.length === 1 ? 'Approved before' : `Approved ${matches.length} times before`}
+        {total === 1 ? 'Approved before' : `Approved ${total} times before`}
       </p>
+      {oldestAt && (
+        <p className="pa-span">
+          {/* Said in these words on purpose. "Since March 2025" would read as
+              first contact, and it is not — it is the oldest record we still
+              hold, because nothing outlives the eighteen-month retention. A
+              buyer who has been coming back for three years looks eighteen
+              months old here, and a reviewer has to know that to judge it. */}
+          Oldest on record {date(oldestAt)}
+          {months >= 1 && ` · ${months} month${months === 1 ? '' : 's'} of history`}
+          . Older statements have been deleted, so this is not necessarily the
+          first time.
+          {months >= 12 && (
+            <strong className="pa-stale">
+              {' '}This buyer has been approved on the strength of earlier decisions for a
+              while — worth a fresh look rather than another nod.
+            </strong>
+          )}
+        </p>
+      )}
       <ul className="pa-list">
         {matches.map(m => (
           <li key={m.id} className="pa-item">
             <span className="pa-item-main">
               <b>{m.buyerName}</b>
-              {m.approvedAt && (
-                <> on {new Date(m.approvedAt).toLocaleDateString('en-GB', {
-                  day: 'numeric', month: 'short', year: 'numeric',
-                })}</>
-              )}
+              {m.approvedAt && <> on {date(m.approvedAt)}</>}
               {m.approvedByName && <> by {m.approvedByName}</>}
             </span>
             <span className="pa-item-meta">
@@ -88,6 +114,11 @@ export function PriorApprovals({
           </li>
         ))}
       </ul>
+      {total > matches.length && (
+        <p className="pa-more">
+          {total - matches.length} older match{total - matches.length === 1 ? '' : 'es'} not listed.
+        </p>
+      )}
       <p className="pa-note">
         Shown for context. The automated checks on this statement still have to pass on their own.
       </p>
@@ -122,6 +153,13 @@ const styles = `
   .pa-open:hover { background: rgba(91,156,246,0.14); border-color: rgba(91,156,246,0.6); }
   .pa-open:focus-visible { outline: 2px solid var(--cd-blue); outline-offset: 1px; }
   .pa-note { margin: 10px 0 0; font-size: 11px; line-height: 1.5; color: var(--cd-text-dim); }
+  .pa-span {
+    margin: 0 0 10px; font-size: 11.5px; line-height: 1.55; color: var(--cd-text-mid);
+  }
+  /* A nudge, not a verdict: amber because it asks for attention, and worded as
+     a suggestion because the decision stays the reviewer's. */
+  .pa-stale { color: var(--cd-amber); font-weight: 600; }
+  .pa-more { margin: 8px 0 0; font-size: 11px; color: var(--cd-text-dim); }
 
   @media (max-width: 620px) {
     .pa-item { grid-template-columns: 1fr; }

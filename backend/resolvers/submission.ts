@@ -390,9 +390,10 @@ export const submissionResolvers = {
 
       // "You have approved this before" is worth knowing at the moment the row
       // appears, not only once someone opens it.
-      void findPriorApprovals(submission).then(async matches => {
-        if (matches.length === 0) return;
-        const first = matches[0];
+      void findPriorApprovals(submission).then(async prior => {
+        if (prior.total === 0) return;
+        const first = prior.matches[0];
+        if (!first) return;
         await notify({
           companyId, kind: 'DUPLICATE_SEEN', submissionId: submission.id,
           title: 'This request has been approved before',

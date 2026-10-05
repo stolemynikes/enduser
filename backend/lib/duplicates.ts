@@ -14,10 +14,42 @@ import { statementSimilarity } from './matchKeys.ts';
 
 /** Below this, two statements have nothing in common worth mentioning. */
 const MIN_SIMILARITY = 0.35;
-/** How many prior approvals to show. More than a few is noise. */
+/** How many prior approvals to show in full. More than a few is noise. */
 const MAX_MATCHES = 3;
-/** How far back to look. An approval from three years ago is not reassurance. */
+/**
+ * How far back to look.
+ *
+ * Belt to retention's braces rather than the control itself: submissions are
+ * deleted eighteen months after they were made, so a row older than this does
+ * not exist to be found. Kept as an explicit bound so the intent survives
+ * somebody changing the retention period without reading this file.
+ */
 const WINDOW_MONTHS = 18;
+
+/**
+ * What the reviewer is told, in full.
+ *
+ * The count and the oldest date exist because recognition rolls: every new
+ * approval becomes the anchor for the next one, so a buyer ordering twice a
+ * year is "approved before" indefinitely, and a shortcut that never expires
+ * stops being a decision. Showing how long the chain has run lets a person
+ * notice that and call for a fresh look — which keeps the judgement where it
+ * belongs instead of letting the platform quietly decide that a regular
+ * customer no longer needs reviewing.
+ */
+export type PriorApprovals = {
+  matches: DuplicateMatch[];
+  /** Every match, not only the ones shown. */
+  total: number;
+  /**
+   * The oldest approval still held — which is *not* necessarily the first one
+   * ever. Nothing outlives the eighteen-month retention, so a buyer who has
+   * been coming back for three years looks eighteen months old here. The
+   * dashboard says so, because read as "first contact" this number would
+   * mislead in exactly the way that matters.
+   */
+  oldestAt: string | null;
+};
 
 export type DuplicateMatch = {
   id: string;
@@ -57,28 +89,41 @@ export async function findPriorApprovals(submission: {
   idDocumentNumberHash?: string | null;
   vatNumberHash?: string | null;
   substanceKeyHash?: string | null;
-}): Promise<DuplicateMatch[]> {
+}): Promise<PriorApprovals> {
+  const none: PriorApprovals = { matches: [], total: 0, oldestAt: null };
   const { companyId, substanceKeyHash } = submission;
-  if (!companyId || !substanceKeyHash) return [];
+  if (!companyId || !substanceKeyHash) return none;
 
   const who: { idDocumentNumberHash?: string; vatNumberHash?: string }[] = [];
   if (submission.idDocumentNumberHash) who.push({ idDocumentNumberHash: submission.idDocumentNumberHash });
   if (submission.vatNumberHash) who.push({ vatNumberHash: submission.vatNumberHash });
-  if (who.length === 0) return [];
+  if (who.length === 0) return none;
 
   const since = new Date();
   since.setMonth(since.getMonth() - WINDOW_MONTHS);
 
+  const where = {
+    companyId,
+    id: { not: submission.id },
+    status: 'APPROVED' as const,
+    isTest: false,
+    substanceKeyHash,
+    createdAt: { gte: since },
+    OR: who,
+  };
+
+  // Counted and dated separately from the rows that get loaded, so the summary
+  // is honest even when there are more matches than are worth decrypting.
+  const [total, oldest] = await Promise.all([
+    prisma.submission.count({ where }),
+    prisma.submission.findFirst({
+      where, orderBy: { createdAt: 'asc' }, select: { createdAt: true },
+    }),
+  ]);
+  if (total === 0) return none;
+
   const candidates = (await prisma.submission.findMany({
-    where: {
-      companyId,
-      id: { not: submission.id },
-      status: 'APPROVED',
-      isTest: false,
-      substanceKeyHash,
-      createdAt: { gte: since },
-      OR: who,
-    },
+    where,
     orderBy: { reviewedAt: 'desc' },
     // The fingerprints have already narrowed this to one buyer's history; the
     // cap is there so a pathological row count cannot be loaded and decrypted.
@@ -90,7 +135,7 @@ export async function findPriorApprovals(submission: {
     },
   })) as unknown as Candidate[];
 
-  return candidates
+  const matches = candidates
     .map(c => {
       const matchedOn: DuplicateMatch['matchedOn'] = ['SUBSTANCE'];
       if (submission.idDocumentNumberHash && c.idDocumentNumberHash === submission.idDocumentNumberHash) {
@@ -113,4 +158,10 @@ export async function findPriorApprovals(submission: {
     .filter(m => m.matchedOn.includes('DOCUMENT') || m.statementMatch >= MIN_SIMILARITY * 100)
     .sort((a, b) => b.statementMatch - a.statementMatch)
     .slice(0, MAX_MATCHES);
+
+  return {
+    matches,
+    total,
+    oldestAt: oldest ? oldest.createdAt.toISOString() : null,
+  };
 }

@@ -359,6 +359,20 @@ export const typeDefs = `#graphql
     SUBSTANCE
   }
 
+  """
+  Prior approvals, plus how long the chain has run.
+  """
+  type PriorApprovals {
+    matches: [DuplicateMatch!]!
+    """Every match, not only the ones listed."""
+    total: Int!
+    """
+    The oldest approval still on record — not necessarily the first ever.
+    Nothing outlives the eighteen-month retention period.
+    """
+    oldestAt: String
+  }
+
   type DuplicateMatch {
     id: ID!
     buyerName: String!
@@ -453,7 +467,7 @@ export const typeDefs = `#graphql
     notifications(limit: Int = 30): [Notification!]!
     unreadNotificationCount: Int!
     """Earlier approvals in this company that look like the same request."""
-    priorApprovals(id: ID!): [DuplicateMatch!]!
+    priorApprovals(id: ID!): PriorApprovals!
     """Who looked at a document number, and when. Owner only."""
     revealLog(limit: Int = 50): [RevealEntry!]!
     """How many document numbers were read in this company in the last 24 hours."""
