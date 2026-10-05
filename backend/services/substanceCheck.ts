@@ -48,7 +48,7 @@ function splitList(raw: string): string[] {
  * "0,15" is *not* read as 15%. Returns null when the text does not state one
  * plainly — a guess here would decide a compliance question wrongly.
  */
-export function parsePercentage(raw: string | null | undefined): number | null {
+function parsePercentage(raw: string | null | undefined): number | null {
   const text = String(raw ?? '').trim();
   if (!text) return null;
   const m = text.match(/(\d+(?:[.,]\d+)?)\s*(?:%|percent|per\s?cent|pct)/i);

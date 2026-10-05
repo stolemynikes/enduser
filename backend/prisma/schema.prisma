@@ -88,6 +88,9 @@ model Submission {
   @@index([companyId, idDocumentNumberHash])
   @@index([companyId, vatNumberHash])
   @@index([companyId, substanceKeyHash])
+  // A partial index on substanceCheckStatus = 'PENDING' also exists, added by
+  // migration 20261005180000. Prisma's schema language cannot express a partial
+  // index, so it lives in SQL only — do not "tidy" it away by regenerating.
 }
 
 // One row per manual override of a failing automated check (VIES / Identity /

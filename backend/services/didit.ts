@@ -129,7 +129,7 @@ const STATUS_MAP: Record<string, DiditVerificationStatus> = {
   'abandoned': 'EXPIRED',
 };
 
-export function normalizeStatus(raw: unknown): DiditVerificationStatus {
+function normalizeStatus(raw: unknown): DiditVerificationStatus {
   return STATUS_MAP[String(raw ?? '').trim().toLowerCase()] ?? 'ERROR';
 }
 
@@ -174,7 +174,7 @@ function str(raw: unknown): string | null {
   return v && v !== 'null' && v !== 'undefined' ? v : null;
 }
 
-export function mapDecision(json: any): DiditDecision {
+function mapDecision(json: any): DiditDecision {
   const rawStatus = String(json?.status ?? '');
   const status = normalizeStatus(rawStatus);
 

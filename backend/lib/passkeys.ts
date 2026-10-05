@@ -55,8 +55,6 @@ function expectedOrigins(): string[] {
   return [`https://${host}`];
 }
 
-export const PASSKEYS_AVAILABLE = true;
-
 // --- The challenge ticket ----------------------------------------------------
 //
 // A challenge has to be remembered between the two halves of a ceremony. Rather

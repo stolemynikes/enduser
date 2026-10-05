@@ -16,7 +16,7 @@
 // present — and a guard somebody believes in is worse than no guard.
 export type Redactable = { idDocumentNumber?: string | null };
 
-export function stripSensitive<T extends Redactable>(row: T): T {
+function stripSensitive<T extends Redactable>(row: T): T {
   return { ...row, idDocumentNumber: null };
 }
 

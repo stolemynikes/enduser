@@ -3,6 +3,7 @@ import { gql } from '@apollo/client';
 import { useQuery, useMutation, useLazyQuery } from '@apollo/client/react';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from '../src/components/Toast.tsx';
+import { AdminRevealDocument } from '../src/components/AdminRevealDocument.tsx';
 import { formatDate, relativeTime } from '../src/lib/format.ts';
 import { useDocumentTitle } from '../src/lib/useDocumentTitle.ts';
 import { useModalDismiss } from '../src/lib/useModalDismiss.ts';
@@ -15,7 +16,7 @@ const GET_SUBMISSIONS = gql`
       id email orderNumber firstName lastName companyName vatNumber buyerType
       street zipCode place country substances casNumbers concentration statement
       viesStatus viesName viesAddress viesAddressMatch status adminNote createdAt isTest
-      idDocumentName idDocumentType idDocumentNumber idMrzValid idLikelySynthetic idDocumentExpiry
+      idDocumentName idDocumentType idMrzValid idLikelySynthetic idDocumentExpiry
       idVerificationStatus idLivenessPassed idFaceMatch idVerificationWarnings idVerificationCheckedAt idVerificationPurged
       substanceCheckStatus substanceCheckNote substanceCheckedAt
       reviewedByName reviewedAt
@@ -123,7 +124,7 @@ type Submission = {
   casNumbers: string; concentration?: string | null; statement: string; viesStatus: 'VALID' | 'INVALID' | 'ERROR' | 'NOT_CHECKED';
   viesName?: string | null; viesAddress?: string | null; viesAddressMatch: ViesAddressMatch;
   status: 'PENDING_REVIEW' | 'APPROVED' | 'DENIED'; adminNote?: string; createdAt: string; isTest: boolean;
-  idDocumentName?: string; idDocumentType?: IdDocumentType; idDocumentNumber?: string;
+  idDocumentName?: string; idDocumentType?: IdDocumentType;
   idMrzValid?: boolean | null; idLikelySynthetic?: boolean | null; idDocumentExpiry?: string | null;
   idVerificationStatus: IdVerificationStatus; idLivenessPassed?: boolean | null; idFaceMatch?: boolean | null;
   idVerificationWarnings?: string | null; idVerificationCheckedAt?: string | null; idVerificationPurged: boolean;
@@ -631,7 +632,7 @@ export default function Dashboard() {
                     <Detail label="Admin Note" value={selected.adminNote} />
                   </div>
                 )}
-                {(selected.idDocumentName || selected.idDocumentType || selected.idDocumentNumber
+                {(selected.idDocumentName || selected.idDocumentType
                   || selected.idVerificationStatus !== 'NOT_CHECKED') && (() => {
                   // Rows captured before the move to Didit carry MRZ signals and no
                   // verification status; newer rows carry the reverse. Render whichever
@@ -656,7 +657,7 @@ export default function Dashboard() {
                     <Detail label="Name on Document" value={selected.idDocumentName ?? dimmed} />
                     <Detail label="Document Type"
                       value={selected.idDocumentType ? docTypeLabels[selected.idDocumentType] : dimmed} />
-                    <Detail label="Document Number" value={selected.idDocumentNumber ?? dimmed} />
+                    <AdminRevealDocument submissionId={selected.id} />
                     {verified ? (<>
                       <Detail label="Verification"
                         value={<IdVerificationBadge status={selected.idVerificationStatus} />} />

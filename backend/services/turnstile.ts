@@ -12,7 +12,7 @@ const SECRET = process.env.TURNSTILE_SECRET;
 const VERIFY_URL = 'https://challenges.cloudflare.com/turnstile/v0/siteverify';
 const TIMEOUT_MS = 5000;
 
-export const TURNSTILE_ENABLED = !!SECRET;
+const TURNSTILE_ENABLED = !!SECRET;
 
 /**
  * Throws when the caller cannot show a valid, unused challenge token. Fails

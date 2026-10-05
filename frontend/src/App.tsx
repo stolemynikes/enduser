@@ -1,18 +1,56 @@
+import { Suspense, lazy } from 'react';
 import { Routes, Route, Navigate, useParams } from 'react-router-dom';
 import { ToastProvider } from './components/Toast.tsx';
 import { ConfirmProvider } from './components/ConfirmDialog.tsx';
-import LandingPage from '../pages/LandingPage.tsx';
+
+// The buyer's form is what an ordinary visitor loads, and it was arriving in one
+// bundle with both dashboards, the setup wizard and GSAP — roughly a megabyte
+// of code for a page that asks eight questions. Everything behind a sign-in is
+// split out, so the form carries only itself.
+//
+// Eagerly imported: the form, the page a buyer returns to after verifying, and
+// the seller sign-in. Those are first paint for somebody arriving cold, and a
+// spinner there would be worse than the bytes.
 import Form from '../pages/Form.tsx';
-import AdminLogin from '../pages/AdminLogin.tsx';
-import Dashboard from '../pages/Dashboard.tsx';
 import VerificationComplete from '../pages/VerificationComplete.tsx';
-import CompanyRegister from '../pages/CompanyRegister.tsx';
 import CompanyLogin from '../pages/CompanyLogin.tsx';
-import CompanyDashboard from '../pages/CompanyDashboard.tsx';
-import AcceptInvite from '../pages/AcceptInvite.tsx';
-import ForgotPassword from '../pages/ForgotPassword.tsx';
-import ResetPassword from '../pages/ResetPassword.tsx';
-import VerifyEmail from '../pages/VerifyEmail.tsx';
+
+// Split too: the admin sign-in is a page only platform staff ever open, so
+// there is no reason for it to sit in what a buyer downloads.
+const AdminLogin = lazy(() => import('../pages/AdminLogin.tsx'));
+const LandingPage = lazy(() => import('../pages/LandingPage.tsx'));
+const Dashboard = lazy(() => import('../pages/Dashboard.tsx'));
+const CompanyDashboard = lazy(() => import('../pages/CompanyDashboard.tsx'));
+const CompanyRegister = lazy(() => import('../pages/CompanyRegister.tsx'));
+const AcceptInvite = lazy(() => import('../pages/AcceptInvite.tsx'));
+const ForgotPassword = lazy(() => import('../pages/ForgotPassword.tsx'));
+const ResetPassword = lazy(() => import('../pages/ResetPassword.tsx'));
+const VerifyEmail = lazy(() => import('../pages/VerifyEmail.tsx'));
+
+/**
+ * What a split route shows while its chunk arrives.
+ *
+ * Deliberately almost nothing: on a fast connection the chunk is there before
+ * this would be seen, and a spinner that flashes for 80ms reads as jank rather
+ * than as progress. It carries a live region so a screen reader is told that
+ * something is happening, which a bare blank div would not.
+ */
+function RouteLoading() {
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      style={{ minHeight: '100vh', background: '#0b0d13' }}
+    >
+      <span style={{
+        position: 'absolute', width: 1, height: 1, overflow: 'hidden',
+        clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap',
+      }}>
+        Loading
+      </span>
+    </div>
+  );
+}
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const token = localStorage.getItem('adminToken');
@@ -34,7 +72,8 @@ export default function App() {
   return (
     <ToastProvider>
     <ConfirmProvider>
-    <Routes>
+    <Suspense fallback={<RouteLoading />}>
+      <Routes>
       <Route path="/" element={<LandingPage />} />
       <Route path="/form" element={<Form />} />
       <Route path="/form/:slug" element={<FormSlugRedirect />} />
@@ -58,6 +97,7 @@ export default function App() {
       {/* Public company forms live at the root — keep this route last. */}
       <Route path="/:slug" element={<Form />} />
     </Routes>
+      </Suspense>
     </ConfirmProvider>
     </ToastProvider>
   );
