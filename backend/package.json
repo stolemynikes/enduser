@@ -4,7 +4,7 @@
   "main": "index.ts",
   "type": "module",
   "scripts": {
-    "test": "tsx scripts/cipherTest.ts && tsx scripts/matchKeysTest.ts && tsx scripts/totpTest.ts && tsx scripts/statementPdfTest.ts && tsx scripts/substanceCheckTest.ts && tsx scripts/diditWebhookTest.ts && tsx scripts/securityRegressionTest.ts && tsx scripts/injectionTest.ts && tsx scripts/crossTenantTest.ts && tsx scripts/inviteAuthTest.ts && tsx scripts/qolTest.ts && tsx scripts/mfaTest.ts && tsx scripts/revealTest.ts && tsx scripts/hardeningTest.ts",
+    "test": "tsx scripts/cipherTest.ts && tsx scripts/matchKeysTest.ts && tsx scripts/totpTest.ts && tsx scripts/statementPdfTest.ts && tsx scripts/substanceCheckTest.ts && tsx scripts/diditWebhookTest.ts && tsx scripts/securityRegressionTest.ts && tsx scripts/injectionTest.ts && tsx scripts/crossTenantTest.ts && tsx scripts/inviteAuthTest.ts && tsx scripts/qolTest.ts && tsx scripts/mfaTest.ts && tsx scripts/revealTest.ts && tsx scripts/passkeyTest.ts && tsx scripts/hardeningTest.ts",
     "dev": "nodemon --exec tsx index.ts",
     "typecheck": "tsc --noEmit",
     "test:offline": "tsx scripts/cipherTest.ts && tsx scripts/matchKeysTest.ts && tsx scripts/totpTest.ts && tsx scripts/statementPdfTest.ts",
@@ -19,6 +19,7 @@
     "@as-integrations/express5": "^1.1.2",
     "@prisma/adapter-pg": "^7.8.0",
     "@prisma/client": "^7.8.0",
+    "@simplewebauthn/server": "^13.3.3",
     "bcrypt": "^6.0.0",
     "cors": "^2.8.5",
     "dotenv": "^17.4.2",

@@ -15,6 +15,7 @@ import { PriorApprovals } from '../src/components/PriorApprovals.tsx';
 import { MfaSettings } from '../src/components/MfaSettings.tsx';
 import { RevealDocumentNumber } from '../src/components/RevealDocumentNumber.tsx';
 import { RevealLog } from '../src/components/RevealLog.tsx';
+import { PasskeySettings } from '../src/components/PasskeySettings.tsx';
 import {
   type FormConfigT, CONFIG_KEYS, CONFIG_ROWS, TERMS_MODES, modeLabels,
   BUYER_TYPE_OPTIONS, BUYER_TYPE_LABEL, BUYER_TYPE_DESC,
@@ -1129,6 +1130,8 @@ export default function CompanyDashboard() {
                   </div>
                 )}
               </div>
+
+              <PasskeySettings onChanged={() => void refetchAccount()} />
 
               <MfaSettings
                 enabled={account?.mfaEnabled ?? false}

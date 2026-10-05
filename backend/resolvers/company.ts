@@ -29,6 +29,10 @@ import {
 } from '../lib/mfa.ts';
 import { secondFactorError } from './auth.ts';
 import { revealDocumentNumber, revealHistory, revealsToday } from '../lib/reveal.ts';
+import {
+  countPasskeys, finishAuthentication, finishRegistration, listPasskeys,
+  removePasskey, startAuthentication, startRegistration,
+} from '../lib/passkeys.ts';
 import { findPriorApprovals } from '../lib/duplicates.ts';
 
 type Ctx = {
@@ -262,6 +266,11 @@ export const companyResolvers = {
     revealLog: async (_: unknown, { limit }: { limit?: number }, ctx: Ctx) => {
       const { companyId } = requireOwner(ctx);
       return revealHistory(companyId, limit ?? 50);
+    },
+
+    myPasskeys: async (_: unknown, __: unknown, ctx: Ctx) => {
+      const { companyUserId } = requireCompany(ctx);
+      return listPasskeys('companyUser', companyUserId);
     },
 
     /** The last day's count, for the badge on the account screen. */
@@ -636,6 +645,146 @@ export const companyResolvers = {
       if (!userId) throw new Error('This confirmation link is invalid or has expired — request a new one.');
       await prisma.companyUser.update({ where: { id: userId }, data: { emailVerifiedAt: new Date() } });
       return true;
+    },
+
+    startPasskeyRegistration: async (_: unknown, __: unknown, ctx: Ctx) => {
+      const { companyUserId } = requireCompany(ctx);
+      const user = await prisma.companyUser.findUnique({
+        where: { id: companyUserId }, select: { email: true },
+      });
+      if (!user) throw new Error('Membership not found');
+      return startRegistration('companyUser', companyUserId, user.email);
+    },
+
+    finishPasskeyRegistration: async (
+      _: unknown,
+      { ticket, responseJson, name }: { ticket: string; responseJson: string; name: string },
+      ctx: Ctx,
+    ) => {
+      const { companyUserId } = requireCompany(ctx);
+      const result = await finishRegistration({
+        kind: 'companyUser', id: companyUserId, ticket, responseJson,
+        name: boundedText(name, 60, 'A name for this passkey'),
+      });
+      if (!result.ok) {
+        throw new Error(
+          result.reason === 'bad-ticket' ? 'That set-up attempt expired — start again.'
+          : result.reason === 'duplicate' ? 'That device is already enrolled.'
+          : 'The browser could not complete the set-up. Try again.',
+        );
+      }
+      const all = await listPasskeys('companyUser', companyUserId);
+      return all.find(p => p.id === result.passkeyId) ?? all[all.length - 1];
+    },
+
+    /**
+     * Removing the last factor is refused while a second factor is required,
+     * because the next sign-in would have nothing to offer.
+     */
+    removePasskey: async (_: unknown, { id }: { id: string }, ctx: Ctx) => {
+      const { companyUserId } = requireCompany(ctx);
+      const user = await prisma.companyUser.findUnique({
+        where: { id: companyUserId }, select: { totpEnabledAt: true },
+      });
+      const keys = await countPasskeys('companyUser', companyUserId);
+      if (keys <= 1 && !user?.totpEnabledAt) {
+        throw new Error(
+          'That is your only second factor. Add an authenticator app or another passkey first.',
+        );
+      }
+      return removePasskey('companyUser', companyUserId, id);
+    },
+
+    /**
+     * Proves the password, then hands back a challenge the browser can sign.
+     *
+     * Split in two because a passkey needs a server challenge before the
+     * browser can do anything — unlike a code, which the person simply types.
+     * Nothing useful comes back without the correct password, so this is not a
+     * way to discover which accounts have passkeys.
+     */
+    beginPasskeyLogin: async (
+      _: unknown,
+      { email, password, turnstileToken }: { email: string; password: string; turnstileToken?: string },
+    ) => {
+      await verifyHumanOrThrow(turnstileToken);
+      const address = typeof email === 'string' ? email.trim().toLowerCase() : '';
+      const user = address
+        ? await prisma.companyUser.findUnique({ where: { email: address } })
+        : null;
+
+      const minutes = lockedFor(user);
+      const valid = await bcrypt.compare(password, user?.passwordHash ?? DUMMY_HASH);
+      if (!user || !valid) {
+        if (user && minutes === 0) await recordFailure('companyUser', user);
+        throw new Error('Invalid email or password');
+      }
+      if (minutes > 0) throw new Error(LOCKED_MESSAGE(minutes));
+
+      const challenge = await startAuthentication('companyUser', user.id);
+      if (!challenge) throw new Error('This account has no passkey. Use your authenticator app.');
+      return challenge;
+    },
+
+    finishPasskeyLogin: async (
+      _: unknown,
+      { ticket, responseJson }: { ticket: string; responseJson: string },
+    ) => {
+      const outcome = await finishAuthentication({ ticket, responseJson });
+      if (!outcome.ok) {
+        // One message for every failure: which part went wrong is not
+        // something an unauthenticated caller gets to learn.
+        throw new Error('That passkey could not be verified. Try again.');
+      }
+      const user = await prisma.companyUser.findUnique({
+        where: { id: outcome.accountId },
+        include: { memberships: { include: { company: true } } },
+      });
+      if (!user) throw new Error('Invalid email or password');
+      await recordSuccess('companyUser', user.id);
+
+      const live = user.memberships.filter(m => m.company.deletedAt == null);
+      if (live.length === 0) throw new Error('No company membership found');
+      const membership = live[0];
+      console.log(`[passkey] user ${user.id} signed in with "${outcome.passkeyName}"`);
+      const token = signCompanyToken({
+        companyUserId: user.id, companyId: membership.companyId, role: membership.role,
+      });
+      return buildAuthPayload(token, membership.company, membership.role);
+    },
+
+    /** A passkey satisfies the reveal as well as a code does. */
+    startRevealWithPasskey: async (_: unknown, { id }: { id: string }, ctx: Ctx) => {
+      const { companyId, companyUserId } = requireOwnerOrPlus(ctx);
+      await tenantSubmissions(companyId).getOwned(id);
+      const challenge = await startAuthentication('companyUser', companyUserId);
+      if (!challenge) throw new Error('This account has no passkey.');
+      return challenge;
+    },
+
+    finishRevealWithPasskey: async (
+      _: unknown,
+      { id, ticket, responseJson }: { id: string; ticket: string; responseJson: string },
+      ctx: Ctx,
+    ) => {
+      const { companyId, companyUserId } = requireOwnerOrPlus(ctx);
+      const submission = await tenantSubmissions(companyId).getOwned(id);
+      const outcome = await finishAuthentication({ ticket, responseJson });
+      // The assertion is bound to an account by its ticket, so this also
+      // refuses a signature made by somebody else's passkey.
+      if (!outcome.ok || outcome.accountId !== companyUserId) {
+        throw new Error('That passkey could not be verified. Try again.');
+      }
+      const m = await membershipOrThrow(companyId, companyUserId);
+      await prisma.revealLog.create({
+        data: {
+          companyId, submissionId: id, userId: companyUserId,
+          userName: m.user.name.slice(0, 200),
+          sessionId: ctx.sessionId ?? null,
+          adminId: ctx.support ? ctx.adminId ?? null : null,
+        },
+      }).catch(() => {});
+      return { submissionId: id, documentNumber: submission.idDocumentNumber };
     },
 
     /**

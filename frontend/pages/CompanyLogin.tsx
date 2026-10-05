@@ -8,6 +8,26 @@ import { Wordmark } from '../src/components/Mark.tsx';
 import { Turnstile } from '../src/components/Turnstile.tsx';
 import { TotpInput } from '../src/components/TotpInput.tsx';
 import { mfaSignal } from '../src/lib/mfaError.ts';
+import { startAuthentication } from '@simplewebauthn/browser';
+
+const BEGIN_PASSKEY = gql`
+  mutation BeginPasskeyLogin($email: String!, $password: String!, $turnstileToken: String) {
+    beginPasskeyLogin(email: $email, password: $password, turnstileToken: $turnstileToken) {
+      optionsJson
+      ticket
+    }
+  }
+`;
+
+const FINISH_PASSKEY = gql`
+  mutation FinishPasskeyLogin($ticket: String!, $responseJson: String!) {
+    finishPasskeyLogin(ticket: $ticket, responseJson: $responseJson) {
+      token
+      role
+      company { id name slug }
+    }
+  }
+`;
 
 const COMPANY_LOGIN = gql`
   mutation CompanyLogin($email: String!, $password: String!, $turnstileToken: String, $totp: String) {
@@ -36,6 +56,45 @@ export default function CompanyLogin() {
       : ''
   );
   const [login, { loading }] = useMutation<any>(COMPANY_LOGIN);
+  const [beginPasskey] = useMutation<any>(BEGIN_PASSKEY);
+  const [finishPasskey] = useMutation<any>(FINISH_PASSKEY);
+  const [passkeyBusy, setPasskeyBusy] = useState(false);
+
+  const land = (payload: { token: string; role: string; company: { name: string; slug: string } }) => {
+    localStorage.setItem('companyToken', payload.token);
+    localStorage.setItem('companyRole', payload.role);
+    localStorage.setItem('companyName', payload.company.name);
+    localStorage.setItem('companySlug', payload.company.slug);
+    navigate('/company/dashboard');
+  };
+
+  /**
+   * The passkey path needs a server challenge before the browser can sign, so
+   * it is two calls rather than one. The password still goes first: a passkey
+   * replaces the code, not the password.
+   */
+  const signInWithPasskey = async () => {
+    setError('');
+    setPasskeyBusy(true);
+    try {
+      const { data: began } = await beginPasskey({
+        variables: { email, password, turnstileToken: botToken || undefined },
+      });
+      const { optionsJson, ticket } = began.beginPasskeyLogin;
+      const assertion = await startAuthentication({ optionsJSON: JSON.parse(optionsJson) });
+      const { data } = await finishPasskey({
+        variables: { ticket, responseJson: JSON.stringify(assertion) },
+      });
+      land(data.finishPasskeyLogin);
+    } catch (err: any) {
+      const name = err?.name ?? '';
+      // Cancelling the system prompt is a choice, not a failure.
+      if (name === 'NotAllowedError' || name === 'AbortError') setError('');
+      else setError(err?.message ?? 'That passkey could not be used.');
+    } finally {
+      setPasskeyBusy(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -44,11 +103,7 @@ export default function CompanyLogin() {
       const { data } = await login({
         variables: { email, password, turnstileToken: botToken || undefined, totp: totp || undefined },
       });
-      localStorage.setItem('companyToken', data.companyLogin.token);
-      localStorage.setItem('companyRole', data.companyLogin.role);
-      localStorage.setItem('companyName', data.companyLogin.company.name);
-      localStorage.setItem('companySlug', data.companyLogin.company.slug);
-      navigate('/company/dashboard');
+      land(data.companyLogin);
     } catch (err: any) {
       const signal = mfaSignal(err);
       if (signal) {
@@ -87,13 +142,28 @@ export default function CompanyLogin() {
                 onChange={setPassword} required autoComplete="current-password" />
             </div>
             {needsTotp && (
-              <div className="cl-field">
-                <label className="cl-label" htmlFor="cl-totp">Authentication code</label>
-                <TotpInput id="cl-totp" className="cl-input" value={totp} onChange={setTotp} autoFocus />
-                <p className="cl-hint">
-                  From your authenticator app. Lost your phone? Use one of your recovery codes.
-                </p>
-              </div>
+              <>
+                <div className="cl-field">
+                  <label className="cl-label" htmlFor="cl-totp">Authentication code</label>
+                  <TotpInput id="cl-totp" className="cl-input" value={totp} onChange={setTotp} autoFocus />
+                  <p className="cl-hint">
+                    From your authenticator app. Lost your phone? Use one of your recovery codes.
+                  </p>
+                </div>
+                {/* Offered alongside, not instead: an account may have either or
+                    both, and the server decides which it will accept. */}
+                <button
+                  className="cl-passkey" type="button"
+                  onClick={() => void signInWithPasskey()} disabled={passkeyBusy}
+                >
+                  <svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor"
+                    strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <circle cx="7.5" cy="8" r="3.5" /><path d="M11 8h6M14.5 8v3" />
+                    <path d="M2.5 17c0-2.6 2.2-4.5 5-4.5s5 1.9 5 4.5" />
+                  </svg>
+                  {passkeyBusy ? 'Waiting for your device…' : 'Use a passkey instead'}
+                </button>
+              </>
             )}
             <Turnstile onToken={setBotToken} theme="dark" />
             {error && <div className="cl-error" role="alert">{error}</div>}
@@ -136,6 +206,19 @@ const styles = `
   .cl-form { display: flex; flex-direction: column; gap: 1rem; }
   .cl-field { display: flex; flex-direction: column; gap: 6px; }
   .cl-hint { font-size: 11px; line-height: 1.5; color: #6b7485; }
+  .cl-passkey {
+    display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+    font-family: inherit; font-size: 12px; font-weight: 600; cursor: pointer;
+    color: #5b9cf6; background: rgba(91,156,246,0.08);
+    border: 1px solid rgba(91,156,246,0.3); border-radius: 10px;
+    /* 44px tall, so it is a comfortable target on a phone. */
+    padding: 12px 16px; width: 100%;
+    transition: background 160ms ease-out;
+  }
+  .cl-passkey:hover:not(:disabled) { background: rgba(91,156,246,0.16); }
+  .cl-passkey:focus-visible { outline: 2px solid #5b9cf6; outline-offset: 2px; }
+  .cl-passkey:disabled { opacity: 0.5; cursor: not-allowed; }
+  @media (prefers-reduced-motion: reduce) { .cl-passkey { transition: none; } }
   .cl-label { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #6b7485; }
   .cl-input {
     font-family: inherit; font-size: 13px; color: #f0f2f8;

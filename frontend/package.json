@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@apollo/client": "^4.2.12",
+    "@simplewebauthn/browser": "^13.3.0",
     "axios": "^1.17.0",
     "graphql": "^16.14.1",
     "gsap": "^3.15.0",

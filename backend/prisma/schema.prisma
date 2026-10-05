@@ -157,6 +157,7 @@ model CompanyUser {
   memberships    CompanyMember[]
   authTokens     AuthToken[]
   recoveryCodes  RecoveryCode[]
+  passkeys       Passkey[]
 }
 
 /// One-time links emailed to a user: password reset and email verification.
@@ -337,6 +338,39 @@ model RecoveryCode {
 
   @@index([userId, usedAt])
   @@index([adminId, usedAt])
+}
+
+/// A passkey: a key pair the browser holds, bound to this origin.
+///
+/// This is the only second factor that survives the attack a one-time code
+/// cannot. A phishing proxy can relay a password and six digits in real time,
+/// but it cannot make a passkey sign for a domain it does not own — the browser
+/// refuses, whatever the victim types. Which is why it exists alongside TOTP
+/// rather than instead of it: TOTP is the fallback for a device that has no
+/// authenticator, and the passkey is the one that actually closes the hole.
+model Passkey {
+  id           String   @id @default(cuid())
+  /// Exactly one of these is set: a seller's account, or a platform admin.
+  userId       String?
+  adminId      String?
+  /// The credential id the authenticator reports, base64url. Unique platform-wide.
+  credentialId String   @unique
+  /// COSE public key, base64url. Public by definition — no secret is stored here,
+  /// which is the other reason this beats a shared secret.
+  publicKey    String
+  /// Signature counter, for authenticators that keep one. A value that fails to
+  /// advance can mean a cloned device.
+  counter      Int      @default(0)
+  /// usb, nfc, ble, internal, hybrid — used to hint the browser's UI.
+  transports   String?
+  /// What the person called it, so several devices are tellable apart.
+  name         String
+  createdAt    DateTime @default(now())
+  lastUsedAt   DateTime?
+  user         CompanyUser? @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([adminId])
 }
 
 /// One row per time somebody looked at an identity document number.

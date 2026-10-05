@@ -417,6 +417,23 @@ export const typeDefs = `#graphql
     at: String!
   }
 
+  """
+  A WebAuthn ceremony: the browser needs the options, and the server needs the
+  challenge back. The ticket carries the challenge and expires in two minutes.
+  """
+  type PasskeyChallenge {
+    """PublicKeyCredentialCreationOptions or RequestOptions, as JSON."""
+    optionsJson: String!
+    ticket: String!
+  }
+
+  type PasskeyInfo {
+    id: ID!
+    name: String!
+    createdAt: String!
+    lastUsedAt: String
+  }
+
   type PublicConfig {
     """Site key for the anti-robot check; null when it is not configured."""
     turnstileSiteKey: String
@@ -441,6 +458,8 @@ export const typeDefs = `#graphql
     revealLog(limit: Int = 50): [RevealEntry!]!
     """How many document numbers were read in this company in the last 24 hours."""
     revealsToday: Int!
+    """The passkeys enrolled on your own account."""
+    myPasskeys: [PasskeyInfo!]!
     myCompanies: [MyCompany!]!
     companyMembers: [CompanyMember!]!
     formInfo(slug: String!): PublicFormInfo
@@ -479,8 +498,28 @@ export const typeDefs = `#graphql
     call is recorded.
     """
     revealDocumentNumber(id: ID!, credential: String!): RevealedDocument!
+    """
+    Step one of revealing a document number with a passkey, for accounts that
+    have one instead of an authenticator app.
+    """
+    startRevealWithPasskey(id: ID!): PasskeyChallenge!
+    finishRevealWithPasskey(id: ID!, ticket: String!, responseJson: String!): RevealedDocument!
     """Marks the given notifications read, or every one of them when no ids are given."""
     markNotificationsRead(ids: [ID!]): Int!
+    """
+    Step one of enrolling a passkey. The browser turns the options into a
+    credential; finishPasskeyRegistration stores it.
+    """
+    startPasskeyRegistration: PasskeyChallenge!
+    finishPasskeyRegistration(ticket: String!, responseJson: String!, name: String!): PasskeyInfo!
+    removePasskey(id: ID!): Boolean!
+    """
+    Step one of signing in with a passkey: proves the password, then hands back
+    a challenge. Returns nothing useful without the correct password.
+    """
+    beginPasskeyLogin(email: String!, password: String!, turnstileToken: String): PasskeyChallenge!
+    """Step two: the signed assertion, in exchange for a session."""
+    finishPasskeyLogin(ticket: String!, responseJson: String!): CompanyAuthPayload!
     startMfaEnrolment: MfaEnrolment!
     confirmMfaEnrolment(code: String!): MfaActivation!
     disableMfa(password: String!, code: String!): Boolean!
