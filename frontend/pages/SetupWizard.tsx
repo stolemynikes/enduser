@@ -1,4 +1,5 @@
 import { useState, useEffect, useLayoutEffect, useRef } from 'react';
+import { gql } from '@apollo/client';
 import { useQuery, useMutation } from '@apollo/client/react';
 import gsap from 'gsap';
 import { Mark } from '../src/components/Mark.tsx';
@@ -9,6 +10,7 @@ import {
   MY_FORM_CONFIG, UPDATE_FORM_CONFIG, draftFromConfig,
   IDENTITY_AVAILABILITY, ID_UNAVAILABLE_WARNING,
 } from '../src/lib/formConfigShared';
+import { MfaSettings } from '../src/components/MfaSettings.tsx';
 
 // First-time setup wizard: full-screen takeover shown instead of the dashboard
 // until the owner saves their form config for the first time. Questions reveal
@@ -18,8 +20,16 @@ import {
 const BUYER_STEP = 0;
 const FIELD_OFFSET = 1;
 const TERMS_STEP = CONFIG_ROWS.length + FIELD_OFFSET;
-const LAUNCH_STEP = TERMS_STEP + 1;
+// Account security comes before the launch, because afterwards it is a setting
+// nobody goes looking for. Setting up is the one moment the person who owns
+// this company is certain to be looking at the screen.
+const SECURITY_STEP = TERMS_STEP + 1;
+const LAUNCH_STEP = SECURITY_STEP + 1;
 const TOTAL_STEPS = LAUNCH_STEP + 1;
+
+const WIZARD_ACCOUNT = gql`
+  query WizardAccount { myAccount { id mfaEnabled recoveryCodesLeft } }
+`;
 
 type Props = {
   companyName: string;
@@ -39,6 +49,8 @@ export default function SetupWizard({ companyName, companySlug, onDone }: Props)
 
   const { data: cfgData } = useQuery<any>(MY_FORM_CONFIG);
   const { data: idAvailData } = useQuery<any>(IDENTITY_AVAILABILITY);
+  const { data: accountData, refetch: refetchAccount } = useQuery<any>(WIZARD_ACCOUNT);
+  const mfaEnabled: boolean = accountData?.myAccount?.mfaEnabled ?? false;
   const identityAvailable: boolean = idAvailData?.identityVerificationAvailable ?? true;
   // Seeded once from the server, then owned by the wizard. Adjusted during
   // render for the same reason as the dashboard's copy.
@@ -125,7 +137,7 @@ export default function SetupWizard({ companyName, companySlug, onDone }: Props)
       if (!/^https?:\/\//i.test(url)) { setTermsError('The link must start with http:// or https://'); return; }
     }
     setTermsError('');
-    if (revealed === TERMS_STEP) setRevealed(LAUNCH_STEP);
+    if (revealed === TERMS_STEP) setRevealed(SECURITY_STEP);
   };
 
   const launch = () => {
@@ -258,6 +270,36 @@ export default function SetupWizard({ companyName, companySlug, onDone }: Props)
             </div>
           )}
 
+          {revealed >= SECURITY_STEP && (
+            <div className={`wz-step${mfaEnabled ? ' wz-done' : ''}`} data-step={SECURITY_STEP}>
+              <div className="wz-step-main">
+                <div className="wz-step-info">
+                  <span className="wz-badge">{SECURITY_STEP + 1}</span>
+                  <div className="wz-step-text">
+                    <span className="wz-step-label">Protect your account</span>
+                    <span className="wz-step-desc">
+                      This account can read every buyer&rsquo;s details — including their identity
+                      document number. A code from your phone on top of your password means a
+                      stolen or guessed password is not enough on its own.
+                    </span>
+                  </div>
+                </div>
+              </div>
+              <div className="wz-step-foot wz-mfa">
+                <MfaSettings
+                  enabled={mfaEnabled}
+                  recoveryCodesLeft={accountData?.myAccount?.recoveryCodesLeft ?? 0}
+                  onChanged={() => void refetchAccount()}
+                />
+                {revealed === SECURITY_STEP && (
+                  <button className="wz-next-btn" onClick={() => setRevealed(LAUNCH_STEP)}>
+                    {mfaEnabled ? 'Continue →' : 'Skip for now →'}
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
           {revealed >= LAUNCH_STEP && (
             <div className="wz-step wz-launch" data-step={LAUNCH_STEP}>
               <span className="wz-launch-icon">🚀</span>
@@ -271,6 +313,13 @@ export default function SetupWizard({ companyName, companySlug, onDone }: Props)
                 the form straight on your own website. Your form goes live once you confirm your
                 email address.
               </p>
+              {!mfaEnabled && (
+                <p className="wz-launch-note">
+                  Two-factor authentication is still off. You can turn it on any time under{' '}
+                  <b>Account</b> — worth doing before real buyers start sending you their
+                  passport details.
+                </p>
+              )}
               {saveError && <span className="wz-error">{saveError}</span>}
               <button className="wz-launch-btn" onClick={launch} disabled={saving}>
                 {saving ? 'Launching…' : 'Save & launch form'}
@@ -294,6 +343,18 @@ const styles = `
     --wz-accent: #f04e5e; --wz-green: #3ecf8e; --wz-amber: #f5a623; --wz-blue: #5b9cf6;
   }
   html, body { background: var(--wz-bg); }
+  /* MfaSettings is shared with the dashboard and styles itself from the --cd-*
+     tokens. Aliasing them here keeps one component instead of two copies that
+     drift apart, which matters more for an authentication panel than for most. */
+  .wz-screen {
+    --cd-surface: var(--wz-surface); --cd-surface2: var(--wz-surface2);
+    --cd-surface3: var(--wz-border); --cd-border: var(--wz-border);
+    --cd-border2: var(--wz-border2); --cd-text: var(--wz-text);
+    --cd-text-mid: var(--wz-text-mid); --cd-text-dim: var(--wz-text-dim);
+    --cd-accent: var(--wz-accent); --cd-green: var(--wz-green);
+    --cd-amber: var(--wz-amber); --cd-blue: var(--wz-blue);
+    --cd-r: 12px; --cd-r-sm: 8px; --cd-r-pill: 100px;
+  }
   .wz-screen {
     font-family: 'Inter', system-ui, sans-serif; min-height: 100vh;
     background: var(--wz-bg); color: var(--wz-text); font-size: 13px;
@@ -365,6 +426,12 @@ const styles = `
     transition: border-color 0.2s, box-shadow 0.2s; resize: vertical;
   }
   .wz-textarea:focus, .wz-input:focus { border-color: var(--wz-blue); box-shadow: 0 0 0 3px rgba(91,156,246,0.15); }
+  .wz-mfa { display: flex; flex-direction: column; gap: 14px; align-items: flex-start; }
+  .wz-launch-note {
+    font-size: 12px; line-height: 1.6; color: var(--wz-amber);
+    background: rgba(245,166,35,0.08); border: 1px solid rgba(245,166,35,0.25);
+    border-radius: 10px; padding: 10px 14px; max-width: 52ch; margin: 0 auto 1rem;
+  }
   .wz-step-foot { display: flex; align-items: center; justify-content: flex-end; gap: 12px; margin-top: 12px; }
   .wz-step-foot:empty { display: none; }
   .wz-error { font-size: 12px; font-weight: 500; color: var(--wz-accent); }
