@@ -28,6 +28,7 @@ import {
   mfaEnabled, recoveryCodesLeft, startEnrolment,
 } from '../lib/mfa.ts';
 import { secondFactorError } from './auth.ts';
+import { GraphQLError } from 'graphql';
 import { revealDocumentNumber, revealHistory, revealsToday } from '../lib/reveal.ts';
 import {
   countPasskeys, finishAuthentication, finishRegistration, listPasskeys,
@@ -36,6 +37,7 @@ import {
 import { findPriorApprovals } from '../lib/duplicates.ts';
 
 type Ctx = {
+  needsEnrolment?: boolean;
   companyUserId?: string;
   companyId?: string;
   companyRole?: string;
@@ -46,7 +48,27 @@ type Ctx = {
   adminId?: string;
 };
 
+/**
+ * Signed in, and allowed to do things.
+ *
+ * The enrolment check lives here because every company resolver already passes
+ * through this one function — a guard added resolver by resolver is a guard
+ * with a hole in it. The handful of operations somebody must be able to reach
+ * *in order to* enrol use requireCompanyEnrolling instead.
+ */
 function requireCompany(ctx: Ctx) {
+  const m = requireCompanyEnrolling(ctx);
+  if (ctx.needsEnrolment) {
+    throw new GraphQLError(
+      'Set up two-factor authentication to continue.',
+      { extensions: { code: 'MFA_ENROLMENT_REQUIRED' } },
+    );
+  }
+  return m;
+}
+
+/** Signed in, without the enrolment requirement — for the enrolment screens. */
+function requireCompanyEnrolling(ctx: Ctx) {
   if (!ctx.companyUserId || !ctx.companyId) throw new Error('Unauthorized');
   return { companyUserId: ctx.companyUserId, companyId: ctx.companyId, role: ctx.companyRole! };
 }
@@ -269,7 +291,7 @@ export const companyResolvers = {
     },
 
     myPasskeys: async (_: unknown, __: unknown, ctx: Ctx) => {
-      const { companyUserId } = requireCompany(ctx);
+      const { companyUserId } = requireCompanyEnrolling(ctx);
       return listPasskeys('companyUser', companyUserId);
     },
 
@@ -341,7 +363,7 @@ export const companyResolvers = {
     },
 
     myAccount: async (_: unknown, __: unknown, ctx: Ctx) => {
-      const { companyUserId } = requireCompany(ctx);
+      const { companyUserId } = requireCompanyEnrolling(ctx);
       const user = await prisma.companyUser.findUnique({
         where: { id: companyUserId },
         select: { id: true, email: true, name: true, emailVerifiedAt: true, ...MFA_SELECT },
@@ -648,7 +670,7 @@ export const companyResolvers = {
     },
 
     startPasskeyRegistration: async (_: unknown, __: unknown, ctx: Ctx) => {
-      const { companyUserId } = requireCompany(ctx);
+      const { companyUserId } = requireCompanyEnrolling(ctx);
       const user = await prisma.companyUser.findUnique({
         where: { id: companyUserId }, select: { email: true },
       });
@@ -661,7 +683,7 @@ export const companyResolvers = {
       { ticket, responseJson, name }: { ticket: string; responseJson: string; name: string },
       ctx: Ctx,
     ) => {
-      const { companyUserId } = requireCompany(ctx);
+      const { companyUserId } = requireCompanyEnrolling(ctx);
       const result = await finishRegistration({
         kind: 'companyUser', id: companyUserId, ticket, responseJson,
         name: boundedText(name, 60, 'A name for this passkey'),
@@ -794,7 +816,7 @@ export const companyResolvers = {
      * out of their own account.
      */
     startMfaEnrolment: async (_: unknown, __: unknown, ctx: Ctx) => {
-      const { companyUserId } = requireCompany(ctx);
+      const { companyUserId } = requireCompanyEnrolling(ctx);
       const user = await prisma.companyUser.findUnique({
         where: { id: companyUserId }, select: { email: true, totpEnabledAt: true },
       });
@@ -807,7 +829,7 @@ export const companyResolvers = {
 
     /** Step two: switch it on, and hand over the recovery codes exactly once. */
     confirmMfaEnrolment: async (_: unknown, { code }: { code: string }, ctx: Ctx) => {
-      const { companyUserId, companyId, role } = requireCompany(ctx);
+      const { companyUserId, companyId, role } = requireCompanyEnrolling(ctx);
       const result = await confirmEnrolment('companyUser', companyUserId, code);
       if (!result.ok) {
         throw result.reason === 'not-started'
@@ -909,7 +931,7 @@ export const companyResolvers = {
     },
 
     resendEmailVerification: async (_: unknown, __: unknown, ctx: Ctx) => {
-      const { companyUserId } = requireCompany(ctx);
+      const { companyUserId } = requireCompanyEnrolling(ctx);
       const user = await prisma.companyUser.findUnique({
         where: { id: companyUserId },
         select: { id: true, email: true, name: true, emailVerifiedAt: true },
@@ -935,7 +957,7 @@ export const companyResolvers = {
      * reminted, so renewing does not look like a new browser in the audit trail.
      */
     refreshSession: async (_: unknown, __: unknown, ctx: Ctx) => {
-      const { companyUserId, companyId, role } = requireCompany(ctx);
+      const { companyUserId, companyId, role } = requireCompanyEnrolling(ctx);
       const membership = await prisma.companyMember.findUnique({
         where: { companyId_userId: { companyId, userId: companyUserId } },
         include: { company: true },

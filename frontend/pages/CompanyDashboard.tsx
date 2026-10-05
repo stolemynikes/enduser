@@ -16,6 +16,8 @@ import { MfaSettings } from '../src/components/MfaSettings.tsx';
 import { RevealDocumentNumber } from '../src/components/RevealDocumentNumber.tsx';
 import { RevealLog } from '../src/components/RevealLog.tsx';
 import { PasskeySettings } from '../src/components/PasskeySettings.tsx';
+import { EnrolmentRequired } from '../src/components/EnrolmentRequired.tsx';
+import { mfaEnrolmentRequired } from '../src/lib/mfaError.ts';
 import {
   type FormConfigT, CONFIG_KEYS, CONFIG_ROWS, TERMS_MODES, modeLabels,
   BUYER_TYPE_OPTIONS, BUYER_TYPE_LABEL, BUYER_TYPE_DESC,
@@ -212,10 +214,16 @@ export default function CompanyDashboard() {
     limit: PAGE_SIZE,
     offset: 0,
   };
-  const { data: subData, loading, refetch, fetchMore } = useQuery<any>(GET_SUBMISSIONS, {
+  const { data: subData, loading, error: subError, refetch, fetchMore } = useQuery<any>(GET_SUBMISSIONS, {
     variables: listVariables,
     notifyOnNetworkStatusChange: true,
   });
+  // The queue is refused outright while a factor is required and this account
+  // has none, so that refusal is the signal — read off the query's own error
+  // rather than through a callback, which Apollo 4 no longer offers here.
+  useEffect(() => {
+    if (subError && mfaEnrolmentRequired(subError)) setEnrolmentRequired(true);
+  }, [subError]);
   const { data: countData, refetch: refetchCounts } = useQuery<any>(GET_COUNTS, {
     variables: { includeTest: testMode },
   });
@@ -224,6 +232,11 @@ export default function CompanyDashboard() {
   const loadingMore = useRef(false);
   const { data: memberData, refetch: refetchMembers } = useQuery<any>(GET_MEMBERS, { skip: !isOwner });
   const { data: accountData, refetch: refetchAccount } = useQuery<any>(MY_ACCOUNT);
+  // The queue is refused outright while a second factor is required and this
+  // account has none, so that refusal — not a flag on the account — is what
+  // tells us to show the enrolment screen. One source of truth, and it is the
+  // server's.
+  const [enrolmentRequired, setEnrolmentRequired] = useState(false);
   const [refreshSession] = useMutation<any>(REFRESH_SESSION);
   const { data: companiesData } = useQuery<any>(MY_COMPANIES);
   const account = accountData?.myAccount;
@@ -738,6 +751,31 @@ export default function CompanyDashboard() {
       setInviteError(err?.message ?? 'Invite failed');
     }
   };
+
+  // Checked before the setup wizard: an account that cannot read anything is
+  // in no position to configure a form, and the wizard's own queries would be
+  // refused too.
+  if (enrolmentRequired) {
+    return (
+      <EnrolmentRequired
+        email={account?.email}
+        mfaEnabled={account?.mfaEnabled ?? false}
+        recoveryCodesLeft={account?.recoveryCodesLeft ?? 0}
+        onEnrolled={async () => {
+          await refetchAccount();
+          // The server is the authority on whether the block has lifted, so ask
+          // it again rather than assuming the enrolment was enough.
+          try {
+            await refetch();
+            setEnrolmentRequired(false);
+          } catch {
+            // Still refused — stay on this screen.
+          }
+        }}
+        onSignOut={logout}
+      />
+    );
+  }
 
   if (needsSetup) {
     return (

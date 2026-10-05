@@ -471,6 +471,7 @@ export const typeDefs = `#graphql
     adminCompanies: [CompanyActivity!]!
     adminInsights: AdminInsights!
     adminMfaStatus: MfaStatus!
+    adminPasskeys: [PasskeyInfo!]!
     testVies(vat: String!, street: String, zipCode: String, place: String): ViesTestResult!
     testSubstanceCheck(substances: String!, casNumbers: String!, concentration: String, statement: String!, buyerType: BuyerType!): SubstanceTestResult!
   }
@@ -524,6 +525,11 @@ export const typeDefs = `#graphql
     confirmMfaEnrolment(code: String!): MfaActivation!
     disableMfa(password: String!, code: String!): Boolean!
     regenerateRecoveryCodes(code: String!): RecoveryCodes!
+    startAdminPasskeyRegistration: PasskeyChallenge!
+    finishAdminPasskeyRegistration(ticket: String!, responseJson: String!, name: String!): PasskeyInfo!
+    removeAdminPasskey(id: ID!): Boolean!
+    beginAdminPasskeyLogin(username: String!, password: String!, turnstileToken: String): PasskeyChallenge!
+    finishAdminPasskeyLogin(ticket: String!, responseJson: String!): AuthPayload!
     startAdminMfaEnrolment: MfaEnrolment!
     confirmAdminMfaEnrolment(code: String!): MfaActivation!
     disableAdminMfa(password: String!, code: String!): Boolean!

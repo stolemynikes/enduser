@@ -4,12 +4,28 @@ import { checkVies, matchViesAddress } from '../services/vies.ts';
 import { checkSubstanceUse } from '../services/substanceCheck.ts';
 import { runSubstanceCheck } from './submission.ts';
 import { notify } from '../lib/notifications.ts';
+import { GraphQLError } from 'graphql';
 
-type Ctx = { admin?: boolean; adminId?: string };
+type Ctx = { admin?: boolean; adminId?: string; needsEnrolment?: boolean };
 type BuyerType = 'INDIVIDUAL' | 'COMPANY';
 
+/**
+ * A platform admin, allowed to act.
+ *
+ * The enrolment requirement is checked here rather than per resolver, for the
+ * same reason as on the company side: a guard added resolver by resolver is a
+ * guard with a hole in it. The MFA and passkey mutations live in
+ * resolvers/auth.ts behind a lenient guard, so an admin without a factor can
+ * reach the screen that gives them one — and nothing else.
+ */
 function requireAdmin(ctx: Ctx) {
   if (!ctx.admin || !ctx.adminId) throw new Error('Unauthorized');
+  if (ctx.needsEnrolment) {
+    throw new GraphQLError(
+      'Set up two-factor authentication to continue.',
+      { extensions: { code: 'MFA_ENROLMENT_REQUIRED' } },
+    );
+  }
   return ctx.adminId;
 }
 

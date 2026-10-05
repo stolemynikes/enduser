@@ -429,8 +429,12 @@ cron.schedule('0 2 * * *', async () => {
   if (purged > 0) console.log(`Deletion: purged ${purged} company account(s) past the grace period`);
 });
 
-app.listen(3000, () => {
-  console.log('Backend running at http://localhost:3000/graphql');
+// Configurable so a test can bring up a second instance with different
+// settings — the MFA requirement is read at boot, so proving it works means
+// running a server that has it on.
+const PORT = Number(process.env.PORT ?? 3000);
+app.listen(PORT, () => {
+  console.log(`Backend running at http://localhost:${PORT}/graphql`);
   if (IS_EXPOSED) {
     console.log(`[security] hardened mode: introspection off, errors masked (FRONTEND_URL=${process.env.FRONTEND_URL})`);
     if (!process.env.TURNSTILE_SECRET) {

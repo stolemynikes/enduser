@@ -8,9 +8,19 @@ import {
   MFA_SELECT, checkSecondFactor, confirmEnrolment, disableMfa, issueRecoveryCodes,
   mfaEnabled, recoveryCodesLeft, startEnrolment,
 } from '../lib/mfa.ts';
+import {
+  countPasskeys, finishAuthentication, finishRegistration, listPasskeys,
+  removePasskey, startAuthentication, startRegistration,
+} from '../lib/passkeys.ts';
 
-type AdminCtx = { admin?: boolean; adminId?: string };
+type AdminCtx = { admin?: boolean; adminId?: string; needsEnrolment?: boolean };
 
+/**
+ * Deliberately lenient about enrolment: these are the operations an admin
+ * without a second factor has to be able to reach in order to get one. Every
+ * other admin resolver goes through requireAdmin in resolvers/admin.ts, which
+ * refuses until they have.
+ */
 function requireAdminId(ctx: AdminCtx): string {
   if (!ctx.admin || !ctx.adminId) throw new Error('Unauthorized');
   return ctx.adminId;
@@ -142,6 +152,87 @@ export const authResolvers = {
       return true;
     },
 
+    startAdminPasskeyRegistration: async (_: unknown, __: unknown, ctx: AdminCtx) => {
+      const adminId = requireAdminId(ctx);
+      const admin = await prisma.admin.findUnique({
+        where: { id: adminId }, select: { username: true },
+      });
+      if (!admin) throw new Error('Unauthorized');
+      return startRegistration('admin', adminId, admin.username);
+    },
+
+    finishAdminPasskeyRegistration: async (
+      _: unknown,
+      { ticket, responseJson, name }: { ticket: string; responseJson: string; name: string },
+      ctx: AdminCtx,
+    ) => {
+      const adminId = requireAdminId(ctx);
+      const result = await finishRegistration({
+        kind: 'admin', id: adminId, ticket, responseJson,
+        name: typeof name === 'string' ? name.trim().slice(0, 60) || 'Passkey' : 'Passkey',
+      });
+      if (!result.ok) {
+        throw new Error(
+          result.reason === 'bad-ticket' ? 'That set-up attempt expired — start again.'
+          : result.reason === 'duplicate' ? 'That device is already enrolled.'
+          : 'The browser could not complete the set-up. Try again.',
+        );
+      }
+      const all = await listPasskeys('admin', adminId);
+      return all.find(p => p.id === result.passkeyId) ?? all[all.length - 1];
+    },
+
+    removeAdminPasskey: async (_: unknown, { id }: { id: string }, ctx: AdminCtx) => {
+      const adminId = requireAdminId(ctx);
+      const admin = await prisma.admin.findUnique({
+        where: { id: adminId }, select: { totpEnabledAt: true },
+      });
+      if ((await countPasskeys('admin', adminId)) <= 1 && !admin?.totpEnabledAt) {
+        throw new Error(
+          'That is your only second factor. Add an authenticator app or another passkey first.',
+        );
+      }
+      return removePasskey('admin', adminId, id);
+    },
+
+    beginAdminPasskeyLogin: async (
+      _: unknown,
+      { username, password, turnstileToken }:
+        { username: string; password: string; turnstileToken?: string },
+    ) => {
+      await verifyHumanOrThrow(turnstileToken);
+      const admin = typeof username === 'string' && username.length <= 200
+        ? await prisma.admin.findUnique({ where: { username } })
+        : null;
+      const minutes = lockedFor(admin);
+      const valid = await bcrypt.compare(password, admin?.password ?? DUMMY_HASH);
+      if (!admin || !valid) {
+        if (admin && minutes === 0) await recordFailure('admin', admin);
+        throw new Error('Invalid credentials');
+      }
+      if (minutes > 0) throw new Error(LOCKED_MESSAGE(minutes));
+      const challenge = await startAuthentication('admin', admin.id);
+      if (!challenge) throw new Error('This account has no passkey. Use your authenticator app.');
+      return challenge;
+    },
+
+    finishAdminPasskeyLogin: async (
+      _: unknown,
+      { ticket, responseJson }: { ticket: string; responseJson: string },
+    ) => {
+      const outcome = await finishAuthentication({ ticket, responseJson });
+      if (!outcome.ok || outcome.kind !== 'admin') {
+        throw new Error('That passkey could not be verified. Try again.');
+      }
+      await recordSuccess('admin', outcome.accountId);
+      console.log(`[passkey] admin ${outcome.accountId} signed in with "${outcome.passkeyName}"`);
+      return {
+        token: jwt.sign({ adminId: outcome.accountId }, process.env.JWT_SECRET!, {
+          expiresIn: '8h', algorithm: 'HS256',
+        }),
+      };
+    },
+
     /** Replaces the remaining codes with a fresh set, on a current code. */
     regenerateAdminRecoveryCodes: async (_: unknown, { code }: { code: string }, ctx: AdminCtx) => {
       const adminId = requireAdminId(ctx);
@@ -166,6 +257,11 @@ export const authResolvers = {
         enabled,
         recoveryCodesLeft: enabled ? await recoveryCodesLeft('admin', adminId) : 0,
       };
+    },
+
+    adminPasskeys: async (_: unknown, __: unknown, ctx: AdminCtx) => {
+      const adminId = requireAdminId(ctx);
+      return listPasskeys('admin', adminId);
     },
   },
 };

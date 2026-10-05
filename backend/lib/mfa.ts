@@ -34,6 +34,33 @@ export function mfaEnabled(account: Pick<MfaAccount, 'totpEnabledAt'> | null | u
   return account?.totpEnabledAt != null;
 }
 
+/**
+ * Is a second factor required of everyone?
+ *
+ * Off by default, and that is deliberate rather than timid: switching it on
+ * before the people who run the platform have enrolled locks them out of their
+ * own product, and an account with no factor has nothing to offer at the next
+ * sign-in. Enrol, then set this.
+ */
+export const MFA_REQUIRED = process.env.REQUIRE_MFA === '1';
+
+/**
+ * Does this account satisfy the requirement?
+ *
+ * A passkey counts. It has to: a passkey is the stronger of the two — it cannot
+ * be handed to a look-alike domain — so a rule that only accepted an
+ * authenticator app would push people towards the weaker factor in the name of
+ * security.
+ */
+export async function hasSecondFactor(kind: AccountKind, id: string): Promise<boolean> {
+  const account = await (prisma[kind] as any).findUnique({
+    where: { id }, select: { totpEnabledAt: true },
+  });
+  if (account?.totpEnabledAt) return true;
+  const owner = kind === 'admin' ? { adminId: id } : { userId: id };
+  return (await prisma.passkey.count({ where: owner })) > 0;
+}
+
 // --- Recovery codes ----------------------------------------------------------
 
 /**
@@ -218,6 +245,9 @@ export type SecondFactorResult =
 export async function checkSecondFactor(
   kind: AccountKind, account: MfaAccount, code: string | null | undefined,
 ): Promise<SecondFactorResult> {
+  // An account whose only factor is a passkey has no code to check here; the
+  // passkey ceremony is its own path (lib/passkeys.ts) and the sign-in form
+  // routes to it. This function is only about the app.
   if (!mfaEnabled(account) || !account.totpSecret) return { ok: true, usedRecoveryCode: false };
 
   const typed = String(code ?? '').trim();

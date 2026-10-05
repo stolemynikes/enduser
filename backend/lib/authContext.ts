@@ -9,6 +9,7 @@
 import jwt from 'jsonwebtoken';
 import { prisma } from './prisma.ts';
 import { verifyCompanyToken } from '../services/companyAuth.ts';
+import { MFA_REQUIRED, hasSecondFactor } from './mfa.ts';
 
 export type RequestContext = {
   admin?: boolean;
@@ -24,6 +25,17 @@ export type RequestContext = {
    * in an audit trail.
    */
   sessionId?: string;
+  /**
+   * True when a second factor is required of everyone and this account has
+   * none. Computed here rather than in each resolver so the guard can stay a
+   * single synchronous check at the one place every company resolver already
+   * passes through.
+   *
+   * The account can still sign in — locking people out of their own product is
+   * not security, it is an outage — but a session in this state can do nothing
+   * except enrol.
+   */
+  needsEnrolment?: boolean;
 };
 
 /**
@@ -55,7 +67,11 @@ export async function contextFor(authorization: string | undefined, operation: s
       select: { id: true, sessionsValidFrom: true },
     });
     if (!admin || issuedBefore(payload.iat, admin.sessionsValidFrom)) return {};
-    return { admin: true, adminId: admin.id };
+    return {
+      admin: true,
+      adminId: admin.id,
+      needsEnrolment: MFA_REQUIRED && !(await hasSecondFactor('admin', admin.id)),
+    };
   } catch { /* not an admin token */ }
 
   const claims = verifyCompanyToken(token);
@@ -87,5 +103,9 @@ export async function contextFor(authorization: string | undefined, operation: s
     support: claims.support,
     adminId: claims.adminId,
     sessionId: claims.sid,
+    // A support session is platform staff acting as this tenant; the factor
+    // that matters there is the admin's own, checked when they signed in.
+    needsEnrolment: MFA_REQUIRED && !claims.support
+      && !(await hasSecondFactor('companyUser', claims.companyUserId)),
   };
 }
