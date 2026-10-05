@@ -1,8 +1,9 @@
 // End-to-end checks for the account, queue and data-lifecycle work.
 //
 // Covers: password reset, email verification, queue pagination, test-data
-// isolation, role-based redaction of the document number, company switching and
-// scheduled account closure.
+// isolation, company switching and scheduled account closure. The document
+// number's own handling moved to scripts/revealTest.ts once it stopped
+// travelling with queries altogether.
 //
 // Run: npx tsx scripts/qolTest.ts   (backend must be running on :3000)
 import { prisma } from '../lib/prisma.ts';
@@ -105,7 +106,13 @@ async function main() {
   check('counts exclude test rows but report them', counts.data?.companySubmissionCounts?.all === 2 && counts.data?.companySubmissionCounts?.tests === 1,
     JSON.stringify(counts.data?.companySubmissionCounts));
 
-  check('an owner sees the document number', page.data?.companySubmissions?.[0]?.idDocumentNumber === 'SECRET-123');
+  // Changed on 2026-10-05. This used to assert that an owner receives the
+  // document number with the queue, which is exactly what made a stolen owner
+  // session worth having. It now reaches nobody through a query — see
+  // scripts/revealTest.ts for the call that is allowed to produce it.
+  check('not even an owner receives the document number with the queue',
+    page.data?.companySubmissions?.[0]?.idDocumentNumber === null,
+    JSON.stringify(page.data?.companySubmissions?.[0]?.idDocumentNumber));
 
   // Same tenant, seen through an Employee's token.
   const employee = await prisma.companyUser.create({
@@ -115,7 +122,7 @@ async function main() {
   const { signCompanyToken } = await import('../services/companyAuth.ts');
   const empToken = signCompanyToken({ companyUserId: employee.id, companyId: companyA, role: 'EMPLOYEE' });
   const empView = await gql('{ companySubmissions(limit:50){ idDocumentNumber } }', undefined, empToken);
-  check('an Employee never receives the document number',
+  check('an Employee does not receive it either',
     (empView.data?.companySubmissions ?? []).every((s: any) => s.idDocumentNumber === null),
     JSON.stringify(empView.data?.companySubmissions));
 

@@ -28,12 +28,18 @@ import {
   mfaEnabled, recoveryCodesLeft, startEnrolment,
 } from '../lib/mfa.ts';
 import { secondFactorError } from './auth.ts';
+import { revealDocumentNumber, revealHistory, revealsToday } from '../lib/reveal.ts';
 import { findPriorApprovals } from '../lib/duplicates.ts';
 
 type Ctx = {
   companyUserId?: string;
   companyId?: string;
   companyRole?: string;
+  /** Session the request came from, so a reveal can be attributed to a browser. */
+  sessionId?: string;
+  /** Set when platform staff are acting as this company. */
+  support?: boolean;
+  adminId?: string;
 };
 
 function requireCompany(ctx: Ctx) {
@@ -246,6 +252,22 @@ export const companyResolvers = {
       const { companyId } = requireCompany(ctx);
       const submission = await tenantSubmissions(companyId).getOwned(id);
       return findPriorApprovals(submission as Parameters<typeof findPriorApprovals>[0]);
+    },
+
+    /**
+     * Who looked at a document number, and when. Owner only: it is a record of
+     * what the people in this company did, so it belongs to whoever is
+     * accountable for them.
+     */
+    revealLog: async (_: unknown, { limit }: { limit?: number }, ctx: Ctx) => {
+      const { companyId } = requireOwner(ctx);
+      return revealHistory(companyId, limit ?? 50);
+    },
+
+    /** The last day's count, for the badge on the account screen. */
+    revealsToday: async (_: unknown, __: unknown, ctx: Ctx) => {
+      const { companyId } = requireCompany(ctx);
+      return revealsToday(companyId);
     },
 
     /** What the browser needs before anyone has signed in. */
@@ -684,6 +706,43 @@ export const companyResolvers = {
       return { recoveryCodes: await issueRecoveryCodes('companyUser', companyUserId) };
     },
 
+    /**
+     * Hands back one submission's identity document number.
+     *
+     * Reviewers are allowed to see it — the point is that a session alone is
+     * not enough, so a stolen one (which is what a phishing proxy and malware
+     * both produce, with the second factor already passed) cannot read the
+     * tenant's numbers. Plain Employees cannot reveal at all; that has always
+     * been true and stays true.
+     */
+    revealDocumentNumber: async (
+      _: unknown,
+      { id, credential }: { id: string; credential: string },
+      ctx: Ctx,
+    ) => {
+      const { companyId, companyUserId } = requireOwnerOrPlus(ctx);
+      // Tenant ownership is settled before anything else, by the wrapper that
+      // injects the filter structurally.
+      const submission = await tenantSubmissions(companyId).getOwned(id);
+      const m = await membershipOrThrow(companyId, companyUserId);
+
+      const outcome = await revealDocumentNumber({
+        submission,
+        companyId,
+        userId: companyUserId,
+        userName: m.user.name,
+        sessionId: ctx.sessionId,
+        adminId: ctx.support ? ctx.adminId : null,
+        credential,
+      });
+      if (!outcome.ok) {
+        throw outcome.reason === 'invalid' || outcome.reason === 'missing'
+          ? secondFactorError(outcome.reason)
+          : new Error('This account has no way to confirm the request.');
+      }
+      return { submissionId: id, documentNumber: outcome.documentNumber };
+    },
+
     markNotificationsRead: async (_: unknown, { ids }: { ids?: string[] }, ctx: Ctx) => {
       const { companyId, companyUserId } = requireCompany(ctx);
       // Scoped by tenant and addressee, so an id from another company's stream
@@ -710,6 +769,36 @@ export const companyResolvers = {
       if (user.emailVerifiedAt) return true;
       await sendVerification(user);
       return true;
+    },
+
+    /**
+     * Extends the current session without a new sign-in.
+     *
+     * Seller tokens used to live 30 days, which is how long a token captured by
+     * a phishing proxy kept working — and a proxy that relays the sign-in live
+     * is precisely what a one-time code does not stop. They now last a day and
+     * are renewed while somebody is working, so a daily user never notices and
+     * a captured token is stale by tomorrow.
+     *
+     * Renewal is not a free pass: it runs through the same context as every
+     * other request, so a removed member, a demoted role, a closed company or a
+     * password reset all stop it. The session id is carried over rather than
+     * reminted, so renewing does not look like a new browser in the audit trail.
+     */
+    refreshSession: async (_: unknown, __: unknown, ctx: Ctx) => {
+      const { companyUserId, companyId, role } = requireCompany(ctx);
+      const membership = await prisma.companyMember.findUnique({
+        where: { companyId_userId: { companyId, userId: companyUserId } },
+        include: { company: true },
+      });
+      if (!membership || membership.company.deletedAt) throw new Error('Unauthorized');
+      // A support session is deliberately short and is not extendable — that
+      // is the point of giving platform staff two hours rather than a day.
+      if (ctx.support) throw new Error('Support sessions cannot be extended.');
+      const token = signCompanyToken({
+        companyUserId, companyId, role, sid: ctx.sessionId,
+      });
+      return buildAuthPayload(token, membership.company, role);
     },
 
     /**

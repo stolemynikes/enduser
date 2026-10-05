@@ -339,6 +339,37 @@ model RecoveryCode {
   @@index([adminId, usedAt])
 }
 
+/// One row per time somebody looked at an identity document number.
+///
+/// The number is the only field on a submission that nobody needs in order to
+/// decide anything — Didit has already established who the person is — and the
+/// one that turns a leak into identity fraud when combined with the name and
+/// address beside it. So it never travels with a query: it comes back from a
+/// single mutation that demands a fresh second factor, and writes a line here
+/// every time.
+///
+/// Which also makes bulk extraction countable. Before this, somebody reading
+/// four hundred submissions looked exactly like somebody reading one, and there
+/// was no way to show afterwards that it had stopped at twelve.
+model RevealLog {
+  id           String   @id @default(cuid())
+  companyId    String
+  submissionId String
+  /// Who looked. The name is copied in rather than joined, so the record still
+  /// reads correctly after the account is renamed or removed.
+  userId       String
+  userName     String
+  /// Session the reveal came from, so two browsers on one account are
+  /// distinguishable in the log.
+  sessionId    String?
+  /// Set when platform staff did this through a support session.
+  adminId      String?
+  at           DateTime @default(now())
+
+  @@index([companyId, at])
+  @@index([submissionId])
+}
+
 // Audit trail: one row per admin "act as company" support session.
 /// Rate-limit counters. In memory they were per-process — a restart cleared
 /// every budget and a second instance doubled them all.

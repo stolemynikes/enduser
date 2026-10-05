@@ -398,6 +398,25 @@ export const typeDefs = `#graphql
     recoveryCodesLeft: Int!
   }
 
+  """
+  The identity document number, handed back by the one call that is allowed to
+  produce it. Every query reports this field as null.
+  """
+  type RevealedDocument {
+    submissionId: ID!
+    documentNumber: String
+  }
+
+  """One recorded look at a document number."""
+  type RevealEntry {
+    id: ID!
+    submissionId: ID!
+    userName: String!
+    """True when platform staff did this through a support session."""
+    bySupport: Boolean!
+    at: String!
+  }
+
   type PublicConfig {
     """Site key for the anti-robot check; null when it is not configured."""
     turnstileSiteKey: String
@@ -418,6 +437,10 @@ export const typeDefs = `#graphql
     unreadNotificationCount: Int!
     """Earlier approvals in this company that look like the same request."""
     priorApprovals(id: ID!): [DuplicateMatch!]!
+    """Who looked at a document number, and when. Owner only."""
+    revealLog(limit: Int = 50): [RevealEntry!]!
+    """How many document numbers were read in this company in the last 24 hours."""
+    revealsToday: Int!
     myCompanies: [MyCompany!]!
     companyMembers: [CompanyMember!]!
     formInfo(slug: String!): PublicFormInfo
@@ -450,6 +473,12 @@ export const typeDefs = `#graphql
     resetPassword(token: String!, password: String!): Boolean!
     verifyEmail(token: String!): Boolean!
     resendEmailVerification: Boolean!
+    """
+    Reveals one submission's identity document number. Needs the code from your
+    authenticator app, or your password while you have no second factor. Every
+    call is recorded.
+    """
+    revealDocumentNumber(id: ID!, credential: String!): RevealedDocument!
     """Marks the given notifications read, or every one of them when no ids are given."""
     markNotificationsRead(ids: [ID!]): Int!
     startMfaEnrolment: MfaEnrolment!
@@ -460,6 +489,11 @@ export const typeDefs = `#graphql
     confirmAdminMfaEnrolment(code: String!): MfaActivation!
     disableAdminMfa(password: String!, code: String!): Boolean!
     regenerateAdminRecoveryCodes(code: String!): RecoveryCodes!
+    """
+    Extends the current session. Runs through the same checks as any other
+    request, so a removed member or a password reset stops it.
+    """
+    refreshSession: CompanyAuthPayload!
     switchCompany(companyId: ID!): CompanyAuthPayload!
     requestCompanyDeletion(confirmSlug: String!): Boolean!
     cancelCompanyDeletion: Boolean!

@@ -406,6 +406,58 @@ What the surrounding design does, and why:
 `backend/scripts/mfaTest.ts` (36 checks) exercises all of that over the real
 API. Still open: enforcing it rather than offering it. Enrol first, then decide.
 
+### 5.1.2 What a second factor does not cover — closed 2026-10-05
+
+A one-time code is checked when somebody signs in. It says nothing about a
+session that is already open, and the attack that defeats it is no longer
+exotic: a phishing proxy puts the real sign-in page in front of the victim,
+relays the password and the code live, and keeps the token that comes back.
+Commodity kits do this. TOTP cannot stop it, because six digits know nothing
+about which domain they were typed into.
+
+Three changes, aimed at that gap rather than at the sign-in:
+
+**Sessions last a day, not thirty.** A captured seller token used to be worth a
+month. It is renewed silently while somebody is working — through the same
+context as any other request, so a removed member, a demoted role or a password
+reset all end it — and a renewal keeps the session id rather than minting a new
+one, so extending a session does not look like a new browser in the audit
+trail. Support sessions stay two hours and cannot be extended at all.
+
+**The identity document number no longer travels with any query.** Not for any
+role, not from any resolver. It is stripped by a field resolver in `index.ts`
+rather than per-resolver, because a submission is returned by a dozen queries
+and mutations and the one somebody forgets is the one an attacker finds. It
+comes back from a single mutation that demands a fresh second factor — or the
+password, while an account has no factor — and records the access.
+
+Scope was argued down to that one field, and the argument was right: a reviewer
+needs the name, the company, the VAT number, the substances and the stated use
+to decide anything, so gating those adds friction people route around by
+elevating once and leaving it open. Nobody needs the document number to decide:
+Didit has already established who the person is. Gating one rarely-needed field
+also allowed a much tighter window — two minutes, on that submission, rather
+than ten minutes across the queue.
+
+**Every look-up is recorded** in `RevealLog` and shown to the owner. Before
+this, somebody reading four hundred submissions looked exactly like somebody
+reading one, and there was no way to show afterwards that an incident had
+stopped at twelve rows. A support session by platform staff is marked as such,
+so a tenant can see when we looked at their buyers' documents.
+
+Held by `backend/scripts/revealTest.ts` (24 checks), which asserts both halves:
+that the number is unreachable through the queue, a filtered queue and two
+mutations that return a submission, and that the one call which produces it
+refuses an empty credential, a wrong password, a plain Employee, another
+tenant's owner and an unauthenticated caller — recording none of those as a
+reveal.
+
+Still open, and the only real answer to a relaying proxy: **passkeys**. A
+WebAuthn credential is bound to an origin, so a look-alike domain cannot use it
+however carefully the victim types. The blocker is a stable hostname — a
+credential enrolled against a tunnel URL dies with the tunnel — which makes it
+the first thing to add once there is a real domain.
+
 ### 5.1.1 Original note, kept for the reasoning
 
 The admin account can read every tenant's decrypted PII and impersonate any

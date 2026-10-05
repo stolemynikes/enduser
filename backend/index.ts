@@ -116,6 +116,17 @@ const resolvers = {
       s.idDocumentExpiry instanceof Date ? s.idDocumentExpiry.toISOString() : s.idDocumentExpiry ?? null,
     reviewedAt: (s: { reviewedAt?: Date | string | null }) =>
       s.reviewedAt instanceof Date ? s.reviewedAt.toISOString() : s.reviewedAt ?? null,
+    /**
+     * The identity document number never leaves with a query — not for any
+     * role, not from any resolver.
+     *
+     * Stripped here rather than in each resolver on purpose: a submission is
+     * returned by a dozen queries and mutations, and the one that gets
+     * forgotten is the one an attacker finds. It comes back only from
+     * revealDocumentNumber, which demands a fresh second factor and records
+     * the access. See lib/reveal.ts.
+     */
+    idDocumentNumber: () => null,
   },
   SubmissionOverride: {
     createdAt: (o: { createdAt: Date | string }) =>

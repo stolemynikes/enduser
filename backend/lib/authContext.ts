@@ -17,6 +17,13 @@ export type RequestContext = {
   companyId?: string;
   companyRole?: string;
   support?: boolean;
+  /**
+   * Which browser this request came from. Minted at sign-in and carried through
+   * renewals, so a sensitive read can be attributed to a session rather than
+   * only to an account — two people on one login are otherwise indistinguishable
+   * in an audit trail.
+   */
+  sessionId?: string;
 };
 
 /**
@@ -78,5 +85,7 @@ export async function contextFor(authorization: string | undefined, operation: s
     // The database's role, never the token's.
     companyRole: membership.role,
     support: claims.support,
+    adminId: claims.adminId,
+    sessionId: claims.sid,
   };
 }

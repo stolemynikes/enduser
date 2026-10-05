@@ -13,6 +13,8 @@ import { Mark } from '../src/components/Mark.tsx';
 import { NotificationBell } from '../src/components/NotificationBell.tsx';
 import { PriorApprovals } from '../src/components/PriorApprovals.tsx';
 import { MfaSettings } from '../src/components/MfaSettings.tsx';
+import { RevealDocumentNumber } from '../src/components/RevealDocumentNumber.tsx';
+import { RevealLog } from '../src/components/RevealLog.tsx';
 import {
   type FormConfigT, CONFIG_KEYS, CONFIG_ROWS, TERMS_MODES, modeLabels,
   BUYER_TYPE_OPTIONS, BUYER_TYPE_LABEL, BUYER_TYPE_DESC,
@@ -29,7 +31,7 @@ const GET_SUBMISSIONS = gql`
       id email orderNumber firstName lastName companyName vatNumber buyerType
       street zipCode place country substances casNumbers concentration statement
       viesStatus viesName viesAddress viesAddressMatch status adminNote createdAt isTest
-      idDocumentName idDocumentType idDocumentNumber idMrzValid idLikelySynthetic idDocumentExpiry
+      idDocumentName idDocumentType idMrzValid idLikelySynthetic idDocumentExpiry
       idVerificationStatus idLivenessPassed idFaceMatch idVerificationWarnings idVerificationCheckedAt idVerificationPurged
       substanceCheckStatus substanceCheckNote substanceCheckedAt
       reviewedByName reviewedAt
@@ -42,6 +44,10 @@ const GET_COUNTS = gql`
   query CompanySubmissionCounts($includeTest: Boolean) {
     companySubmissionCounts(includeTest: $includeTest) { all pending approved denied tests }
   }
+`;
+
+const REFRESH_SESSION = gql`
+  mutation RefreshSession { refreshSession { token role } }
 `;
 
 const MY_ACCOUNT = gql`
@@ -133,7 +139,7 @@ type Submission = {
   casNumbers: string; concentration?: string | null; statement: string; viesStatus: 'VALID' | 'INVALID' | 'ERROR' | 'NOT_CHECKED';
   viesName?: string | null; viesAddress?: string | null; viesAddressMatch: ViesAddressMatch;
   status: 'PENDING_REVIEW' | 'APPROVED' | 'DENIED'; adminNote?: string; createdAt: string; isTest?: boolean;
-  idDocumentName?: string; idDocumentType?: IdDocumentType; idDocumentNumber?: string;
+  idDocumentName?: string; idDocumentType?: IdDocumentType;
   idMrzValid?: boolean | null; idLikelySynthetic?: boolean | null; idDocumentExpiry?: string | null;
   idVerificationStatus: IdVerificationStatus; idLivenessPassed?: boolean | null; idFaceMatch?: boolean | null;
   idVerificationWarnings?: string | null; idVerificationCheckedAt?: string | null; idVerificationPurged: boolean;
@@ -217,6 +223,7 @@ export default function CompanyDashboard() {
   const loadingMore = useRef(false);
   const { data: memberData, refetch: refetchMembers } = useQuery<any>(GET_MEMBERS, { skip: !isOwner });
   const { data: accountData, refetch: refetchAccount } = useQuery<any>(MY_ACCOUNT);
+  const [refreshSession] = useMutation<any>(REFRESH_SESSION);
   const { data: companiesData } = useQuery<any>(MY_COMPANIES);
   const account = accountData?.myAccount;
   const myCompanies: { id: string; name: string; slug: string; role: CompanyRole; current: boolean }[] =
@@ -514,9 +521,12 @@ export default function CompanyDashboard() {
         `${s.substanceCheckStatus}${s.substanceCheckNote ? ` — ${s.substanceCheckNote}` : ''}`)],
     ]);
 
-    if (s.idDocumentName || s.idDocumentType || s.idDocumentNumber || s.idVerificationStatus !== 'NOT_CHECKED') {
+    if (s.idDocumentName || s.idDocumentType || s.idVerificationStatus !== 'NOT_CHECKED') {
       const rows: [string, string][] = [
-        ['Document', `${s.idDocumentName ?? '—'} (${s.idDocumentType ?? '—'}, ${s.idDocumentNumber ?? '—'})`],
+        ['Document', `${s.idDocumentName ?? '—'} (${s.idDocumentType ?? '—'})`],
+        // Deliberately not in the copied summary: the number is the field this
+        // whole control exists to keep out of places it can be pasted into.
+        ['Document number', 'withheld — open it on the submission if you need it'],
       ];
       if (s.idVerificationStatus !== 'NOT_CHECKED') {
         rows.push(['Verification', flag(s.idVerificationStatus !== 'APPROVED', s.idVerificationStatus)]);
@@ -584,6 +594,29 @@ export default function CompanyDashboard() {
       </div>
     </>
   ) : null;
+
+  // Seller tokens last a day rather than the thirty they used to, which is
+  // what makes a token captured by a phishing proxy worth far less. Renewed
+  // while somebody is working, so a daily user never meets a sign-in form; the
+  // renewal runs through the same checks as any request, so a removed member or
+  // a password reset still ends it.
+  useEffect(() => {
+    const renew = async () => {
+      try {
+        const { data } = await refreshSession();
+        if (data?.refreshSession?.token) {
+          localStorage.setItem('companyToken', data.refreshSession.token);
+        }
+      } catch {
+        // A refusal means the session is genuinely over; the error link already
+        // routes to the sign-in page, so there is nothing to do here.
+      }
+    };
+    void renew();
+    const timer = setInterval(() => void renew(), 30 * 60 * 1000);
+    return () => clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const submissions: Submission[] = subData?.companySubmissions ?? [];
 
@@ -1103,6 +1136,8 @@ export default function CompanyDashboard() {
                 onChanged={() => void refetchAccount()}
               />
 
+              <RevealLog onOpenSubmission={openSubmissionById} />
+
               {myCompanies.length > 1 && (
                 <div className="cd-embed">
                   <div className="cd-formcfg-info">
@@ -1245,7 +1280,7 @@ export default function CompanyDashboard() {
                       <Detail label="Note" value={selected.adminNote} />
                     </div>
                   )}
-                  {(selected.idDocumentName || selected.idDocumentType || selected.idDocumentNumber
+                  {(selected.idDocumentName || selected.idDocumentType
                     || selected.idVerificationStatus !== 'NOT_CHECKED') && (() => {
                     // Rows captured before the move to Didit carry MRZ signals and no
                     // verification status; newer rows carry the reverse. Render whichever
@@ -1268,7 +1303,11 @@ export default function CompanyDashboard() {
                     <div className="cd-detail-grid" style={{ marginBottom: 0 }}>
                       <Detail label="Name on Document" value={selected.idDocumentName ?? <Dim />} />
                       <Detail label="Document Type" value={selected.idDocumentType ? docTypeLabels[selected.idDocumentType] : <Dim />} />
-                      <Detail label="Document Number" value={selected.idDocumentNumber ?? <Dim />} />
+                      <RevealDocumentNumber
+                        submissionId={selected.id}
+                        canReveal={canManage}
+                        mfaEnabled={account?.mfaEnabled ?? false}
+                      />
                       {verified ? (<>
                         <Detail label="Verification" value={<IdVerificationBadge status={selected.idVerificationStatus} />} />
                         <Detail label="Liveness" value={yesNo(selected.idLivenessPassed, '✓ Passed', '✗ Failed')} />
