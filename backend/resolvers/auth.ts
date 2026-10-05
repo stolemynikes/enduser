@@ -114,7 +114,12 @@ export const authResolvers = {
           : secondFactorError('invalid');
       }
       console.log(`[mfa] admin ${adminId} enabled two-factor authentication`);
-      return { recoveryCodes: result.recoveryCodes };
+      // See the company-side mutation: enabling ended every session, so the
+      // caller needs a replacement or they are the one who gets signed out.
+      return {
+        recoveryCodes: result.recoveryCodes,
+        token: jwt.sign({ adminId }, process.env.JWT_SECRET!, { expiresIn: '8h', algorithm: 'HS256' }),
+      };
     },
 
     /**

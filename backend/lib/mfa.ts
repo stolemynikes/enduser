@@ -135,7 +135,25 @@ export type ConfirmResult =
   | { ok: true; recoveryCodes: string[] }
   | { ok: false; reason: 'not-started' | 'bad-code' };
 
-/** Switches the factor on, but only on a code the pending secret really produces. */
+/**
+ * Switches the factor on, but only on a code the pending secret really produces.
+ *
+ * Turning it on also ends the sessions that existed before it. A second factor
+ * is checked when someone signs in, so without this it would protect future
+ * sign-ins and leave the present untouched: a person who enables it *because*
+ * they fear their account is compromised would have left the intruder's 30-day
+ * token working. The caller is handed a fresh token so the person doing the
+ * enrolling is not the one who gets signed out.
+ *
+ * The precise contract is "sessions older than about a second", not "all
+ * sessions". `sessionsValidFrom` is compared against the token's `iat`, which
+ * JWT records only to the second, and authContext allows a second of grace so
+ * that a token minted in the same second as a cut-off is not treated as older
+ * than it. A session from the same second therefore survives. That is
+ * immaterial against the threat this exists for — a stolen session is hours or
+ * days old, never one second — but it is not the absolute claim the phrase
+ * "signed out everywhere" suggests, so it is written down here.
+ */
 export async function confirmEnrolment(
   kind: AccountKind, id: string, code: string,
 ): Promise<ConfirmResult> {
@@ -151,18 +169,31 @@ export async function confirmEnrolment(
 
   await (prisma[kind] as any).update({
     where: { id },
-    data: { totpEnabledAt: row.totpEnabledAt ?? new Date(), totpLastCounter: check.counter },
+    data: {
+      totpEnabledAt: row.totpEnabledAt ?? new Date(),
+      totpLastCounter: check.counter,
+      sessionsValidFrom: new Date(),
+    },
   });
   return { ok: true, recoveryCodes: await issueRecoveryCodes(kind, id) };
 }
 
-/** Turns the factor off and destroys the secret and every remaining code. */
+/**
+ * Turns the factor off and destroys the secret and every remaining code.
+ *
+ * Also ends every session, this one included. Removing a second factor is
+ * exactly what an intruder with a stolen session would do first, so the account
+ * is signed out everywhere and the password is needed to come back.
+ */
 export async function disableMfa(kind: AccountKind, id: string): Promise<void> {
   const owner = kind === 'admin' ? { adminId: id } : { userId: id };
   await prisma.recoveryCode.deleteMany({ where: owner });
   await (prisma[kind] as any).update({
     where: { id },
-    data: { totpSecret: null, totpEnabledAt: null, totpLastCounter: null },
+    data: {
+      totpSecret: null, totpEnabledAt: null, totpLastCounter: null,
+      sessionsValidFrom: new Date(),
+    },
   });
 }
 

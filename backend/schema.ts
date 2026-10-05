@@ -383,6 +383,16 @@ export const typeDefs = `#graphql
     recoveryCodes: [String!]!
   }
 
+  """
+  Turning the factor on ends every session that existed before it, so the
+  caller is handed a replacement — otherwise the person doing the enrolling is
+  the one who gets signed out.
+  """
+  type MfaActivation {
+    recoveryCodes: [String!]!
+    token: String!
+  }
+
   type MfaStatus {
     enabled: Boolean!
     recoveryCodesLeft: Int!
@@ -443,11 +453,11 @@ export const typeDefs = `#graphql
     """Marks the given notifications read, or every one of them when no ids are given."""
     markNotificationsRead(ids: [ID!]): Int!
     startMfaEnrolment: MfaEnrolment!
-    confirmMfaEnrolment(code: String!): RecoveryCodes!
+    confirmMfaEnrolment(code: String!): MfaActivation!
     disableMfa(password: String!, code: String!): Boolean!
     regenerateRecoveryCodes(code: String!): RecoveryCodes!
     startAdminMfaEnrolment: MfaEnrolment!
-    confirmAdminMfaEnrolment(code: String!): RecoveryCodes!
+    confirmAdminMfaEnrolment(code: String!): MfaActivation!
     disableAdminMfa(password: String!, code: String!): Boolean!
     regenerateAdminRecoveryCodes(code: String!): RecoveryCodes!
     switchCompany(companyId: ID!): CompanyAuthPayload!

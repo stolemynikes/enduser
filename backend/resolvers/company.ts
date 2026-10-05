@@ -636,14 +636,21 @@ export const companyResolvers = {
 
     /** Step two: switch it on, and hand over the recovery codes exactly once. */
     confirmMfaEnrolment: async (_: unknown, { code }: { code: string }, ctx: Ctx) => {
-      const { companyUserId } = requireCompany(ctx);
+      const { companyUserId, companyId, role } = requireCompany(ctx);
       const result = await confirmEnrolment('companyUser', companyUserId, code);
       if (!result.ok) {
         throw result.reason === 'not-started'
           ? new Error('Start the set-up again — no pending secret was found.')
           : secondFactorError('invalid');
       }
-      return { recoveryCodes: result.recoveryCodes };
+      // Enabling ended every session, this one included. A replacement keeps
+      // the person who just enrolled signed in while evicting everyone else —
+      // which is the point when someone enables this because they suspect
+      // their account is already in the wrong hands.
+      return {
+        recoveryCodes: result.recoveryCodes,
+        token: signCompanyToken({ companyUserId, companyId, role }),
+      };
     },
 
     /**

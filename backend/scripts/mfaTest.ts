@@ -36,7 +36,7 @@ const LOGIN = `mutation($e:String!,$p:String!,$t:String){
   companyLogin(email:$e,password:$p,totp:$t){ token role }
 }`;
 const START = `mutation{ startMfaEnrolment{ secret otpauthUri qrSvg } }`;
-const CONFIRM = `mutation($c:String!){ confirmMfaEnrolment(code:$c){ recoveryCodes } }`;
+const CONFIRM = `mutation($c:String!){ confirmMfaEnrolment(code:$c){ recoveryCodes token } }`;
 const DISABLE = `mutation($p:String!,$c:String!){ disableMfa(password:$p,code:$c) }`;
 const REGEN = `mutation($c:String!){ regenerateRecoveryCodes(code:$c){ recoveryCodes } }`;
 const ACCOUNT = `{ myAccount{ mfaEnabled recoveryCodesLeft } }`;
@@ -81,11 +81,19 @@ async function freshSlate(userId: string) {
   console.log('— Before enrolment —');
   const plain = await gql(LOGIN, { e: email, p: PASSWORD });
   check('a password alone signs you in', !!plain.data?.companyLogin?.token, JSON.stringify(plain.errors));
-  const token: string = plain.data?.companyLogin?.token;
+  let token: string = plain.data?.companyLogin?.token;
   const before = await gql(ACCOUNT, undefined, token);
   check('the account reports no second factor', before.data?.myAccount?.mfaEnabled === false);
 
   console.log('— Enrolment is two steps —');
+  // `sessionsValidFrom` is compared against a token's `iat`, which JWT records
+  // only to the second, and authContext allows a second of grace on top. So the
+  // eviction below can only be asserted for a session that is genuinely older
+  // than that window — which is every real one, and none of a test's unless it
+  // waits. Waiting here rather than after enrolling, because the pause has to
+  // be between the sign-in and the cut-off, not between the cut-off and the
+  // check.
+  await new Promise(r => setTimeout(r, 2200));
   const started = await gql(START, undefined, token);
   check('starting returns a secret, a URI and a QR',
     /^[A-Z2-7 ]+$/.test(started.data?.startMfaEnrolment?.secret ?? '')
@@ -116,9 +124,22 @@ async function freshSlate(userId: string) {
   check('confirming with a real code switches it on and returns 10 recovery codes',
     codes.length === 10, `${codes.length} codes: ${JSON.stringify(confirmed.errors)}`);
   check('the codes are not all the same', new Set(codes).size === 10);
-  const after = await gql(ACCOUNT, undefined, token);
-  check('the account now reports the factor and the code count',
+
+  // Turning the factor on has to end the sessions that existed before it.
+  // Without this it protects future sign-ins and leaves an intruder's current
+  // 30-day token working — which is the opposite of why someone enables it.
+  const replacement: string = confirmed.data?.confirmMfaEnrolment?.token ?? '';
+  check('activation hands back a replacement token', !!replacement);
+
+  const evicted = await gql(ACCOUNT, undefined, token);
+  check('a session from before the factor was enabled is refused',
+    !!evicted.errors?.length, JSON.stringify(evicted.data));
+  const after = await gql(ACCOUNT, undefined, replacement);
+  check('the replacement token works',
+    after.data?.myAccount?.mfaEnabled === true, JSON.stringify(after.errors));
+  check('the account reports the factor and the code count',
     after.data?.myAccount?.mfaEnabled === true && after.data?.myAccount?.recoveryCodesLeft === 10);
+  token = replacement;
 
   console.log('— Once on, the factor is required —');
   const noCode = await gql(LOGIN, { e: email, p: PASSWORD });
@@ -222,6 +243,10 @@ async function freshSlate(userId: string) {
   await freshSlate(user.id);
   const off = await gql(DISABLE, { p: PASSWORD, c: totp(secret) }, recoveryToken);
   check('both together turn it off', off.data?.disableMfa === true, JSON.stringify(off.errors));
+  await new Promise(r => setTimeout(r, 2200));
+  const afterOff = await gql(ACCOUNT, undefined, recoveryToken);
+  check('turning it off signs the account out everywhere', !!afterOff.errors?.length,
+    JSON.stringify(afterOff.data));
   const cleared = await prisma.companyUser.findUnique({
     where: { id: user.id }, select: { totpSecret: true, totpEnabledAt: true },
   });

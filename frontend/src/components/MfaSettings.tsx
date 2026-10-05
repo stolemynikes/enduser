@@ -12,7 +12,7 @@ import { TotpInput } from './TotpInput.tsx';
 import { mfaSignal } from '../lib/mfaError.ts';
 
 const START = gql`mutation StartMfa { startMfaEnrolment { secret otpauthUri qrSvg } }`;
-const CONFIRM = gql`mutation ConfirmMfa($code: String!) { confirmMfaEnrolment(code: $code) { recoveryCodes } }`;
+const CONFIRM = gql`mutation ConfirmMfa($code: String!) { confirmMfaEnrolment(code: $code) { recoveryCodes token } }`;
 const DISABLE = gql`mutation DisableMfa($password: String!, $code: String!) { disableMfa(password: $password, code: $code) }`;
 const REGENERATE = gql`mutation RegenerateCodes($code: String!) { regenerateRecoveryCodes(code: $code) { recoveryCodes } }`;
 
@@ -66,6 +66,12 @@ export function MfaSettings({
     setError('');
     try {
       const { data } = await confirm({ variables: { code } });
+      // Enabling ended every session, this one included. The server hands back
+      // a replacement; without storing it the next request would be refused
+      // and the person would be signed out by the act of securing the account.
+      if (data.confirmMfaEnrolment.token) {
+        localStorage.setItem('companyToken', data.confirmMfaEnrolment.token);
+      }
       setCodes(data.confirmMfaEnrolment.recoveryCodes);
       setEnrolment(null);
       setCode('');
@@ -78,8 +84,12 @@ export function MfaSettings({
     setError('');
     try {
       await disable({ variables: { password, code } });
-      reset();
-      onChanged();
+      // Turning it off signs the account out everywhere, this tab included —
+      // removing the factor is the first thing an intruder with a stolen
+      // session would do, so the password is needed to come back.
+      ['companyToken', 'companyRole', 'companyName', 'companySlug', 'supportMode']
+        .forEach(k => localStorage.removeItem(k));
+      window.location.href = '/login';
     } catch (err) { setError(describe(err, 'Could not turn it off.')); }
   };
 
@@ -103,6 +113,9 @@ export function MfaSettings({
         <p className="mfa-lede">
           Each one works once, in place of a code from your app. This is the only time they are
           shown — store them somewhere other than the phone with the app on it.
+        </p>
+        <p className="mfa-lede">
+          Anyone signed in to this account elsewhere has been signed out.
         </p>
         <ul className="mfa-codes">
           {codes.map(c => <li key={c}>{c}</li>)}
