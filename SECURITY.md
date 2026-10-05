@@ -281,6 +281,32 @@ instance and is now an assertion in `backend/scripts/hardeningTest.ts`
 | The VIES cache had no ceiling | Keys come from buyer-supplied VAT numbers, so every distinct malformed number was a permanent entry | Capped at 5000 entries, like the PubChem cache |
 | `/embed/*` omitted the permissions policy | The one framed route was the one without `camera=(), microphone=()` | Added |
 
+### 2.13.1 The duplicate fingerprints, and the one thing they gave away
+
+The duplicate notice added on 2026-10-02 needed deterministic codes next to the
+encrypted columns, because a random IV means the same passport number twice
+produces two unrelated ciphertexts that no query can match. That trade-off was
+decided deliberately: a code can be confirmed by guessing forward, which works
+on short values in a predictable format, but only by someone who already holds
+the encryption key — and with the key they could read the plaintext column
+instead. Little lost, a real signal gained.
+
+What was *not* decided deliberately: the codes were derived from the key alone,
+so they were comparable platform-wide. The same person submitting to two
+different sellers produced the same code in both queues. No seller could ever
+see it, because the lookup has always been tenant-scoped — but anyone with raw
+database access could have followed one buyer from one seller's queue into
+another's without decrypting anything, which is a capability the feature never
+needed.
+
+Closed on 2026-10-05: the tenant id is part of the key derivation, so a code
+means nothing outside the company it was computed for, and a submission
+belonging to no company carries no codes at all. Nothing had to be migrated —
+no submission had yet been written with a fingerprint. Held by
+`backend/scripts/matchKeysTest.ts` (29 checks), which asserts both halves at
+once: the same document in the same company still matches, and the same
+document in two companies does not.
+
 Re-examined in the same pass and found sound: the webhook signature path and its
 ordering, the verification session store's single-use and tenant-ownership
 checks, the mass-assignment surface of `SubmitInput` (no `isTest`, `status`,

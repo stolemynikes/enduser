@@ -332,8 +332,10 @@ export const submissionResolvers = {
         data: {
           ...rest,
           // Deterministic fingerprints, so a reviewer can be told this buyer
-          // has been here before — see lib/matchKeys.ts.
-          ...matchKeys({
+          // has been here before — see lib/matchKeys.ts. Scoped to the tenant,
+          // which is why the company id is the first argument and why a
+          // submission belonging to no company carries none.
+          ...matchKeys(companyId, {
             idDocumentNumber: rest.idDocumentNumber as string | null,
             vatNumber: rest.vatNumber as string | null,
             casNumbers: rest.casNumbers as string | null,
