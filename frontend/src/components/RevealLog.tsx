@@ -121,7 +121,7 @@ const styles = `
   .rl-scroll { overflow-x: auto; max-height: 340px; overflow-y: auto; }
   .rl-table { width: 100%; border-collapse: collapse; font-size: 12px; }
   .rl-table th {
-    position: sticky; top: 0; z-index: 1;
+    position: sticky; top: 0; z-index: 10; /* Z.STICKY */
     text-align: left; font-size: 10px; font-weight: 600; letter-spacing: 0.08em;
     text-transform: uppercase; color: var(--cd-text-dim);
     background: var(--cd-surface2); padding: 9px 18px;

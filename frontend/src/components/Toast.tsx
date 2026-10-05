@@ -57,7 +57,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
 
 const styles = `
   .toast-stack {
-    position: fixed; bottom: 20px; right: 20px; z-index: 4000;
+    position: fixed; bottom: 20px; right: 20px; z-index: 60 /* Z.TOAST */;
     display: flex; flex-direction: column; gap: 10px;
     max-width: min(360px, calc(100vw - 40px));
     pointer-events: none;

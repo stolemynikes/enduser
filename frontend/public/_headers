@@ -4,6 +4,20 @@
 # SECURITY.md section 5.2.
 
 /*
+  # Kept out of every search index.
+  #
+  # This is the half that actually works. robots.txt asks a crawler not to
+  # fetch; this tells anything that *does* fetch that it may not index, archive,
+  # show a snippet or index an image — and it travels on the response, so it
+  # applies to a page a crawler reached from somebody else's link rather than
+  # from our own sitemap.
+  #
+  # One honest limit, because the two mechanisms interfere: a crawler obeying
+  # robots.txt never fetches the page, so it never reads this. If a URL is
+  # discovered through an external link it can still be listed as a bare address
+  # with no title or description. Nothing short of authentication closes that,
+  # which is why the dashboards have it and the public forms accept the residual.
+  X-Robots-Tag: noindex, nofollow, noarchive, nosnippet, noimageindex
   # Session tokens live in localStorage, so any injected script could read them.
   # Scripts are therefore restricted to this origin, and nothing may be framed.
   Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; frame-src https://verify.didit.me; form-action 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'
@@ -26,6 +40,9 @@
 # The embed is the one route sellers put in an iframe on their own website, so
 # it is the one route that may be framed.
 /embed/*
+  # A seller may index their own page; the frame inside it is still ours and
+  # still carries nobody's data worth listing.
+  X-Robots-Tag: noindex, nofollow, noarchive, nosnippet, noimageindex
   Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; form-action 'self'; base-uri 'none'; object-src 'none'; frame-ancestors https:
   X-Frame-Options:
   Referrer-Policy: strict-origin-when-cross-origin

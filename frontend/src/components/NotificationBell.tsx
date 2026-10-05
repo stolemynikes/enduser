@@ -92,6 +92,20 @@ export function NotificationBell({ onOpenSubmission }: { onOpenSubmission?: (id:
   const [open, setOpen] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
+  /**
+   * Where to put the panel, in viewport coordinates.
+   *
+   * It cannot be positioned against the trigger, which is the obvious way to
+   * do this: the sidebar sets `overflow-y: auto`, and CSS has no way to scroll
+   * one axis while letting the other overflow — the browser promotes the whole
+   * box to `auto`. An absolutely positioned panel hanging off the right edge
+   * was therefore clipped to nothing. It rendered, it was simply invisible,
+   * which is the worst kind of broken because the button still toggled.
+   *
+   * So the panel is fixed to the viewport and told where to go by measuring the
+   * trigger when it opens.
+   */
+  const [at, setAt] = useState<{ top: number; left: number } | null>(null);
 
   // The count is polled; the list is only fetched when the panel is opened, so
   // a dashboard left open overnight costs one small query a minute.
@@ -104,6 +118,26 @@ export function NotificationBell({ onOpenSubmission }: { onOpenSubmission?: (id:
   const items: Notification[] = data?.notifications ?? [];
 
   const close = useCallback(() => setOpen(false), []);
+
+  // Measured on open, and again if the window changes shape underneath it.
+  useEffect(() => {
+    if (!open) return;
+    const place = () => {
+      const r = buttonRef.current?.getBoundingClientRect();
+      if (!r) return;
+      const PANEL = 364;
+      const MAX_HEIGHT = Math.min(520, window.innerHeight * 0.7);
+      setAt({
+        // Clamped so a bell near the bottom of a short window does not push the
+        // panel off the screen.
+        top: Math.max(12, Math.min(r.top - 4, window.innerHeight - MAX_HEIGHT - 12)),
+        left: Math.min(r.right + 10, window.innerWidth - PANEL - 12),
+      });
+    };
+    place();
+    window.addEventListener('resize', place);
+    return () => window.removeEventListener('resize', place);
+  }, [open]);
 
   // A popover, not a modal: Escape and a click elsewhere dismiss it, the page
   // keeps scrolling, and focus returns to the bell so the keyboard path is not
@@ -166,7 +200,11 @@ export function NotificationBell({ onOpenSubmission }: { onOpenSubmission?: (id:
       </button>
 
       {open && (
-        <div className="nb-panel" role="dialog" aria-label="Activity" ref={panelRef} tabIndex={-1}>
+        <div
+          className="nb-panel" role="dialog" aria-label="Activity"
+          ref={panelRef} tabIndex={-1}
+          style={at ? { top: at.top, left: at.left } : { visibility: 'hidden' }}
+        >
           <div className="nb-head">
             <h2 className="nb-title">Activity</h2>
             {unread > 0 && (
@@ -229,7 +267,9 @@ const styles = `
   }
 
   .nb-panel {
-    position: absolute; top: -4px; left: calc(100% + 10px); z-index: 60;
+    /* Fixed, not absolute: the sidebar scrolls, which clips anything absolutely
+       positioned outside its box. Coordinates come from the component. */
+    position: fixed; z-index: 30; /* Z.POPOVER */
     width: 364px; max-height: min(520px, 70vh); display: flex; flex-direction: column;
     background: var(--cd-surface); border: 1px solid var(--cd-border2);
     border-radius: var(--cd-r); overflow: hidden;
@@ -293,10 +333,15 @@ const styles = `
   .nb-unread-word { color: var(--cd-blue); }
 
   @media (max-width: 860px) {
-    /* The sidebar collapses on narrow screens, so the panel stops hanging off
-       it and becomes a sheet pinned to the viewport instead. */
+    /* The sidebar collapses to icons on narrow screens, so the panel becomes a
+       sheet along the bottom instead of hanging off a 60px rail. The !important
+       is there to beat the inline coordinates, which are the right answer on a
+       wide screen and the wrong one here. */
     .nb-panel {
-      position: fixed; top: auto; bottom: 12px; left: 12px; right: 12px;
+      top: auto !important; left: 12px !important; right: 12px;
+      /* The home indicator on a modern phone sits where a 12px offset would
+         put the last row, so the inset is added rather than assumed to be 0. */
+      bottom: calc(12px + env(safe-area-inset-bottom, 0px));
       width: auto; max-height: 60vh;
     }
   }

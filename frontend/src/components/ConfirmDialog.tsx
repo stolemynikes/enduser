@@ -76,7 +76,7 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
 
 const styles = `
   .confirm-bg {
-    position: fixed; inset: 0; z-index: 4500;
+    position: fixed; inset: 0; z-index: 70 /* Z.CONFIRM */;
     background: rgba(0,0,0,0.55); backdrop-filter: blur(2px);
     display: flex; align-items: center; justify-content: center; padding: 20px;
     animation: confirm-fade 0.15s ease;

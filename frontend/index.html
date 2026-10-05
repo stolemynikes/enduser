@@ -6,6 +6,13 @@
     <link rel="apple-touch-icon" href="/app-icon.svg" />
     <meta name="theme-color" content="#0b0d13" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!--
+      Belt to the X-Robots-Tag header in public/_headers. The header is the one
+      that counts, because it reaches a crawler that never renders the page;
+      this one covers anything that renders but ignores headers, and it keeps
+      the instruction visible to whoever reads the markup next.
+    -->
+    <meta name="robots" content="noindex, nofollow, noarchive, nosnippet" />
     <meta name="description" content="EU Statement — collect and verify compliant end-user statements for restricted substances, with built-in VIES and identity-document checks." />
     <title>EU Statement</title>
   </head>

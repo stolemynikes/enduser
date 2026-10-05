@@ -1,0 +1,21 @@
+# No crawler is welcome on any part of this application.
+#
+# Everything here is either a seller's private dashboard or a form holding one
+# buyer's personal data. There is nothing to index and a crawler following a
+# public form's address would be requesting somebody's statement page.
+#
+# This file is a request, not a control: it is honoured by the search engines
+# that choose to, and ignored by everything else. The enforcement is the
+# X-Robots-Tag header next to it, the anti-robot check on every public form, and
+# whatever sits at the edge.
+
+User-agent: *
+Disallow: /
+
+# One exception, because blocking it defeats its purpose: the disclosure
+# paperwork is meant to be found by anybody looking for where to report a
+# weakness, including automated tooling that does exactly that.
+User-agent: *
+Allow: /.well-known/security.txt
+
+# No sitemap on purpose. There is nothing here that should be enumerated.
