@@ -6,10 +6,12 @@ import { PasswordInput } from '../src/components/PasswordInput.tsx';
 import { useDocumentTitle } from '../src/lib/useDocumentTitle.ts';
 import { Wordmark } from '../src/components/Mark.tsx';
 import { Turnstile } from '../src/components/Turnstile.tsx';
+import { TotpInput } from '../src/components/TotpInput.tsx';
+import { mfaSignal } from '../src/lib/mfaError.ts';
 
 const COMPANY_LOGIN = gql`
-  mutation CompanyLogin($email: String!, $password: String!, $turnstileToken: String) {
-    companyLogin(email: $email, password: $password, turnstileToken: $turnstileToken) {
+  mutation CompanyLogin($email: String!, $password: String!, $turnstileToken: String, $totp: String) {
+    companyLogin(email: $email, password: $password, turnstileToken: $turnstileToken, totp: $totp) {
       token
       role
       company { id name slug }
@@ -23,6 +25,10 @@ export default function CompanyLogin() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [botToken, setBotToken] = useState('');
+  // Shown only once the server says the password was right and a code is due,
+  // so the form never reveals which accounts have a second factor.
+  const [totp, setTotp] = useState('');
+  const [needsTotp, setNeedsTotp] = useState(false);
   // ?expired=1 is set when a lapsed token bounced the user out of the dashboard.
   const [error, setError] = useState(
     new URLSearchParams(window.location.search).has('expired')
@@ -35,13 +41,25 @@ export default function CompanyLogin() {
     e.preventDefault();
     setError('');
     try {
-      const { data } = await login({ variables: { email, password, turnstileToken: botToken || undefined } });
+      const { data } = await login({
+        variables: { email, password, turnstileToken: botToken || undefined, totp: totp || undefined },
+      });
       localStorage.setItem('companyToken', data.companyLogin.token);
       localStorage.setItem('companyRole', data.companyLogin.role);
       localStorage.setItem('companyName', data.companyLogin.company.name);
       localStorage.setItem('companySlug', data.companyLogin.company.slug);
       navigate('/company/dashboard');
     } catch (err: any) {
+      const signal = mfaSignal(err);
+      if (signal) {
+        // The password was accepted; only the code is outstanding. Keep the
+        // form, reveal the field, and say which of the two happened.
+        setNeedsTotp(true);
+        setTotp('');
+        setError(signal === 'required' ? '' : (err?.message ?? 'That code is not valid.'));
+        return;
+      }
+      setNeedsTotp(false);
       setError(err?.message ?? 'Login failed');
     }
   };
@@ -68,11 +86,20 @@ export default function CompanyLogin() {
               <PasswordInput id="cl-password" className="cl-input" value={password}
                 onChange={setPassword} required autoComplete="current-password" />
             </div>
+            {needsTotp && (
+              <div className="cl-field">
+                <label className="cl-label" htmlFor="cl-totp">Authentication code</label>
+                <TotpInput id="cl-totp" className="cl-input" value={totp} onChange={setTotp} autoFocus />
+                <p className="cl-hint">
+                  From your authenticator app. Lost your phone? Use one of your recovery codes.
+                </p>
+              </div>
+            )}
             <Turnstile onToken={setBotToken} theme="dark" />
             {error && <div className="cl-error" role="alert">{error}</div>}
             <p className="cl-forgot"><a href="/forgot">Forgotten your password?</a></p>
             <button className="cl-btn" type="submit" disabled={loading}>
-              {loading ? 'Signing in…' : 'Sign in'}
+              {loading ? 'Signing in…' : needsTotp ? 'Verify and sign in' : 'Sign in'}
             </button>
           </form>
           <p className="cl-footer-link">
@@ -108,6 +135,7 @@ const styles = `
   .cl-sub { font-size: 13px; color: #6b7485; margin-bottom: 2rem; }
   .cl-form { display: flex; flex-direction: column; gap: 1rem; }
   .cl-field { display: flex; flex-direction: column; gap: 6px; }
+  .cl-hint { font-size: 11px; line-height: 1.5; color: #6b7485; }
   .cl-label { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #6b7485; }
   .cl-input {
     font-family: inherit; font-size: 13px; color: #f0f2f8;

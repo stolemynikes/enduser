@@ -23,6 +23,11 @@ import { tenantSubmissions } from '../lib/tenant.ts';
 import { redactAllForRole, redactForRole } from '../lib/redact.ts';
 import { DIDIT_ENABLED } from '../services/didit.ts';
 import { notify } from '../lib/notifications.ts';
+import {
+  MFA_SELECT, checkSecondFactor, confirmEnrolment, disableMfa, issueRecoveryCodes,
+  mfaEnabled, recoveryCodesLeft, startEnrolment,
+} from '../lib/mfa.ts';
+import { secondFactorError } from './auth.ts';
 import { findPriorApprovals } from '../lib/duplicates.ts';
 
 type Ctx = {
@@ -308,12 +313,15 @@ export const companyResolvers = {
       const { companyUserId } = requireCompany(ctx);
       const user = await prisma.companyUser.findUnique({
         where: { id: companyUserId },
-        select: { id: true, email: true, name: true, emailVerifiedAt: true },
+        select: { id: true, email: true, name: true, emailVerifiedAt: true, ...MFA_SELECT },
       });
       if (!user) throw new Error('Membership not found');
+      const enabled = mfaEnabled(user);
       return {
         id: user.id, email: user.email, name: user.name,
         emailVerified: user.emailVerifiedAt != null,
+        mfaEnabled: enabled,
+        recoveryCodesLeft: enabled ? await recoveryCodesLeft('companyUser', user.id) : 0,
       };
     },
 
@@ -392,7 +400,8 @@ export const companyResolvers = {
 
     companyLogin: async (
       _: unknown,
-      { email, password, turnstileToken }: { email: string; password: string; turnstileToken?: string },
+      { email, password, turnstileToken, totp }:
+        { email: string; password: string; turnstileToken?: string; totp?: string },
     ) => {
       await verifyHumanOrThrow(turnstileToken);
       const address = typeof email === 'string' ? email.trim().toLowerCase() : '';
@@ -402,6 +411,7 @@ export const companyResolvers = {
             include: { memberships: { include: { company: true } } },
           })
         : null;
+
 
       const minutes = lockedFor(user);
 
@@ -417,6 +427,19 @@ export const companyResolvers = {
         throw new Error('Invalid email or password');
       }
       if (minutes > 0) throw new Error(LOCKED_MESSAGE(minutes));
+
+      // Only now, with the password already proved. Asking for a code before
+      // that would tell a guesser which accounts have a second factor.
+      const second = await checkSecondFactor('companyUser', user, totp);
+      if (!second.ok) {
+        // A wrong code spends the same budget as a wrong password; a code not
+        // yet given does not.
+        if (second.reason === 'invalid') await recordFailure('companyUser', user);
+        throw secondFactorError(second.reason);
+      }
+      if (second.usedRecoveryCode) {
+        console.warn(`[mfa] user ${user.id} signed in with a recovery code`);
+      }
       await recordSuccess('companyUser', user.id);
 
       if (user.memberships.length === 0) throw new Error('No company membership found');
@@ -591,6 +614,67 @@ export const companyResolvers = {
       if (!userId) throw new Error('This confirmation link is invalid or has expired — request a new one.');
       await prisma.companyUser.update({ where: { id: userId }, data: { emailVerifiedAt: new Date() } });
       return true;
+    },
+
+    /**
+     * Step one of enrolment: a secret the app can scan, not yet in force. The
+     * factor only switches on when a code proves the app really has it —
+     * enabling on the strength of a scan alone is how people lock themselves
+     * out of their own account.
+     */
+    startMfaEnrolment: async (_: unknown, __: unknown, ctx: Ctx) => {
+      const { companyUserId } = requireCompany(ctx);
+      const user = await prisma.companyUser.findUnique({
+        where: { id: companyUserId }, select: { email: true, totpEnabledAt: true },
+      });
+      if (!user) throw new Error('Membership not found');
+      if (user.totpEnabledAt) {
+        throw new Error('Two-factor authentication is already on. Turn it off first to re-enrol.');
+      }
+      return startEnrolment('companyUser', companyUserId, user.email);
+    },
+
+    /** Step two: switch it on, and hand over the recovery codes exactly once. */
+    confirmMfaEnrolment: async (_: unknown, { code }: { code: string }, ctx: Ctx) => {
+      const { companyUserId } = requireCompany(ctx);
+      const result = await confirmEnrolment('companyUser', companyUserId, code);
+      if (!result.ok) {
+        throw result.reason === 'not-started'
+          ? new Error('Start the set-up again — no pending secret was found.')
+          : secondFactorError('invalid');
+      }
+      return { recoveryCodes: result.recoveryCodes };
+    },
+
+    /**
+     * Turning it off needs the password and a current code. Either alone would
+     * make a stolen session enough to strip the very factor that session was
+     * supposed to be protected by.
+     */
+    disableMfa: async (
+      _: unknown, { password, code }: { password: string; code: string }, ctx: Ctx,
+    ) => {
+      const { companyUserId } = requireCompany(ctx);
+      const user = await prisma.companyUser.findUnique({ where: { id: companyUserId } });
+      if (!user) throw new Error('Membership not found');
+      if (!mfaEnabled(user)) return true;
+      if (!(await bcrypt.compare(password, user.passwordHash))) {
+        throw new Error('That password is not correct.');
+      }
+      const second = await checkSecondFactor('companyUser', user, code);
+      if (!second.ok) throw secondFactorError(second.reason);
+      await disableMfa('companyUser', companyUserId);
+      return true;
+    },
+
+    /** Replaces the remaining codes with a fresh set, on a current code. */
+    regenerateRecoveryCodes: async (_: unknown, { code }: { code: string }, ctx: Ctx) => {
+      const { companyUserId } = requireCompany(ctx);
+      const user = await prisma.companyUser.findUnique({ where: { id: companyUserId } });
+      if (!user || !mfaEnabled(user)) throw new Error('Two-factor authentication is not on.');
+      const second = await checkSecondFactor('companyUser', user, code);
+      if (!second.ok) throw secondFactorError(second.reason);
+      return { recoveryCodes: await issueRecoveryCodes('companyUser', companyUserId) };
     },
 
     markNotificationsRead: async (_: unknown, { ids }: { ids?: string[] }, ctx: Ctx) => {

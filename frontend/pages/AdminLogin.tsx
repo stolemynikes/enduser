@@ -6,10 +6,12 @@ import { PasswordInput } from '../src/components/PasswordInput.tsx';
 import { useDocumentTitle } from '../src/lib/useDocumentTitle.ts';
 import { Wordmark } from '../src/components/Mark.tsx';
 import { Turnstile } from '../src/components/Turnstile.tsx';
+import { TotpInput } from '../src/components/TotpInput.tsx';
+import { mfaSignal } from '../src/lib/mfaError.ts';
 
 const ADMIN_LOGIN = gql`
-  mutation AdminLogin($username: String!, $password: String!, $turnstileToken: String) {
-    adminLogin(username: $username, password: $password, turnstileToken: $turnstileToken) {
+  mutation AdminLogin($username: String!, $password: String!, $turnstileToken: String, $totp: String) {
+    adminLogin(username: $username, password: $password, turnstileToken: $turnstileToken, totp: $totp) {
       token
     }
   }
@@ -20,6 +22,10 @@ export default function AdminLogin() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [botToken, setBotToken] = useState('');
+  // Shown only once the server says the password was right and a code is due,
+  // so the form never reveals which accounts have a second factor.
+  const [totp, setTotp] = useState('');
+  const [needsTotp, setNeedsTotp] = useState(false);
   const [error, setError] = useState(
     new URLSearchParams(window.location.search).has('expired')
       ? 'Your session expired — please sign in again.'
@@ -32,10 +38,23 @@ export default function AdminLogin() {
     e.preventDefault();
     setError('');
     try {
-      const { data } = await login({ variables: { username, password, turnstileToken: botToken || undefined } });
+      const { data } = await login({
+        variables: { username, password, turnstileToken: botToken || undefined, totp: totp || undefined },
+      });
       localStorage.setItem('adminToken', data.adminLogin.token);
       navigate('/admin/dashboard');
-    } catch {
+    } catch (err: any) {
+      const signal = mfaSignal(err);
+      if (signal) {
+        // The password was accepted; only the code is outstanding.
+        setNeedsTotp(true);
+        setTotp('');
+        setError(signal === 'required' ? '' : 'That code is not valid. Try the next one your app shows.');
+        return;
+      }
+      setNeedsTotp(false);
+      // Everything that is not a code problem stays one message, so a wrong
+      // username and a wrong password cannot be told apart from out here.
       setError('Invalid username or password.');
     }
   };
@@ -66,10 +85,19 @@ export default function AdminLogin() {
               <PasswordInput className="al-input" id="password" value={password}
                 onChange={setPassword} required autoComplete="current-password" />
             </div>
+            {needsTotp && (
+              <div className="al-field">
+                <label className="al-label" htmlFor="al-totp">Authentication code</label>
+                <TotpInput id="al-totp" className="al-input" value={totp} onChange={setTotp} autoFocus />
+                <p className="al-hint">
+                  From your authenticator app, or one of your recovery codes.
+                </p>
+              </div>
+            )}
             <Turnstile onToken={setBotToken} theme="dark" />
             {error && <div className="al-error" role="alert">{error}</div>}
             <button className="al-btn" type="submit" disabled={loading}>
-              {loading ? 'Signing in…' : 'Sign In'}
+              {loading ? 'Signing in…' : needsTotp ? 'Verify and sign in' : 'Sign In'}
             </button>
           </form>
         </div>
@@ -117,6 +145,7 @@ const loginStyles = `
   .al-sub { font-size: 12px; color: var(--text-dim); margin-bottom: 2rem; line-height: 1.5; overflow-wrap: break-word; }
   .al-form { display: flex; flex-direction: column; gap: 1rem; text-align: left; }
   .al-field { display: flex; flex-direction: column; gap: 6px; }
+  .al-hint { font-size: 11px; line-height: 1.5; color: var(--text-dim); }
   .al-label { font-size: 12px; font-weight: 500; color: var(--text-mid); }
   .al-input {
     font-family: 'Inter', sans-serif; font-size: 14px; color: var(--text);

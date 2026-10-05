@@ -367,7 +367,46 @@ Run with `npx tsx scripts/crossTenantTest.ts` (backend must be on `:3000`).
 
 ## 5. Next steps
 
-### 5.1 Admin & owner MFA — highest value
+### 5.1 Admin & owner MFA — done 2026-10-05
+
+Closed. TOTP (RFC 6238) for both account kinds, because an owner can read every
+buyer's identity document number in their tenant and a platform admin can do it
+in every tenant — the same control belongs on both.
+
+The algorithm is written out in `backend/lib/totp.ts` rather than installed. It
+is thirty lines of HMAC and a modulus, both RFCs publish known-answer vectors,
+and `backend/scripts/totpTest.ts` runs every one of them (55 checks) — so the
+one control standing between a stolen password and all of that data is
+*demonstrated* correct instead of trusted. A package here would have been
+unverifiable code in the authentication path with its own dependency tree.
+
+What the surrounding design does, and why:
+
+- **Enrolment is two steps.** A secret is stored when it is scanned, but the
+  factor only switches on once a code proves the app really has it. Enabling on
+  the strength of a scan alone is how people lock themselves out.
+- **The secret is encrypted at rest** with the same key as buyer PII. A stolen
+  secret is a permanent bypass, so it never sits in the clear.
+- **A code cannot be replayed.** The accepted 30-second step is recorded; a code
+  stays valid for the rest of its step, so without that, one read over a
+  shoulder works for up to a minute.
+- **Ten single-use recovery codes**, stored as digests, shown once. Without them
+  the only way back in is a support path that can strip someone's MFA, which is
+  itself an attack.
+- **The factor is checked only after the password.** Asking earlier would tell
+  an unauthenticated guesser which accounts have one — a map of which accounts
+  are worth attacking.
+- **A wrong code spends the login budget**, so six digits cannot be ground down;
+  a code not yet given does not, because the form has simply not been filled in.
+- **Turning it off needs the password and a current code**, so a stolen session
+  cannot strip the factor protecting it.
+- **No SMS.** A phone number is transferable by anyone who can convince a
+  carrier, which defeats the point.
+
+`backend/scripts/mfaTest.ts` (36 checks) exercises all of that over the real
+API. Still open: enforcing it rather than offering it. Enrol first, then decide.
+
+### 5.1.1 Original note, kept for the reasoning
 
 The admin account can read every tenant's decrypted PII and impersonate any
 company owner. It has **no second factor**. This is the single largest remaining

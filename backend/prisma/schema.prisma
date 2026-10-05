@@ -143,9 +143,20 @@ model CompanyUser {
   /// spread across many addresses.
   failedLogins   Int             @default(0)
   lockedUntil    DateTime?
+  /// Second factor. The shared secret is encrypted at rest with the same key
+  /// as buyer PII; it is useless to anyone who cannot also present a code, but
+  /// a stolen secret is a permanent bypass, so it is never stored in the clear.
+  totpSecret        String?
+  /// Set the moment a first valid code proved the app was really configured.
+  /// Enrolment that never got that far leaves a secret but no second factor.
+  totpEnabledAt     DateTime?
+  /// Last accepted 30-second step. A code stays valid for the rest of its step,
+  /// so without this one read over a shoulder can be replayed for a minute.
+  totpLastCounter   Int?
   createdAt      DateTime        @default(now())
   memberships    CompanyMember[]
   authTokens     AuthToken[]
+  recoveryCodes  RecoveryCode[]
 }
 
 /// One-time links emailed to a user: password reset and email verification.
@@ -296,6 +307,36 @@ model Admin {
   sessionsValidFrom DateTime?
   failedLogins Int      @default(0)
   lockedUntil  DateTime?
+  /// Second factor. The shared secret is encrypted at rest with the same key
+  /// as buyer PII; it is useless to anyone who cannot also present a code, but
+  /// a stolen secret is a permanent bypass, so it is never stored in the clear.
+  totpSecret        String?
+  /// Set the moment a first valid code proved the app was really configured.
+  /// Enrolment that never got that far leaves a secret but no second factor.
+  totpEnabledAt     DateTime?
+  /// Last accepted 30-second step. A code stays valid for the rest of its step,
+  /// so without this one read over a shoulder can be replayed for a minute.
+  totpLastCounter   Int?
+}
+
+/// Single-use codes for the day the authenticator app is on a lost phone.
+///
+/// Without these, enabling a second factor is a way to lock yourself out
+/// permanently — and the only alternative is a support path that can disable
+/// someone's MFA, which is itself an attack. Stored as hashes for the same
+/// reason passwords are.
+model RecoveryCode {
+  id        String       @id @default(cuid())
+  /// Exactly one of these is set: a seller's account, or a platform admin.
+  userId    String?
+  adminId   String?
+  codeHash  String       @unique
+  usedAt    DateTime?
+  createdAt DateTime     @default(now())
+  user      CompanyUser? @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, usedAt])
+  @@index([adminId, usedAt])
 }
 
 // Audit trail: one row per admin "act as company" support session.

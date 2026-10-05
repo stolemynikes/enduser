@@ -12,6 +12,7 @@ import SetupWizard from './SetupWizard';
 import { Mark } from '../src/components/Mark.tsx';
 import { NotificationBell } from '../src/components/NotificationBell.tsx';
 import { PriorApprovals } from '../src/components/PriorApprovals.tsx';
+import { MfaSettings } from '../src/components/MfaSettings.tsx';
 import {
   type FormConfigT, CONFIG_KEYS, CONFIG_ROWS, TERMS_MODES, modeLabels,
   BUYER_TYPE_OPTIONS, BUYER_TYPE_LABEL, BUYER_TYPE_DESC,
@@ -44,7 +45,7 @@ const GET_COUNTS = gql`
 `;
 
 const MY_ACCOUNT = gql`
-  query MyAccount { myAccount { id email name emailVerified } }
+  query MyAccount { myAccount { id email name emailVerified mfaEnabled recoveryCodesLeft } }
 `;
 
 const MY_COMPANIES = gql`
@@ -1095,6 +1096,12 @@ export default function CompanyDashboard() {
                   </div>
                 )}
               </div>
+
+              <MfaSettings
+                enabled={account?.mfaEnabled ?? false}
+                recoveryCodesLeft={account?.recoveryCodesLeft ?? 0}
+                onChanged={() => void refetchAccount()}
+              />
 
               {myCompanies.length > 1 && (
                 <div className="cd-embed">

@@ -244,6 +244,9 @@ export const typeDefs = `#graphql
     email: String!
     name: String!
     emailVerified: Boolean!
+    mfaEnabled: Boolean!
+    """How many single-use recovery codes are still unspent."""
+    recoveryCodesLeft: Int!
   }
 
   type CompanyMember {
@@ -366,6 +369,25 @@ export const typeDefs = `#graphql
     matchedOn: [DuplicateMatchOn!]!
   }
 
+  """What an authenticator app needs in order to be enrolled."""
+  type MfaEnrolment {
+    """The shared secret, grouped in fours for anyone typing it by hand."""
+    secret: String!
+    otpauthUri: String!
+    """An inline SVG data URI, so no image is fetched from anywhere."""
+    qrSvg: String!
+  }
+
+  """Shown once, on the screen that asked for them, and never again."""
+  type RecoveryCodes {
+    recoveryCodes: [String!]!
+  }
+
+  type MfaStatus {
+    enabled: Boolean!
+    recoveryCodesLeft: Int!
+  }
+
   type PublicConfig {
     """Site key for the anti-robot check; null when it is not configured."""
     turnstileSiteKey: String
@@ -396,6 +418,7 @@ export const typeDefs = `#graphql
     identityVerificationAvailable: Boolean!
     adminCompanies: [CompanyActivity!]!
     adminInsights: AdminInsights!
+    adminMfaStatus: MfaStatus!
     testVies(vat: String!, street: String, zipCode: String, place: String): ViesTestResult!
     testSubstanceCheck(substances: String!, casNumbers: String!, concentration: String, statement: String!, buyerType: BuyerType!): SubstanceTestResult!
   }
@@ -407,9 +430,9 @@ export const typeDefs = `#graphql
     recheckSubmissionSubstance(id: ID!): Submission!
     overrideSubmissionCheck(id: ID!, category: OverrideCategory!, reason: String!): Submission!
     clearSubmissionCheckOverride(id: ID!, category: OverrideCategory!): Submission!
-    adminLogin(username: String!, password: String!, turnstileToken: String): AuthPayload!
+    adminLogin(username: String!, password: String!, turnstileToken: String, totp: String): AuthPayload!
     registerCompany(name: String!, slug: String!, email: String!, password: String!, yourName: String!, turnstileToken: String): CompanyAuthPayload!
-    companyLogin(email: String!, password: String!, turnstileToken: String): CompanyAuthPayload!
+    companyLogin(email: String!, password: String!, turnstileToken: String, totp: String): CompanyAuthPayload!
     inviteMember(email: String!, role: CompanyRole!): CompanyInviteResult!
     acceptInvite(token: String!, name: String!, password: String!): CompanyAuthPayload!
     """Always returns true — whether an account exists is not disclosed here."""
@@ -419,6 +442,14 @@ export const typeDefs = `#graphql
     resendEmailVerification: Boolean!
     """Marks the given notifications read, or every one of them when no ids are given."""
     markNotificationsRead(ids: [ID!]): Int!
+    startMfaEnrolment: MfaEnrolment!
+    confirmMfaEnrolment(code: String!): RecoveryCodes!
+    disableMfa(password: String!, code: String!): Boolean!
+    regenerateRecoveryCodes(code: String!): RecoveryCodes!
+    startAdminMfaEnrolment: MfaEnrolment!
+    confirmAdminMfaEnrolment(code: String!): RecoveryCodes!
+    disableAdminMfa(password: String!, code: String!): Boolean!
+    regenerateAdminRecoveryCodes(code: String!): RecoveryCodes!
     switchCompany(companyId: ID!): CompanyAuthPayload!
     requestCompanyDeletion(confirmSlug: String!): Boolean!
     cancelCompanyDeletion: Boolean!

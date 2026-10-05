@@ -134,7 +134,10 @@ const resolvers = {
       return new Date(requested + DELETION_GRACE_DAYS * 24 * 60 * 60 * 1000).toISOString();
     },
   },
-  Query: { ...submissionResolvers.Query, ...companyResolvers.Query, ...adminResolvers.Query },
+  Query: {
+    ...submissionResolvers.Query, ...companyResolvers.Query,
+    ...adminResolvers.Query, ...authResolvers.Query,
+  },
   Mutation: {
     ...submissionResolvers.Mutation,
     ...authResolvers.Mutation,
