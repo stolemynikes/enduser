@@ -3,3 +3,6 @@
 
 # Knowledge-graph output — regenerate with `graphify . --update --code-only`
 graphify-out/
+
+# Deployment secrets live next to docker-compose.yml.
+.env

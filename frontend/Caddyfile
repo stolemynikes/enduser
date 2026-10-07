@@ -1,0 +1,93 @@
+# Caddy serves the app, proxies the API, terminates TLS and sets the security
+# headers. It replaces nginx here for one reason: the certificate handling is
+# automatic, and a renewal nobody has to remember is a renewal that happens.
+#
+# This file is the production counterpart of public/_headers. That file is
+# Netlify and Cloudflare Pages syntax; anything else ignores it, and a header
+# policy that is quietly absent is the worst outcome — the page works, so
+# nothing complains. Keep the two in step.
+
+{
+	# Where Let's Encrypt sends expiry warnings. Compose substitutes it.
+	email {$ACME_EMAIL}
+	# Cloudflare and other proxies send the real client address here. Caddy
+	# rewrites it so the backend's own TRUST_PROXY_HOPS sees one honest hop
+	# rather than guessing at a chain.
+	servers {
+		trusted_proxies static private_ranges
+	}
+}
+
+{$SITE_ADDRESS} {
+	encode gzip zstd
+
+	# --- The API and the routes the identity provider calls -----------------
+	# Same origin as the app on purpose: the browser never makes a
+	# cross-origin request, so no CORS preflight and no third-party cookie
+	# question arises.
+	@api path /graphql /graphql/* /verification-session /verification-status/* /didit-webhook
+	handle @api {
+		reverse_proxy api:3000 {
+			header_up X-Forwarded-Proto {scheme}
+		}
+	}
+
+	# --- Headers on everything ---------------------------------------------
+	header {
+		# Out of every search index. The header is the half that works: it
+		# reaches a crawler that never renders the page, and it travels on a
+		# response reached from somebody else's link.
+		X-Robots-Tag "noindex, nofollow, noarchive, nosnippet, noimageindex"
+
+		# Session tokens live in localStorage, so an injected script could read
+		# them. Scripts are restricted to this origin; nothing may frame the app
+		# except the embed route below.
+		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; frame-src https://verify.didit.me; form-action 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'"
+
+		X-Frame-Options "DENY"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=()"
+
+		# Server software and version is free reconnaissance.
+		-Server
+	}
+
+	# --- The one route a seller may frame ------------------------------------
+	# Sellers embed this on their own website, so it is the single exception to
+	# frame-ancestors 'none'. Everything else about the policy is unchanged,
+	# including that scripts still come only from here.
+	@embed path /embed/*
+	header @embed {
+		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; frame-src https://verify.didit.me; form-action 'self'; base-uri 'none'; object-src 'none'; frame-ancestors https:"
+		# Deleted, not blanked. An empty value emits an empty header, and a
+		# browser meeting X-Frame-Options with nothing after it may still refuse
+		# the frame — which would break the one route that exists to be framed.
+		-X-Frame-Options
+	}
+
+	# --- Caching -------------------------------------------------------------
+	# Vite fingerprints asset filenames, so those may be cached forever. The
+	# HTML must not be: it is what points at the current filenames, and a cached
+	# copy keeps sending people to assets that no longer exist after a deploy.
+	@assets path /assets/*
+	header @assets Cache-Control "public, max-age=31536000, immutable"
+
+	@html path / /index.html
+	header @html Cache-Control "no-cache"
+
+	# --- Static files and SPA routing ---------------------------------------
+	# A second `handle`, rather than leaving file serving at the top level:
+	# `handle` blocks are mutually exclusive, so this says plainly that a request
+	# is either the API or a file, instead of relying on Caddy's directive order
+	# to arrive at the same answer.
+	handle {
+		root * /srv
+		# Every unknown path falls back to index.html, because a company form
+		# lives at /{slug} and is routed in the browser. Nothing here is a real
+		# directory.
+		try_files {path} /index.html
+		file_server
+	}
+}

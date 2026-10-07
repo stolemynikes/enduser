@@ -1,0 +1,130 @@
+# One server, three containers.
+#
+# Read this first, because it is a security compromise and should be a knowing
+# one: putting Postgres here means the database and the encryption key live on
+# the same machine, and a root compromise of that box yields both. The key is
+# then no longer protecting anything against the attacker who matters most.
+#
+# It is still far better than a laptop on a tunnel, and it is what a single
+# server looks like. If you would rather not make that trade, delete the `db`
+# service and point DATABASE_URL at a managed Postgres elsewhere — nothing else
+# in this file changes, and that is the only edit needed.
+#
+# Either way: back the encryption key up somewhere other than the database dump.
+# A dump and its key in one archive is the same failure with extra steps.
+
+name: eustatement
+
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: enduser
+      POSTGRES_USER: enduser
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    # Deliberately no `ports:`. The database is reachable from the api container
+    # over the compose network and from nowhere else — not from the internet,
+    # and not from anything else running on the host.
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U enduser -d enduser']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [internal]
+
+  api:
+    build: ./backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://enduser:${POSTGRES_PASSWORD}@db:5432/enduser?schema=public
+
+      # Drives CORS, the links in emails, the Didit callback and the passkey
+      # relying party. A passkey enrolled against one hostname is useless at
+      # another, so changing this invalidates every passkey already registered.
+      FRONTEND_URL: ${FRONTEND_URL:?set FRONTEND_URL in .env}
+
+      # Boot refuses identical signing secrets, and refuses either reused as the
+      # encryption key.
+      JWT_SECRET: ${JWT_SECRET:?generate with openssl rand -hex 32}
+      COMPANY_JWT_SECRET: ${COMPANY_JWT_SECRET:?generate with openssl rand -hex 32}
+      # Cannot be rotated by anything that exists yet: change it and every
+      # submission already written becomes unreadable.
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?generate with openssl rand -hex 32}
+
+      # One hop: Caddy. Two if Cloudflare is also in front. Too high and
+      # X-Forwarded-For is forgeable, so every IP-keyed limit is evaded; too low
+      # and every client looks like the proxy and shares one bucket.
+      TRUST_PROXY_HOPS: ${TRUST_PROXY_HOPS:-1}
+
+      # Set to 1 only after you and the admin account have enrolled a factor.
+      # Earlier and it locks you out of your own product.
+      REQUIRE_MFA: ${REQUIRE_MFA:-0}
+
+      SMTP_HOST: ${SMTP_HOST:?no mail has ever been delivered — set this}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:?set SMTP_USER}
+      SMTP_PASS: ${SMTP_PASS:?set SMTP_PASS}
+      SMTP_FROM: ${SMTP_FROM}
+      ADMIN_EMAIL: ${ADMIN_EMAIL}
+
+      # Without these the anti-robot check is inert and the public form is free
+      # to script. The site key is served to the browser by the API.
+      TURNSTILE_SECRET: ${TURNSTILE_SECRET}
+      TURNSTILE_SITE_KEY: ${TURNSTILE_SITE_KEY}
+
+      DIDIT_API_KEY: ${DIDIT_API_KEY}
+      DIDIT_WORKFLOW_ID: ${DIDIT_WORKFLOW_ID}
+      DIDIT_WEBHOOK_SECRET: ${DIDIT_WEBHOOK_SECRET}
+    # Also no `ports:`. The only way in is through Caddy.
+    #
+    # On both networks on purpose. `internal` reaches the database; `default`
+    # is what gives this container a route *out* — it calls the identity
+    # provider, the EU VIES register, PubChem and the mail host. An internal-only
+    # network has no egress, and the symptom would have been identity
+    # verification failing with a network error nobody could explain.
+    networks: [internal, default]
+
+  web:
+    build: ./frontend
+    restart: unless-stopped
+    depends_on: [api]
+    environment:
+      # A bare hostname makes Caddy fetch a certificate for it. Use
+      # `:80` instead while testing, or on a host where something else
+      # terminates TLS.
+      SITE_ADDRESS: ${SITE_ADDRESS:?e.g. eustatement.nl, or :80 to test without TLS}
+      ACME_EMAIL: ${ACME_EMAIL:-}
+    ports:
+      - '80:80'
+      - '443:443'
+      - '443:443/udp'
+    volumes:
+      # Certificates survive a restart; without this Caddy re-requests them on
+      # every deploy and meets Let's Encrypt's rate limit.
+      - caddy-data:/data
+      - caddy-config:/config
+    # Only `default`: it needs the internet and the api container, and has no
+    # business being able to reach the database at all.
+    networks: [default]
+
+volumes:
+  db-data:
+  caddy-data:
+  caddy-config:
+
+networks:
+  # Carries database traffic and nothing else. `internal: true` means no route
+  # to or from the internet, so the database cannot be reached from outside and
+  # cannot reach out either.
+  internal:
+    internal: true
+  # The ordinary bridge: Caddy to the api, and the api to the outside services
+  # it depends on.
+  default:

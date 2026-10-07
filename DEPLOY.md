@@ -6,6 +6,13 @@ does not exist yet. This is what stands between the two.
 Nothing here needs a build step: Node 24 strips TypeScript natively, so
 `npm start` runs `node index.ts` directly. Verified.
 
+**The Docker setup in this repository has never been built.** There is no
+container runtime on the machine it was written on, so the Dockerfiles, the
+Caddyfile and `docker-compose.yml` are reviewed but unrun. Expect to fix
+something on the first `docker compose up`. Three mistakes were already found
+and corrected by reading, including an internal-only network that would have
+left the API unable to reach the identity provider at all.
+
 ---
 
 ## 1. Two machines, not one
@@ -58,18 +65,37 @@ the database, and write down where.
 
 ## 4. Run it
 
+On a server, with Docker:
+
+```sh
+cp .env.example .env     # then fill it in; compose refuses to start on a gap
+docker compose up -d --build
+docker compose logs -f api
+```
+
+Three containers. `web` is Caddy: it terminates TLS with a certificate it
+fetches itself, serves the built app, proxies `/graphql` and the identity
+routes, and sets the security headers. `api` is the server. `db` is Postgres on
+an internal network with no route to or from the internet.
+
+The API container runs `prisma migrate deploy` before starting, which is
+idempotent, so a redeploy is safe. It is not safe to *race*, so this expects a
+single replica; more than one means moving migrations to their own one-shot job.
+
+Without Docker the same thing by hand:
+
 ```sh
 npm ci                 # dev dependencies included: prisma is one, and migrate needs it
 npm run migrate        # prisma migrate deploy
 npm start              # node index.ts
 ```
 
-Two notes. The Prisma CLI moved to `devDependencies`, so a release step that
-installs with `--omit=dev` cannot migrate — install fully in the release step,
-or run migrations from a job that does. And `prisma migrate deploy` only applies
-what is in `prisma/migrations`; there is one partial index that Prisma's schema
-language cannot express and that lives in SQL only (`20261005180000`), so never
-reset the database from `schema.prisma` alone.
+Two notes either way. The Prisma CLI is a `devDependency`, so a release step
+that installs with `--omit=dev` cannot migrate — the Dockerfile installs fully
+for that reason. And `prisma migrate deploy` only applies what is in
+`prisma/migrations`; there is one partial index that Prisma's schema language
+cannot express and that lives in SQL only (`20261005180000`), so never reset the
+database from `schema.prisma` alone.
 
 ## 5. Enrol, then enforce
 
@@ -88,14 +114,24 @@ enrol on the real domain.
 
 ## 6. Headers
 
-`frontend/public/_headers` is Netlify and Cloudflare Pages syntax. On nginx or
-anything else the same policy has to be restated by hand — including the one
-exception, where `/embed/*` may be framed and everything else may not. Serving
-the app without those headers removes the CSP that is the main defence against a
-script reading the tokens in `localStorage`.
+Two copies of one policy, which is a maintenance hazard worth knowing about:
 
-Check after deploying that `X-Robots-Tag` and `Content-Security-Policy` actually
-appear on a response. A `_headers` file on a host that ignores it fails silently.
+- `frontend/public/_headers` — Netlify and Cloudflare Pages syntax
+- `frontend/Caddyfile` — what the Docker deployment actually uses
+
+Caddy does not read `_headers`, and nothing checks that the two agree. Change
+one, change the other. Both carry the same exception: `/embed/*` may be framed
+because sellers put it on their own site, and everything else may not.
+
+Check after deploying that they are really there, because a header policy that
+is quietly absent is the worst outcome — the page works, so nothing complains:
+
+```sh
+curl -sI https://<host>/ | grep -iE 'content-security-policy|x-robots-tag|strict-transport'
+curl -sI https://<host>/embed/some-slug | grep -i 'frame-ancestors\|x-frame-options'
+```
+
+The second should show `frame-ancestors https:` and **no** `X-Frame-Options`.
 
 ## 7. Didit
 
