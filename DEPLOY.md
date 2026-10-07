@@ -97,6 +97,87 @@ for that reason. And `prisma migrate deploy` only applies what is in
 cannot express and that lives in SQL only (`20261005180000`), so never reset the
 database from `schema.prisma` alone.
 
+## 4a. The Ubuntu host
+
+Take the current LTS. Nothing in this stack depends on the distribution —
+Docker provides the runtime, and the host needs Docker, a firewall and an
+accurate clock. Five things bite specifically here.
+
+**Install Docker from Docker's own repository, not `apt install docker.io`.**
+The packaged version lags and the compose plugin is separate:
+
+```sh
+curl -fsSL https://get.docker.com | sh
+sudo usermod -aG docker $USER      # log out and back in
+```
+
+Membership of the `docker` group is equivalent to root — the daemon will mount
+any path you ask it to. Treat it as an admin account, not a convenience.
+
+**The firewall and Docker disagree, and Docker wins.** `ufw` filters the `INPUT`
+chain; Docker publishes ports by writing its own `DOCKER` chain rules that are
+evaluated first. So a published port is reachable from the internet *even with
+`ufw deny` in place* — people discover this when their database turns up in a
+scan.
+
+```sh
+sudo ufw default deny incoming
+sudo ufw allow 22,80,443/tcp
+sudo ufw enable
+```
+
+That is correct for this stack because only Caddy publishes anything, and 80
+and 443 are what should be open. The rule to remember: never add `ports:` to the
+`db` service to point a GUI client at it. Use `docker compose exec db psql`, or
+tunnel over SSH. A published database port is public regardless of `ufw`.
+
+**The clock is load-bearing.** One-time codes are derived from the current
+30-second window, and the identity provider's webhook is rejected outside a
+300-second signature window. A drifting clock breaks sign-in and silently drops
+webhook deliveries — two failures that look like nothing to do with time.
+`systemd-timesyncd` is on by default; confirm rather than assume:
+
+```sh
+timedatectl status | grep -E 'synchronized|NTP'
+```
+
+**Cap the logs.** Docker's default driver grows without limit, and a full disk
+takes Postgres down with it. In `/etc/docker/daemon.json`:
+
+```json
+{ "log-driver": "json-file", "log-opts": { "max-size": "10m", "max-file": "5" } }
+```
+
+Then `sudo systemctl restart docker`.
+
+**Give it swap if the box is small.** `npm ci` plus a Vite build plus Postgres
+on 1GB will be killed mid-build, and the error points at the build rather than
+at memory. 2GB of swap costs nothing:
+
+```sh
+sudo fallocate -l 2G /swapfile && sudo chmod 600 /swapfile
+sudo mkswap /swapfile && sudo swapon /swapfile
+echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+```
+
+Also worth doing, in the ordinary way: key-only SSH with root login disabled,
+and `unattended-upgrades` so security patches land without being remembered.
+
+## 4b. Backups
+
+Two things, kept apart, which is the whole point:
+
+```sh
+# The data. Run it from a systemd timer or cron; keep copies off the server.
+docker compose exec -T db pg_dump -U enduser enduser | gzip > enduser-$(date +%F).sql.gz
+```
+
+And `ENCRYPTION_KEY`, stored somewhere that is **not** where those dumps go. A
+dump without the key is unreadable, which is the design working; a dump beside
+the key is one theft away from being plaintext.
+
+Test a restore before you need one. An untested backup is a belief.
+
 ## 5. Enrol, then enforce
 
 In this order, or the next step locks you out:
