@@ -25,7 +25,7 @@
 	# Same origin as the app on purpose: the browser never makes a
 	# cross-origin request, so no CORS preflight and no third-party cookie
 	# question arises.
-	@api path /graphql /graphql/* /verification-session /verification-status/* /didit-webhook
+	@api path /graphql /graphql/* /verification-session /verification-status/* /didit-webhook /health
 	handle @api {
 		reverse_proxy api:3000 {
 			header_up X-Forwarded-Proto {scheme}

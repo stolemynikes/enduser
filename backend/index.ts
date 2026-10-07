@@ -372,6 +372,27 @@ app.post('/didit-webhook', webhookLimiter, express.raw({ type: '*/*', limit: '25
   }
 });
 
+/**
+ * Liveness, for the container runtime.
+ *
+ * Deliberately outside every rate limiter and outside GraphQL: a health probe
+ * that can be throttled reports a dead service during a traffic spike, which is
+ * the moment a restart does the most damage.
+ *
+ * It touches the database, because a server that cannot reach Postgres is not
+ * healthy in any sense that matters — but it asks for nothing: SELECT 1 is not
+ * a row anybody owns, so the answer leaks nothing and costs nothing. The body
+ * is two words for the same reason.
+ */
+app.get('/health', async (_req, res) => {
+  try {
+    await prisma.$queryRawUnsafe('SELECT 1');
+    res.status(200).type('text/plain').send('ok');
+  } catch {
+    res.status(503).type('text/plain').send('unavailable');
+  }
+});
+
 // Operation-aware rate limiters applied before GraphQL. Credential guessing
 // (any login/registration path) and the public submit mutation get their own
 // tighter budgets than the general API limit.

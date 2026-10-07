@@ -12,6 +12,13 @@
 #
 # Either way: back the encryption key up somewhere other than the database dump.
 # A dump and its key in one archive is the same failure with extra steps.
+#
+# On restarts: `restart: unless-stopped` on each service brings a container back
+# when its process exits — a crash, an out-of-memory kill, a reboot of the host.
+# It does not act on a container that is merely unhealthy, because compose has
+# no such behaviour; a process that hangs without exiting stays up and the
+# healthcheck only makes that visible. If that case matters later, the usual
+# answer is a watchdog container that restarts unhealthy ones.
 
 name: eustatement
 
@@ -82,6 +89,18 @@ services:
       DIDIT_API_KEY: ${DIDIT_API_KEY}
       DIDIT_WORKFLOW_ID: ${DIDIT_WORKFLOW_ID}
       DIDIT_WEBHOOK_SECRET: ${DIDIT_WEBHOOK_SECRET}
+    healthcheck:
+      # Checked so `docker compose ps` tells the truth and so Caddy waits for a
+      # server that can actually answer. Note what this does *not* do: compose
+      # restarts a container that exits, not one that is merely unhealthy. A
+      # crash is covered by `restart: unless-stopped`; a process that hangs
+      # without exiting is not, and nothing here pretends otherwise.
+      test: ['CMD', 'node', '-e', "fetch('http://127.0.0.1:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      # Migrations run before the server starts, so the first probe has to wait.
+      start_period: 60s
     # Also no `ports:`. The only way in is through Caddy.
     #
     # On both networks on purpose. `internal` reaches the database; `default`
@@ -94,7 +113,9 @@ services:
   web:
     build: ./frontend
     restart: unless-stopped
-    depends_on: [api]
+    depends_on:
+      api:
+        condition: service_healthy
     environment:
       # A bare hostname makes Caddy fetch a certificate for it. Use
       # `:80` instead while testing, or on a host where something else
