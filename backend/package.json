@@ -4,6 +4,8 @@
   "main": "index.ts",
   "type": "module",
   "scripts": {
+    "start": "node index.ts",
+    "migrate": "prisma migrate deploy",
     "test": "tsx scripts/cipherTest.ts && tsx scripts/matchKeysTest.ts && tsx scripts/totpTest.ts && tsx scripts/statementPdfTest.ts && tsx scripts/substanceCheckTest.ts && tsx scripts/diditWebhookTest.ts && tsx scripts/securityRegressionTest.ts && tsx scripts/injectionTest.ts && tsx scripts/crossTenantTest.ts && tsx scripts/inviteAuthTest.ts && tsx scripts/qolTest.ts && tsx scripts/mfaTest.ts && tsx scripts/revealTest.ts && tsx scripts/passkeyTest.ts && tsx scripts/mfaRequiredTest.ts && tsx scripts/hardeningTest.ts",
     "dev": "nodemon --exec tsx index.ts",
     "typecheck": "tsc --noEmit",
