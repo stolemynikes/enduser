@@ -11,14 +11,11 @@
 //
 // Run: npx tsx scripts/checkPrecursorList.ts   (exits non-zero on a difference)
 import { PRECURSORS } from '../lib/precursors.ts';
+import { fetchAct } from './publicationsOffice.ts';
 
 const URL = 'http://publications.europa.eu/resource/celex/02019R1148-20190711';
 
-const res = await fetch(URL, {
-  headers: { Accept: 'application/xhtml+xml', 'Accept-Language': 'eng' },
-  signal: AbortSignal.timeout(30_000),
-  redirect: 'follow',
-});
+const res = await fetchAct(URL, 'eng');
 if (!res.ok) {
   console.error(`Could not fetch the regulation (HTTP ${res.status}). Check the URL or try again later.`);
   process.exit(2);

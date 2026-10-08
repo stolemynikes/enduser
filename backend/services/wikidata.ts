@@ -18,6 +18,11 @@ import { normalizeName } from '../lib/precursors.ts';
 const ENDPOINT = 'https://query.wikidata.org/sparql';
 const TIMEOUT_MS = 8_000;
 const CACHE_MAX = 2000;
+// Checks run in the background after every submission, and on startup for any
+// left pending, so without a brake a burst of submissions becomes a burst of
+// parallel queries — enough for Wikimedia to rate-limit or block this server's
+// address. One query in flight, spaced out, as with PubChem.
+const MIN_GAP_MS = 500;
 
 const LANGS = ['bg', 'cs', 'da', 'de', 'el', 'en', 'et', 'fi', 'fr', 'ga', 'hr', 'hu',
   'it', 'lv', 'lt', 'mt', 'nl', 'pl', 'pt', 'ro', 'sk', 'sl', 'es', 'sv'];
@@ -27,6 +32,25 @@ export class WikidataUnavailable extends Error {}
 export type WikidataName = { lang: string; name: string };
 
 const cache = new Map<string, WikidataName[]>();
+// Concurrent checks for the same CAS share one query instead of queueing two.
+const inFlight = new Map<string, Promise<WikidataName[]>>();
+
+let chain: Promise<unknown> = Promise.resolve();
+let lastCallAt = 0;
+
+function queued<T>(fn: () => Promise<T>): Promise<T> {
+  const run = chain.then(async () => {
+    const wait = MIN_GAP_MS - (Date.now() - lastCallAt);
+    if (wait > 0) await new Promise(r => setTimeout(r, wait));
+    try {
+      return await fn();
+    } finally {
+      lastCallAt = Date.now();
+    }
+  });
+  chain = run.catch(() => {});
+  return run;
+}
 
 /**
  * Every label and alias Wikidata holds for the substance with this CAS number.
@@ -40,7 +64,15 @@ export async function namesForCas(cas: string): Promise<WikidataName[]> {
   // number. Callers pass normalised values; this is the backstop.
   if (!/^\d{2,7}-\d{2}-\d$/.test(cas)) return [];
 
-  const query = `
+  const pending = inFlight.get(cas);
+  if (pending) return pending;
+  const p = queued(() => lookup(cas)).finally(() => inFlight.delete(cas));
+  inFlight.set(cas, p);
+  return p;
+}
+
+async function lookup(cas: string): Promise<WikidataName[]> {
+  const sparql = `
     SELECT ?name WHERE {
       ?item wdt:P231 "${cas}" .
       { ?item rdfs:label ?name } UNION { ?item skos:altLabel ?name }
@@ -50,7 +82,7 @@ export async function namesForCas(cas: string): Promise<WikidataName[]> {
 
   let res: Response;
   try {
-    res = await fetch(`${ENDPOINT}?query=${encodeURIComponent(query)}`, {
+    res = await fetch(`${ENDPOINT}?query=${encodeURIComponent(sparql)}`, {
       headers: {
         Accept: 'application/sparql-results+json',
         'User-Agent': `eustatement-substance-check/1.0${contact ? ` (${contact})` : ''}`,

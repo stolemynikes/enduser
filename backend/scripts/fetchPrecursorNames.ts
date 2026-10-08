@@ -28,6 +28,7 @@
 import { writeFileSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { PRECURSORS, normalizeCas } from '../lib/precursors.ts';
+import { fetchAct } from './publicationsOffice.ts';
 
 const CELEX = 'http://publications.europa.eu/resource/celex/02019R1148-20190711';
 // The consolidated text is missing in some language versions (Spanish, at the
@@ -64,13 +65,8 @@ const decode = (s: string) => s
   .trim();
 
 async function regulationNames(cellar: string, iso: string): Promise<Name[]> {
-  const get = (url: string) => fetch(url, {
-    headers: { Accept: 'application/xhtml+xml', 'Accept-Language': cellar },
-    signal: AbortSignal.timeout(60_000),
-    redirect: 'follow',
-  });
-  let res = await get(CELEX);
-  if (res.status === 404) res = await get(CELEX_ORIGINAL);
+  let res = await fetchAct(CELEX, cellar);
+  if (res.status === 404) res = await fetchAct(CELEX_ORIGINAL, cellar);
   if (!res.ok) throw new Error(`${cellar}: HTTP ${res.status}`);
   const html = await res.text();
 
