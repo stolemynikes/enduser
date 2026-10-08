@@ -102,13 +102,19 @@ console.log('— The screen reads the translation —');
   // An invalid CAS keeps this offline: the CAS is flagged without asking
   // PubChem, and the statement screen still runs.
   const base = { substances: 'Aceton', casNumbers: 'n/a', buyerType: 'INDIVIDUAL' as const };
-  const without = await checkSubstanceUse({ ...base, statement: 'Ich will es trinken.' });
-  check('German "drink it" alone is not caught by the English word list', !/Ingestion/.test(without.note));
+  // Polish has no hand-written word list, so only the translation can catch it.
+  const without = await checkSubstanceUse({ ...base, statement: 'Chcę to wypić.', statementLang: 'pl' });
+  check('Polish "drink it" alone is not caught by any word list', !/Ingestion/.test(without.note));
   const withT = await checkSubstanceUse({
-    ...base, statement: 'Ich will es trinken.', statementTranslation: 'I want to drink it.', statementLang: 'de',
+    ...base, statement: 'Chcę to wypić.', statementTranslation: 'I want to drink it.', statementLang: 'pl',
   });
   check('with the translation it is flagged', withT.status === 'FLAGGED' && /Ingestion/.test(withT.note), withT.note.slice(0, 200));
-  check('and the flag says it came from the German translation', /found in the machine translation from German/.test(withT.note));
+  check('and the flag says it came from the Polish translation', /found in the machine translation from Polish/.test(withT.note));
+  const de = await checkSubstanceUse({
+    ...base, statement: 'Ich will es trinken.', statementTranslation: 'I want to drink it.', statementLang: 'de',
+  });
+  check('German is caught by its own list, not attributed to the translation',
+    /Ingestion/.test(de.note) && !/found in the machine translation/.test(de.note), de.note.slice(0, 200));
   const both = await checkSubstanceUse({
     ...base, statement: 'I want to drink it.', statementTranslation: 'I want to drink it.', statementLang: 'en',
   });

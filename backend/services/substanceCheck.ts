@@ -316,7 +316,7 @@ export async function checkSubstanceUse(
   // annexes, so the stated use is screened whenever a listed substance is
   // involved — and for unlisted ones too, since a statement like "I want to
   // drink it" is worth a look whatever the CAS resolves to.
-  const concerns = screenStatement(statement ?? '');
+  const concerns = screenStatement(statement ?? '', statementLang);
   for (const c of concerns) problems.push(`${c.category}: ${c.detail}`);
 
   // The word lists only know some languages. The translation catches the
@@ -326,7 +326,7 @@ export async function checkSubstanceUse(
   if (statementTranslation) {
     const seen = new Set(concerns.map(c => c.category));
     const via = statementLang ? `the machine translation from ${languageName(statementLang)}` : 'the machine translation';
-    for (const c of screenStatement(statementTranslation)) {
+    for (const c of screenStatement(statementTranslation, 'en')) {
       if (seen.has(c.category) || c.category === 'Stated use not meaningful' || c.category === 'No stated use') continue;
       seen.add(c.category);
       concerns.push(c);
