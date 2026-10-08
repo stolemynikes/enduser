@@ -7,6 +7,7 @@
 //
 // Inert until TURNSTILE_SECRET is set, so development and tests are unaffected.
 import 'dotenv/config';
+import { buyerError } from '../lib/buyerError.ts';
 
 const SECRET = process.env.TURNSTILE_SECRET;
 const VERIFY_URL = 'https://challenges.cloudflare.com/turnstile/v0/siteverify';
@@ -21,7 +22,7 @@ const TURNSTILE_ENABLED = !!SECRET;
  */
 export async function verifyHumanOrThrow(token: string | undefined, remoteIp?: string): Promise<void> {
   if (!TURNSTILE_ENABLED) return;
-  if (!token) throw new Error('Please complete the anti-robot check and try again.');
+  if (!token) throw buyerError('BOT_CHECK_MISSING', 'Please complete the anti-robot check and try again.');
 
   let outcome: { success?: boolean; 'error-codes'?: string[] };
   try {
@@ -36,11 +37,11 @@ export async function verifyHumanOrThrow(token: string | undefined, remoteIp?: s
     outcome = await res.json() as typeof outcome;
   } catch (err: any) {
     console.error(`[turnstile] verification unreachable: ${err?.message ?? 'unknown error'}`);
-    throw new Error('We could not complete the anti-robot check. Please try again.');
+    throw buyerError('BOT_CHECK_ERROR', 'We could not complete the anti-robot check. Please try again.');
   }
 
   if (!outcome.success) {
     console.warn(`[turnstile] rejected: ${(outcome['error-codes'] ?? []).join(', ') || 'no reason given'}`);
-    throw new Error('The anti-robot check did not pass. Please try again.');
+    throw buyerError('BOT_CHECK_FAILED', 'The anti-robot check did not pass. Please try again.');
   }
 }

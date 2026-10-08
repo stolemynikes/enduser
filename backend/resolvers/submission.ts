@@ -57,6 +57,7 @@ import { verifyHumanOrThrow } from '../services/turnstile.ts';
 import { mailBudgetAllows } from '../lib/mailBudget.ts';
 import { statementCopy } from '../lib/statementCopy.ts';
 import { matchKeys } from '../lib/matchKeys.ts';
+import { buyerError } from '../lib/buyerError.ts';
 import { revealDocumentNumber } from '../lib/reveal.ts';
 import { secondFactorError } from './auth.ts';
 import { notifySubmission, notify } from '../lib/notifications.ts';
@@ -104,7 +105,7 @@ export const submissionResolvers = {
       // lookup, PubChem calls, mail — so the first question is whether there is
       // a person here at all.
       await verifyHumanOrThrow(typeof turnstileToken === 'string' ? turnstileToken : undefined);
-      if (!agreedToTerms) throw new Error('You must agree to the terms and conditions.');
+      if (!agreedToTerms) throw buyerError('TERMS_REQUIRED', 'You must agree to the terms and conditions.');
 
       const SHORT = 255, LONG = 2000;
       const fields: [string, number][] = [
@@ -119,12 +120,12 @@ export const submissionResolvers = {
       for (const [field, max] of fields) {
         const val = data[field];
         if (typeof val === 'string' && val.length > max)
-          throw new Error(`Field "${field}" exceeds maximum length of ${max} characters.`);
+          throw buyerError('FIELD_TOO_LONG', `Field "${field}" exceeds maximum length of ${max} characters.`);
       }
 
       const email = typeof data.email === 'string' ? data.email.trim() : '';
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-        throw new Error('Please enter a valid email address.');
+        throw buyerError('INVALID_EMAIL', 'Please enter a valid email address.');
       }
       data.email = email;
 
@@ -167,7 +168,7 @@ export const submissionResolvers = {
           // else's address buys an attacker a dead page rather than a working
           // collection point.
           if (co.deletedAt || co.members[0]?.user.emailVerifiedAt == null) {
-            throw new Error('This form is not accepting submissions yet.');
+            throw buyerError('FORM_NOT_OPEN', 'This form is not accepting submissions yet.');
           }
           companyId = co.id;
           config = resolveConfig(co.formConfig);
@@ -187,7 +188,7 @@ export const submissionResolvers = {
         for (const key of keys) {
           const val = typeof rest[key] === 'string' ? rest[key].trim() : '';
           if (mode === 'HIDDEN') rest[key] = '';
-          else if (mode === 'REQUIRED' && !val) throw new Error(`Field "${key}" is required.`);
+          else if (mode === 'REQUIRED' && !val) throw buyerError('FIELD_REQUIRED', `Field "${key}" is required.`);
           else rest[key] = val;
         }
       }
@@ -198,13 +199,13 @@ export const submissionResolvers = {
         config.buyerTypes === 'COMPANY_ONLY' ? 'COMPANY'
         : config.buyerTypes === 'INDIVIDUAL_ONLY' ? 'INDIVIDUAL'
         : submittedBuyerType === 'INDIVIDUAL' || submittedBuyerType === 'COMPANY' ? submittedBuyerType
-        : (() => { throw new Error('Please select whether you are an individual or a company.'); })();
+        : (() => { throw buyerError('BUYER_TYPE_REQUIRED', 'Please select whether you are an individual or a company.'); })();
 
       if (buyerType === 'COMPANY') {
         const companyNameVal = typeof rest.companyName === 'string' ? rest.companyName.trim() : '';
         const vatVal = typeof rest.vatNumber === 'string' ? rest.vatNumber.trim() : '';
-        if (!companyNameVal) throw new Error('Company name is required.');
-        if (!vatVal) throw new Error('VAT number is required.');
+        if (!companyNameVal) throw buyerError('COMPANY_NAME_REQUIRED', 'Company name is required.');
+        if (!vatVal) throw buyerError('VAT_REQUIRED', 'VAT number is required.');
         rest.companyName = companyNameVal;
         rest.vatNumber = vatVal;
       } else {
@@ -221,39 +222,39 @@ export const submissionResolvers = {
         rest.idDocumentNumber = null;
       } else {
         if (!DIDIT_ENABLED) {
-          throw new Error('Identity verification is temporarily unavailable — please try again later.');
+          throw buyerError('ID_UNAVAILABLE', 'Identity verification is temporarily unavailable — please try again later.');
         }
         if (!diditSessionId) {
-          throw new Error('Please complete the identity verification step.');
+          throw buyerError('ID_REQUIRED', 'Please complete the identity verification step.');
         }
         // Ownership first, without spending the session: a submit that arrives
         // before the buyer finished the hosted flow must leave the verification
         // intact, otherwise they have to start (and pay for) a new one.
         if (!(await sessionMatches(diditSessionId, companyId ?? null))) {
-          throw new Error('Your identity verification expired or was already used — please start it again.');
+          throw buyerError('ID_EXPIRED', 'Your identity verification expired or was already used — please start it again.');
         }
 
         let decision;
         try {
           decision = await retrieveDecision(diditSessionId);
         } catch {
-          throw new Error('We could not confirm your identity verification — please try again.');
+          throw buyerError('ID_UNCONFIRMED', 'We could not confirm your identity verification — please try again.');
         }
 
         if (decision.status === 'PENDING') {
-          throw new Error('Your identity verification is not finished yet — please complete it and try again.');
+          throw buyerError('ID_UNFINISHED', 'Your identity verification is not finished yet — please complete it and try again.');
         }
 
         // Terminal outcome: spend it. Two submissions racing on one session both
         // reach here, and only the one that wins this call proceeds.
         if (!(await consumeSession(diditSessionId, companyId ?? null))) {
-          throw new Error('Your identity verification expired or was already used — please start it again.');
+          throw buyerError('ID_EXPIRED', 'Your identity verification expired or was already used — please start it again.');
         }
         // Re-assert the document policy server-side. Didit is told to only
         // offer passports and identity cards, but that is a setting on their
         // side, not a control on ours.
         if (decision.documentType == null && decision.status === 'APPROVED') {
-          throw new Error('Only passports and identity cards are accepted.');
+          throw buyerError('ID_DOCUMENT_TYPE', 'Only passports and identity cards are accepted.');
         }
 
         // Age is checked here and nowhere else, because here is the only place
@@ -263,7 +264,8 @@ export const submissionResolvers = {
         // to say no to them.
         if (decision.age != null && decision.age < MINIMUM_AGE) {
           console.warn('[submit] refused: buyer is under the minimum age');
-          throw new Error(
+          throw buyerError(
+            'UNDER_AGE',
             `You must be at least ${MINIMUM_AGE} years old to submit an end-user statement.`,
           );
         }
