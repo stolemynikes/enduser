@@ -49,7 +49,7 @@ console.log('— End-to-end (live PubChem) —');
 // rule and stop testing what they were written to test.
 const OK_USE = 'Cleaning precision optical components in our workshop';
 
-const cases: { label: string; args: Parameters<typeof checkSubstanceUse>[0]; expect: 'OK' | 'FLAGGED' | 'ERROR'; mustSay?: string }[] = [
+const cases: { label: string; args: Parameters<typeof checkSubstanceUse>[0]; expect: 'OK' | 'FLAGGED' | 'ERROR'; mustSay?: string; mustNotSay?: string }[] = [
   {
     label: 'unlisted substance, matching CAS → OK',
     args: { substances: 'Toluene', casNumbers: '108-88-3', statement: OK_USE, buyerType: 'COMPANY' },
@@ -74,6 +74,35 @@ const cases: { label: string; args: Parameters<typeof checkSubstanceUse>[0]; exp
     label: 'name/CAS mismatch → FLAGGED',
     args: { substances: 'Acetone', casNumbers: '7664-93-9', statement: OK_USE, buyerType: 'COMPANY' },
     expect: 'FLAGGED', mustSay: 'not the declared substance',
+  },
+
+  // PubChem knows almost no non-English names. Before the multilingual table a
+  // German buyer writing "Essigsäure" next to the right CAS was flagged as
+  // unidentifiable, and every listed substance in Dutch read as unchecked.
+  {
+    label: 'Dutch annex name with its CAS → recognised from the regulation, not "unidentified"',
+    args: { substances: 'salpeterzuur', casNumbers: '7697-37-2', statement: OK_USE, buyerType: 'COMPANY' },
+    expect: 'FLAGGED', mustSay: 'Dutch name for Nitric acid', mustNotSay: 'could not be identified',
+  },
+  {
+    label: 'German annex name with umlaut and its CAS → recognised',
+    args: { substances: 'Salpetersäure', casNumbers: '7697-37-2', statement: OK_USE, buyerType: 'COMPANY' },
+    expect: 'FLAGGED', mustSay: 'German name', mustNotSay: 'could not be identified',
+  },
+  {
+    label: 'unlisted substance in German with its CAS → OK via Wikidata',
+    args: { substances: 'Essigsäure', casNumbers: '64-19-7', statement: OK_USE, buyerType: 'COMPANY' },
+    expect: 'OK', mustSay: 'Wikidata',
+  },
+  {
+    label: 'a listed name in Polish under an unrelated CAS → FLAGGED as a mismatch',
+    args: { substances: 'kwas azotowy', casNumbers: '67-64-1', statement: OK_USE, buyerType: 'COMPANY' },
+    expect: 'FLAGGED', mustSay: 'Polish name for Nitric acid',
+  },
+  {
+    label: 'unpaired Dutch name is still checked against the annexes',
+    args: { substances: 'waterstofperoxide, tolueen', casNumbers: '108-88-3', statement: OK_USE, buyerType: 'INDIVIDUAL' },
+    expect: 'FLAGGED', mustSay: 'Dutch name for Hydrogen peroxide',
   },
   {
     label: 'an invented CAS → FLAGGED, not silently OK',
@@ -129,7 +158,8 @@ const cases: { label: string; args: Parameters<typeof checkSubstanceUse>[0]; exp
 for (const c of cases) {
   const r = await checkSubstanceUse(c.args);
   const statusOk = r.status === c.expect;
-  const textOk = !c.mustSay || r.note.toLowerCase().includes(c.mustSay.toLowerCase());
+  const textOk = (!c.mustSay || r.note.toLowerCase().includes(c.mustSay.toLowerCase()))
+    && (!c.mustNotSay || !r.note.toLowerCase().includes(c.mustNotSay.toLowerCase()));
   check(c.label, statusOk && textOk, `got ${r.status}: ${r.note.slice(0, 160)}`);
 }
 

@@ -17,6 +17,8 @@
 // upstream change must show up as a diff someone reviews, not as a behaviour
 // change in production.
 
+import { PRECURSOR_NAMES, type NameSource } from './precursorNames.ts';
+
 export type Annex = 'I' | 'II';
 
 export type PrecursorEntry = {
@@ -92,19 +94,47 @@ export function normalizeCas(raw: string): string | null {
   return /^\d{2,7}-\d{2}-\d$/.test(v) ? v : null;
 }
 
-/** Names are matched loosely — "sulfuric acid" must hit "Sulphuric acid". */
-function normalizeName(raw: string): string {
+/**
+ * Names are matched loosely — "sulfuric acid" must hit "Sulphuric acid", and
+ * "Salpetersäure" must survive the trip. Letters of every script are kept
+ * (Greek and Bulgarian names are in the table); accents are folded away
+ * because buyers drop them as often as not.
+ */
+export function normalizeName(raw: string): string {
   return raw
+    .normalize('NFKD')
+    .replace(/\p{M}+/gu, '')
     .toLowerCase()
     .replace(/sulph/g, 'sulf')          // British/American spelling
     .replace(/aluminium/g, 'aluminum')
-    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
     .trim();
 }
 
 const BY_CAS = new Map(PRECURSORS.map(e => [e.cas, e]));
 const BY_CID = new Map(PRECURSORS.map(e => [e.cid, e]));
-const BY_NAME = new Map(PRECURSORS.map(e => [normalizeName(e.name), e]));
+
+export type NameMatch = {
+  entry: PrecursorEntry;
+  /** ISO 639-1 language of the name that matched. */
+  lang: string;
+  /** Whether the regulation itself uses that name, or only Wikidata does. */
+  source: NameSource;
+};
+
+// Annex names in every language version may match inside a longer phrase
+// ("70% nitric acid solution"). Wikidata aliases only match whole: they include
+// formulas and E-numbers that are not names in any language a buyer writes in.
+const PHRASE = new Map<string, NameMatch>();
+const EXACT = new Map<string, NameMatch>();
+for (const e of PRECURSORS) PHRASE.set(normalizeName(e.name), { entry: e, lang: 'en', source: 'regulation' });
+for (const [cas, lang, name, source] of PRECURSOR_NAMES) {
+  const entry = BY_CAS.get(cas);
+  const key = normalizeName(name);
+  if (!entry || !key) continue;
+  const target = source === 'regulation' ? PHRASE : EXACT;
+  if (!target.has(key)) target.set(key, { entry, lang, source });
+}
 
 export function findByCas(cas: string): PrecursorEntry | null {
   const n = normalizeCas(cas);
@@ -116,22 +146,29 @@ export function findByCid(cid: number): PrecursorEntry | null {
 }
 
 /**
- * Match a free-text substance name against the annexes. Falls back to a
- * containment test so "70% nitric acid solution" still matches "Nitric acid";
- * the shortest containing entry wins so "ammonium nitrate" does not silently
- * shadow "calcium ammonium nitrate".
+ * Identify a free-text substance name against the annexes, in any official EU
+ * language. An annex name also matches as a whole-word phrase inside a longer
+ * text, so "70% nitric acid solution" still matches "Nitric acid"; the longest
+ * such phrase wins, so "calcium ammonium nitrate" does not collapse to
+ * "ammonium nitrate".
+ *
+ * Whole words, not substrings: once "aceton" (Dutch, German) is in the table, a
+ * plain substring test would read "acetonitrile" as acetone.
  */
-export function findByName(name: string): PrecursorEntry | null {
+export function identifyName(name: string): NameMatch | null {
   const n = normalizeName(name);
   if (!n) return null;
-  const exact = BY_NAME.get(n);
+  const exact = PHRASE.get(n) ?? EXACT.get(n);
   if (exact) return exact;
 
-  let best: PrecursorEntry | null = null;
-  for (const [key, entry] of BY_NAME) {
-    // "Magnesium, powders" normalises to "magnesium powders"; match either way
-    // round so both the annex phrasing and the buyer's phrasing can be longer.
-    if (n.includes(key) && (!best || key.length > normalizeName(best.name).length)) best = entry;
+  const padded = ` ${n} `;
+  let best: { key: string; match: NameMatch } | null = null;
+  for (const [key, match] of PHRASE) {
+    if (padded.includes(` ${key} `) && (!best || key.length > best.key.length)) best = { key, match };
   }
-  return best;
+  return best?.match ?? null;
+}
+
+export function findByName(name: string): PrecursorEntry | null {
+  return identifyName(name)?.entry ?? null;
 }

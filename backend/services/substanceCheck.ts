@@ -17,8 +17,9 @@
 //
 // This replaced an LLM-backed check. The old version paraphrased the regulation
 // from search results; this one quotes it.
-import { findByCas, findByCid, findByName, normalizeCas, type PrecursorEntry } from '../lib/precursors.ts';
-import { PubChemUnavailable, resolveCompound } from './pubchem.ts';
+import { findByCas, findByCid, identifyName, normalizeCas, type NameMatch, type PrecursorEntry } from '../lib/precursors.ts';
+import { PubChemUnavailable, resolveCompound, type Compound } from './pubchem.ts';
+import { WikidataUnavailable, matchDeclaredName, namesForCas } from './wikidata.ts';
 import { screenStatement } from './statementScreen.ts';
 
 export type SubstanceCheckResult = {
@@ -33,6 +34,22 @@ const NOTE_MAX = 1500;
 const MAX_ITEMS = 10;
 
 const REG = 'Reg. (EU) 2019/1148';
+
+// For the reviewer-facing note, which is written in English.
+const LANGUAGE_NAMES: Record<string, string> = {
+  bg: 'Bulgarian', cs: 'Czech', da: 'Danish', de: 'German', el: 'Greek', en: 'English',
+  et: 'Estonian', fi: 'Finnish', fr: 'French', ga: 'Irish', hr: 'Croatian', hu: 'Hungarian',
+  it: 'Italian', lv: 'Latvian', lt: 'Lithuanian', mt: 'Maltese', nl: 'Dutch', pl: 'Polish',
+  pt: 'Portuguese', ro: 'Romanian', sk: 'Slovak', sl: 'Slovenian', es: 'Spanish', sv: 'Swedish',
+};
+const languageName = (iso: string) => LANGUAGE_NAMES[iso] ?? iso;
+
+/** "the Dutch name in Reg. (EU) 2019/1148", or "a German name Wikidata records". */
+function describeNameMatch(m: NameMatch): string {
+  return m.source === 'regulation'
+    ? `the ${languageName(m.lang)} name for ${m.entry.name} in ${REG}`
+    : `a ${languageName(m.lang)} name for ${m.entry.name} (per Wikidata)`;
+}
 
 /** Splits a free-text list field into trimmed items. */
 function splitList(raw: string): string[] {
@@ -89,6 +106,38 @@ function describeListing(entry: PrecursorEntry, buyerType: 'INDIVIDUAL' | 'COMPA
   return `Listed in Annex I of ${REG} — RESTRICTED explosives precursor. `
     + `Limit value: ${entry.limitValue}. ${licensing} ${audience}`
     + (entry.condition ? ` ${entry.condition}` : '');
+}
+
+type Recognition =
+  | { kind: 'same'; note: string }
+  | { kind: 'listed-other'; match: NameMatch }
+  | { kind: 'unknown'; wikidataDown: boolean };
+
+/**
+ * A declared name PubChem did not know, checked against the declared CAS:
+ * first against the annex in every language version of the regulation, then
+ * against the names Wikidata records for that CAS number.
+ */
+async function recogniseForeignName(name: string, cas: string, compound: Compound): Promise<Recognition> {
+  const listed = identifyName(name);
+  if (listed) {
+    return listed.entry.cas === cas || listed.entry.cid === compound.cid
+      ? { kind: 'same', note: `The declared name "${name}" is ${describeNameMatch(listed)}, matching CAS ${cas}.` }
+      : { kind: 'listed-other', match: listed };
+  }
+  try {
+    const hit = matchDeclaredName(name, await namesForCas(cas));
+    if (hit) {
+      return {
+        kind: 'same',
+        note: `The declared name "${name}" matches "${hit.name}", a ${languageName(hit.lang)} name Wikidata records for CAS ${cas} (${compound.title}).`,
+      };
+    }
+    return { kind: 'unknown', wikidataDown: false };
+  } catch (err) {
+    if (err instanceof WikidataUnavailable) return { kind: 'unknown', wikidataDown: true };
+    throw err;
+  }
 }
 
 /**
@@ -170,7 +219,24 @@ export async function checkSubstanceUse(
       const declaredName = names[i];
       const named = await resolveCompound(declaredName);
       if (!named) {
-        problems.push(`"${declaredName}" could not be identified in PubChem, so it could not be checked against CAS ${cas}.`);
+        // PubChem's names are overwhelmingly English, so a name it does not
+        // know is often just a name in another language.
+        const r = await recogniseForeignName(declaredName, cas, compound);
+        if (r.kind === 'same') {
+          findings.push(r.note);
+        } else if (r.kind === 'listed-other') {
+          if (r.match.entry.annex === 'I') restricted = true;
+          problems.push(
+            `CAS ${cas} is ${compound.title} (CID ${compound.cid}), but the declared name "${declaredName}" is `
+            + `${describeNameMatch(r.match)}.`,
+          );
+          findings.push(`The declared name "${declaredName}" is itself ${describeListing(r.match.entry, buyerType)}`);
+        } else {
+          problems.push(
+            `"${declaredName}" could not be identified in PubChem${r.wikidataDown ? ' (and Wikidata could not be reached)' : ' or Wikidata'}, `
+            + `so it could not be checked against CAS ${cas}.`,
+          );
+        }
       } else if (named.cid !== compound.cid) {
         problems.push(
           `CAS ${cas} is ${compound.title} (CID ${compound.cid}), not the declared substance `
@@ -178,7 +244,7 @@ export async function checkSubstanceUse(
         );
         // A mismatch may be an attempt to order a listed substance under an
         // innocuous CAS, so check what the *name* is too.
-        const namedEntry = findByCid(named.cid) ?? findByName(declaredName);
+        const namedEntry = findByCid(named.cid) ?? identifyName(declaredName)?.entry ?? null;
         if (namedEntry) {
           if (namedEntry.annex === 'I') restricted = true;
           findings.push(`The declared name "${declaredName}" is itself ${describeListing(namedEntry, buyerType)}`);
@@ -189,10 +255,10 @@ export async function checkSubstanceUse(
     // Names that were never paired still deserve an annex check.
     if (!paired) {
       for (const name of names) {
-        const entry = findByName(name);
-        if (entry) {
-          if (entry.annex === 'I') restricted = true;
-          findings.push(`The declared name "${name}" matches ${entry.name}. ${describeListing(entry, buyerType)}`);
+        const match = identifyName(name);
+        if (match) {
+          if (match.entry.annex === 'I') restricted = true;
+          findings.push(`The declared name "${name}" is ${describeNameMatch(match)}. ${describeListing(match.entry, buyerType)}`);
         }
       }
     }
