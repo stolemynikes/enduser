@@ -1148,7 +1148,10 @@ export default function CompanyDashboard() {
                   <button className="cd-invite-btn" disabled={!snippet}
                     onClick={() => copyText(snippet, 'Embed code')}>Copy embed code</button>
                   <span className="cd-embed-hint">
-                    Add <code>?theme=dark</code> to the frame URL for the dark version.
+                    Add <code>?theme=dark</code> to the frame URL for the dark version, and{' '}
+                    <code>?lang=de</code> (any EU language code) to open it in your shop&rsquo;s
+                    language — <code>?theme=dark&amp;lang=de</code> for both. Customers can
+                    still switch language in the form.
                   </span>
                 </div>
               </div>

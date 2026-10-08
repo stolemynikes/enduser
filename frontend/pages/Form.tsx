@@ -7,6 +7,11 @@ import { useDocumentTitle } from '../src/lib/useDocumentTitle.ts';
 import { COUNTRIES } from '../src/lib/countries.ts';
 import { Turnstile } from '../src/components/Turnstile.tsx';
 import { useTurnstileRequired } from '../src/lib/useTurnstile.ts';
+import { listOf, useI18n } from '../src/i18n/index.ts';
+import { I18nProvider } from '../src/i18n/I18nProvider.tsx';
+import en, { type Messages, type ServerErrorCode } from '../src/i18n/messages/en.ts';
+import { LanguagePicker } from '../src/components/LanguagePicker.tsx';
+import { COUNTRY_CODE } from '../src/lib/countries.ts';
 
 const SUBMIT_STATEMENT = gql`
   mutation SubmitEndUserStatement($input: SubmitInput!) {
@@ -45,19 +50,16 @@ type FormConfig = {
 };
 
 // Mirrors the backend default (backend/lib/formConfig.ts) — shown on /form
-// without a slug and while the company config is loading.
-const DEFAULT_TERMS_TEXT = `I hereby confirm that:
-— The substances, preparations and products are only used in an authorized manner (in accordance with European and national legislation), used only for research, scientific and educational purposes.
+// without a slug and while the company config is loading. The English text lives
+// in the message file so its translations sit beside it.
+const DEFAULT_TERMS_TEXT = en.defaultTerms;
 
-The ordered substance(s):
-— Not used to manufacture or serve as a constituent or intermediate of narcotics and/or psychotropic substances.
-— Not used in medicinal products for human or veterinary use, agriculture, food or cosmetics, except as a raw material, auxiliary or operating material and/or as a research and analytical reagent.
-— Not used to develop or produce chemical weapons.
-— Not to be used for military or illegal purposes.
-— Do not re-export the item(s) to third countries without the prior consent of the export control authorities.
-— Will not be re-exported/exported or otherwise nationally or resold internationally or transferred to a destination subject to an EU, UN or US embargo, if such act would conflict with the terms of that embargo.
-— Supplies the mentioned products only to customers who can also submit such an End-use certificate. We will carefully keep all received certificates and submit them on request.
-— I am over 18 years old.`;
+// A seller who never wrote terms of their own is served the platform default,
+// which exists in every language. Anything else is the seller's own legal text
+// and is shown exactly as written — translating it silently would put words in
+// their mouth that they never agreed to.
+const isDefaultTerms = (text: string) =>
+  !text.trim() || text.replace(/\s+/g, ' ').trim() === DEFAULT_TERMS_TEXT.replace(/\s+/g, ' ').trim();
 
 const DEFAULT_CONFIG: FormConfig = {
   orderNumber: 'REQUIRED', address: 'REQUIRED', buyerTypes: 'COMPANY_ONLY',
@@ -115,6 +117,27 @@ function storeTheme(value: 'light' | 'dark') {
  * origin, where the embedding site cannot read it.
  */
 export default function Form({ embed = false }: { embed?: boolean }) {
+  return (
+    <I18nProvider>
+      <StatementForm embed={embed} />
+    </I18nProvider>
+  );
+}
+
+type MissingKey = keyof Messages['missing'];
+
+/** The sentence for a failed submit, in the buyer's language where we have one. */
+function submitErrorText(err: any, t: Messages): string {
+  const code = err?.errors?.[0]?.extensions?.code ?? err?.graphQLErrors?.[0]?.extensions?.code;
+  if (code && code in t.server) return t.server[code as ServerErrorCode];
+  if (err?.networkError?.statusCode === 429 || err?.statusCode === 429 || /\b429\b/.test(String(err?.message))) {
+    return t.errRateLimited;
+  }
+  return t.errGeneric;
+}
+
+function StatementForm({ embed }: { embed: boolean }) {
+  const { lang, t } = useI18n();
   const { slug } = useParams<{ slug?: string }>();
   const [form, setForm] = useState<FormData>(empty);
   const [agreed, setAgreed] = useState(false);
@@ -177,7 +200,8 @@ export default function Form({ embed = false }: { embed?: boolean }) {
 
   const { data: formInfoData } = useQuery<any>(FORM_INFO, { variables: { slug }, skip: !slug });
   const companyDisplayName: string | undefined = formInfoData?.formInfo?.companyName;
-  useDocumentTitle(companyDisplayName ? `${companyDisplayName} — Statement` : 'End-User Statement');
+  useDocumentTitle(companyDisplayName ? t.docTitleCompany(companyDisplayName) : t.docTitle);
+  const seller = companyDisplayName ?? undefined;
   const cfg: FormConfig = formInfoData?.formInfo?.config ?? DEFAULT_CONFIG;
   // False only when the platform has no verification provider configured.
   // Assumed available while the query is in flight so the button does not flash.
@@ -226,7 +250,7 @@ export default function Form({ embed = false }: { embed?: boolean }) {
           setVerifySessionId(null);
           setVerifyState('idle');
           setVerifyStatus(null);
-          setErrorMsg('Your verification session expired. Please start it again.');
+          setErrorMsg(t.errVerifyExpired);
         }
       }
     }, VERIFY_POLL_MS);
@@ -257,7 +281,7 @@ export default function Form({ embed = false }: { embed?: boolean }) {
       pollVerification(data.sessionId);
     } catch {
       setVerifyState('idle');
-      setErrorMsg('Could not start identity verification. Please try again.');
+      setErrorMsg(t.errVerifyStart);
     }
   };
 
@@ -275,59 +299,50 @@ export default function Form({ embed = false }: { embed?: boolean }) {
   const botCheckPending = useTurnstileRequired(botToken);
   const filled = (v: string) => v.trim().length > 0;
   const emailLooksValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim());
-  const missing: string[] = [];
-  if (!emailLooksValid) missing.push('a valid email address');
-  if (!filled(form.firstName)) missing.push('first name');
-  if (!filled(form.lastName)) missing.push('last name');
-  if (req(cfg.orderNumber) && !filled(form.orderNumber)) missing.push('order number');
-  if (showBuyerToggle && !buyerChoice) missing.push('whether you are an individual or a company');
-  if (isCompany && !filled(form.companyName)) missing.push('company name');
-  if (isCompany && !filled(form.vatNumber)) missing.push('VAT number');
+  // Kept as keys, not sentences, so the logic below never depends on the
+  // wording — and the wording can be in any language.
+  const missingKeys: MissingKey[] = [];
+  if (!emailLooksValid) missingKeys.push('email');
+  if (!filled(form.firstName)) missingKeys.push('firstName');
+  if (!filled(form.lastName)) missingKeys.push('lastName');
+  if (req(cfg.orderNumber) && !filled(form.orderNumber)) missingKeys.push('orderNumber');
+  if (showBuyerToggle && !buyerChoice) missingKeys.push('buyerType');
+  if (isCompany && !filled(form.companyName)) missingKeys.push('companyName');
+  if (isCompany && !filled(form.vatNumber)) missingKeys.push('vatNumber');
   if (req(cfg.address)) {
-    if (!filled(form.street)) missing.push('street');
-    if (!filled(form.zipCode)) missing.push('zip code');
-    if (!filled(form.place)) missing.push('place / city');
-    if (!filled(form.country)) missing.push('country');
+    if (!filled(form.street)) missingKeys.push('street');
+    if (!filled(form.zipCode)) missingKeys.push('zipCode');
+    if (!filled(form.place)) missingKeys.push('place');
+    if (!filled(form.country)) missingKeys.push('country');
   }
-  if (!filled(form.substances)) missing.push('substance name');
-  if (req(cfg.casNumbers) && !filled(form.casNumbers)) missing.push('CAS number');
-  if (req(cfg.concentration) && !filled(form.concentration)) missing.push('concentration');
-  if (!filled(form.statement)) missing.push('statement');
-  if (show(cfg.idVerification) && !verificationFinished) missing.push('identity verification');
-  if (!agreed) missing.push('agreement to the terms');
-  if (botCheckPending) missing.push('the anti-robot check');
-  const canSubmit = missing.length === 0 && (!show(cfg.idVerification) || idVerificationAvailable);
+  if (!filled(form.substances)) missingKeys.push('substance');
+  if (req(cfg.casNumbers) && !filled(form.casNumbers)) missingKeys.push('cas');
+  if (req(cfg.concentration) && !filled(form.concentration)) missingKeys.push('concentration');
+  if (!filled(form.statement)) missingKeys.push('intendedUse');
+  if (show(cfg.idVerification) && !verificationFinished) missingKeys.push('identity');
+  if (!agreed) missingKeys.push('terms');
+  if (botCheckPending) missingKeys.push('robot');
+  const canSubmit = missingKeys.length === 0 && (!show(cfg.idVerification) || idVerificationAvailable);
   // A verification is a real, finite resource, so it is not offered until the
   // rest of the form is filled in — an abandoned half-form should not cost one.
   // The terms checkbox is deliberately not in here: it is the last thing the
   // buyer ticks, after verifying.
-  const missingBeforeVerify = missing.filter(
-    m => m !== 'identity verification' && m !== 'agreement to the terms',
-  );
+  const missingBeforeVerify = missingKeys.filter(k => k !== 'identity' && k !== 'terms');
+  const describe = (keys: MissingKey[]) => listOf(lang, keys.map(k => t.missing[k]));
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     // Also reached by pressing Enter in a field, where the disabled button is
     // no defence.
-    if (missing.length > 0) {
-      setErrorMsg(`Please complete the form first — still missing: ${missing.join(', ')}.`);
-      return;
-    }
-    if (!agreed) { setErrorMsg('You must agree to the terms and conditions.'); return; }
-    if (showBuyerToggle && !buyerChoice) {
-      setErrorMsg('Please select whether you are an individual or a company.');
-      return;
-    }
-    if (isCompany && (!form.companyName.trim() || !form.vatNumber.trim())) {
-      setErrorMsg('Please fill in your company name and VAT number.');
+    // Everything the old one-by-one checks covered is in missingKeys already
+    // (terms, buyer type, company fields, verification), so one message says
+    // all of it at once instead of revealing problems one submit at a time.
+    if (missingKeys.length > 0) {
+      setErrorMsg(t.errIncomplete(describe(missingKeys)));
       return;
     }
     if (show(cfg.idVerification) && !idVerificationAvailable) {
-      setErrorMsg('Identity verification is temporarily unavailable — this form cannot be submitted right now.');
-      return;
-    }
-    if (show(cfg.idVerification) && !verificationFinished) {
-      setErrorMsg('Please complete the identity verification step.');
+      setErrorMsg(t.errIdUnavailable);
       return;
     }
 
@@ -371,7 +386,7 @@ export default function Form({ embed = false }: { embed?: boolean }) {
       if (embed) window.parent?.postMessage({ type: 'eustatement:submitted' }, '*');
     } catch (err: any) {
       setSubmitState('error');
-      setErrorMsg(err?.message ?? 'Er is iets misgegaan. Probeer het opnieuw.');
+      setErrorMsg(submitErrorText(err, t));
     }
   };
 
@@ -386,13 +401,9 @@ export default function Form({ embed = false }: { embed?: boolean }) {
         <div className={wrapClass}>
           <div className="eu-success">
             <div className="eu-success-icon eu-notready-icon">…</div>
-            <h2 className="eu-success-title">{notFound ? 'Form Not Found' : 'Form Not Available Yet'}</h2>
-            <p className="eu-success-body">
-              {notFound
-                ? <>There&rsquo;s no form at this address — please check the link.</>
-                : <>This form isn&rsquo;t open for submissions yet — please check back later.</>}
-            </p>
-            <p className="eu-success-note">If you received this link from a supplier, contact them for assistance.</p>
+            <h2 className="eu-success-title">{notFound ? t.notFoundTitle : t.notReadyTitle}</h2>
+            <p className="eu-success-body">{notFound ? t.notFoundBody : t.notReadyBody}</p>
+            <p className="eu-success-note">{t.contactSupplier}</p>
           </div>
         </div>
       </>
@@ -406,12 +417,9 @@ export default function Form({ embed = false }: { embed?: boolean }) {
         <div className={wrapClass}>
           <div className="eu-success">
             <div className="eu-success-icon">✓</div>
-            <h2 className="eu-success-title">Statement Received</h2>
-            <p className="eu-success-body">
-              Your end-user statement has been submitted successfully. You will receive a confirmation
-              by email and will be notified once your submission has been reviewed.
-            </p>
-            <p className="eu-success-note">Please retain this confirmation for your records.</p>
+            <h2 className="eu-success-title">{t.successTitle}</h2>
+            <p className="eu-success-body">{t.successBody}</p>
+            <p className="eu-success-note">{t.successNote}</p>
           </div>
         </div>
       </>
@@ -419,6 +427,17 @@ export default function Form({ embed = false }: { embed?: boolean }) {
   }
 
   const busy = submitState === 'submitting';
+
+  // The stored value stays the English name; the buyer reads and sorts by the
+  // name in their own language, which the browser supplies from the ISO code.
+  const countryOptions = (() => {
+    let namer: Intl.DisplayNames | null = null;
+    try { namer = new Intl.DisplayNames([lang], { type: 'region' }); } catch { /* old browser — English names */ }
+    const collator = new Intl.Collator(lang);
+    return COUNTRIES
+      .map(value => ({ value, label: (COUNTRY_CODE[value] && namer?.of(COUNTRY_CODE[value])) || value }))
+      .sort((a, b) => collator.compare(a.label, b.label));
+  })();
 
   let sectionNo = 0;
   const sec = () => String(++sectionNo).padStart(2, '0');
@@ -428,8 +447,13 @@ export default function Form({ embed = false }: { embed?: boolean }) {
       <style>{styles}</style>
       <div className={wrapClass}>
         <header className="eu-header">
+          {/* A row of its own rather than floated over the title: two controls
+              side by side would otherwise sit on top of the centred heading on
+              a narrow phone. */}
+          <div className="eu-toolbar">
+          <LanguagePicker />
           {!embed && (
-          <button className="eu-theme-btn" onClick={toggleTheme} title="Toggle theme" aria-label="Toggle theme">
+          <button type="button" className="eu-theme-btn" onClick={toggleTheme} title={t.themeToggle} aria-label={t.themeToggle}>
             {theme === 'light' ? (
               <svg viewBox="0 0 20 20" fill="currentColor" width="15" height="15">
                 <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z"/>
@@ -441,10 +465,11 @@ export default function Form({ embed = false }: { embed?: boolean }) {
             )}
           </button>
           )}
-          <div className="eu-header-badge">OFFICIAL DOCUMENT</div>
-          <h1 className="eu-title">End-User Statement</h1>
-          <p className="eu-subtitle">Chemical Substances — Regulated Use Declaration</p>
-          {companyDisplayName && <p className="eu-company-line">Submitted to {companyDisplayName}</p>}
+          </div>
+          <div className="eu-header-badge">{t.badge}</div>
+          <h1 className="eu-title">{t.title}</h1>
+          <p className="eu-subtitle">{t.subtitle}</p>
+          {companyDisplayName && <p className="eu-company-line">{t.submittedTo(companyDisplayName)}</p>}
           <div className="eu-header-rule" />
         </header>
 
@@ -453,42 +478,42 @@ export default function Form({ embed = false }: { embed?: boolean }) {
           {/* SECTION – Buyer type (only when the company accepts both) */}
           {showBuyerToggle && (
             <section className="eu-section">
-              <div className="eu-section-label"><span>{sec()}</span> Buyer Type</div>
-              <p className="eu-id-note">Are you ordering as a private individual or on behalf of a company?</p>
-              <div className="eu-buyer-seg" role="radiogroup" aria-label="Buyer type">
+              <div className="eu-section-label"><span>{sec()}</span> {t.secBuyerType}</div>
+              <p className="eu-id-note">{t.buyerTypeQuestion}</p>
+              <div className="eu-buyer-seg" role="radiogroup" aria-label={t.secBuyerType}>
                 <button type="button" role="radio" aria-checked={buyerChoice === 'INDIVIDUAL'}
                   className={`eu-buyer-btn${buyerChoice === 'INDIVIDUAL' ? ' eu-buyer-active' : ''}`}
-                  onClick={() => setBuyerChoice('INDIVIDUAL')}>Individual</button>
+                  onClick={() => setBuyerChoice('INDIVIDUAL')}>{t.buyerIndividual}</button>
                 <button type="button" role="radio" aria-checked={buyerChoice === 'COMPANY'}
                   className={`eu-buyer-btn${buyerChoice === 'COMPANY' ? ' eu-buyer-active' : ''}`}
-                  onClick={() => setBuyerChoice('COMPANY')}>Company</button>
+                  onClick={() => setBuyerChoice('COMPANY')}>{t.buyerCompany}</button>
               </div>
             </section>
           )}
 
           {/* SECTION – Contact */}
           <section className="eu-section">
-            <div className="eu-section-label"><span>{sec()}</span> Contact Information</div>
+            <div className="eu-section-label"><span>{sec()}</span> {t.secContact}</div>
             <div className="eu-grid-2">
-              <Field label="Email" id="email" type="email" value={form.email} onChange={set('email')} autoComplete="email" />
+              <Field label={t.email} id="email" type="email" value={form.email} onChange={set('email')} autoComplete="email" />
               {show(cfg.orderNumber) && (
-                <Field label="Order Number" id="orderNumber" value={form.orderNumber} onChange={set('orderNumber')}
+                <Field label={t.orderNumber} id="orderNumber" value={form.orderNumber} onChange={set('orderNumber')}
                   required={req(cfg.orderNumber)} />
               )}
-              <Field label="First Name" id="firstName" value={form.firstName} onChange={set('firstName')} autoComplete="given-name" />
-              <Field label="Last Name" id="lastName" value={form.lastName} onChange={set('lastName')} autoComplete="family-name" />
+              <Field label={t.firstName} id="firstName" value={form.firstName} onChange={set('firstName')} autoComplete="given-name" />
+              <Field label={t.lastName} id="lastName" value={form.lastName} onChange={set('lastName')} autoComplete="family-name" />
             </div>
           </section>
 
           {/* SECTION – Company (only for company buyers) */}
           {isCompany && (
             <section className="eu-section">
-              <div className="eu-section-label"><span>{sec()}</span> Company Details</div>
+              <div className="eu-section-label"><span>{sec()}</span> {t.secCompany}</div>
               <div className="eu-grid-2">
-                <Field label="Company Name" id="companyName" value={form.companyName} onChange={set('companyName')}
+                <Field label={t.companyName} id="companyName" value={form.companyName} onChange={set('companyName')}
                   required autoComplete="organization" />
-                <Field label="VAT Number" id="vatNumber" value={form.vatNumber} onChange={set('vatNumber')}
-                  required hint="Required for VIES verification (e.g. NL123456789B01)" />
+                <Field label={t.vatNumber} id="vatNumber" value={form.vatNumber} onChange={set('vatNumber')}
+                  required hint={t.vatHint} />
               </div>
             </section>
           )}
@@ -496,21 +521,21 @@ export default function Form({ embed = false }: { embed?: boolean }) {
           {/* SECTION – Address */}
           {show(cfg.address) && (
             <section className="eu-section">
-              <div className="eu-section-label"><span>{sec()}</span> Address</div>
+              <div className="eu-section-label"><span>{sec()}</span> {t.secAddress}</div>
               <div className="eu-grid-1">
-                <Field label="Street" id="street" value={form.street} onChange={set('street')} required={req(cfg.address)} autoComplete="street-address" />
+                <Field label={t.street} id="street" value={form.street} onChange={set('street')} required={req(cfg.address)} autoComplete="street-address" />
               </div>
               <div className="eu-grid-3">
-                <Field label="Zip Code" id="zipCode" value={form.zipCode} onChange={set('zipCode')} required={req(cfg.address)} autoComplete="postal-code" />
-                <Field label="Place / City" id="place" value={form.place} onChange={set('place')} required={req(cfg.address)} autoComplete="address-level2" />
+                <Field label={t.zipCode} id="zipCode" value={form.zipCode} onChange={set('zipCode')} required={req(cfg.address)} autoComplete="postal-code" />
+                <Field label={t.place} id="place" value={form.place} onChange={set('place')} required={req(cfg.address)} autoComplete="address-level2" />
                 <div className="eu-field">
                   <label className="eu-label" htmlFor="country">
-                    Country {req(cfg.address) ? <span className="eu-req">*</span> : <span className="eu-optional">(optional)</span>}
+                    {t.country} {req(cfg.address) ? <span className="eu-req">*</span> : <span className="eu-optional">{t.optional}</span>}
                   </label>
                   <select className="eu-input eu-select" id="country" value={form.country}
                     onChange={set('country')} required={req(cfg.address)} autoComplete="country-name">
-                    <option value="">— Select —</option>
-                    {COUNTRIES.map(c => <option key={c} value={c}>{c}</option>)}
+                    <option value="">{t.countrySelect}</option>
+                    {countryOptions.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
                   </select>
                 </div>
               </div>
@@ -519,26 +544,27 @@ export default function Form({ embed = false }: { embed?: boolean }) {
 
           {/* SECTION – Substance */}
           <section className="eu-section">
-            <div className="eu-section-label"><span>{sec()}</span> Substance Information</div>
+            <div className="eu-section-label"><span>{sec()}</span> {t.secSubstance}</div>
             <div className={show(cfg.casNumbers) ? 'eu-grid-2' : 'eu-grid-1'}>
-              <Field label="Name of Substance(s)" id="substances" value={form.substances} onChange={set('substances')} />
+              <Field label={t.substanceName} id="substances" value={form.substances} onChange={set('substances')} />
               {show(cfg.casNumbers) && (
-                <Field label="CAS Number of the Substance" id="casNumbers" value={form.casNumbers} onChange={set('casNumbers')}
+                <Field label={t.casNo} id="casNumbers" value={form.casNumbers} onChange={set('casNumbers')}
                   required={req(cfg.casNumbers)} />
               )}
             </div>
             {show(cfg.concentration) && (
               <div className="eu-grid-1">
-                <Field label="Concentration" id="concentration" value={form.concentration}
+                <Field label={t.concentration} id="concentration" value={form.concentration}
                   onChange={set('concentration')} required={req(cfg.concentration)}
-                  hint="As printed on the label, e.g. 15% w/w — restricted-precursor limits are concentration-based" />
+                  hint={t.concentrationHint} />
               </div>
             )}
             <div className="eu-grid-1">
               <div className="eu-field">
-                <label className="eu-label" htmlFor="statement">Statement <span className="eu-req">*</span></label>
+                <label className="eu-label" htmlFor="statement">{t.intendedUse} <span className="eu-req">*</span></label>
                 <textarea className="eu-textarea" id="statement" value={form.statement}
-                  onChange={set('statement')} required rows={4} />
+                  onChange={set('statement')} required rows={4} aria-describedby="statement-hint" />
+                <span className="eu-hint" id="statement-hint">{t.intendedUseHint}</span>
               </div>
             </div>
           </section>
@@ -546,13 +572,8 @@ export default function Form({ embed = false }: { embed?: boolean }) {
           {/* SECTION – Identity */}
           {show(cfg.idVerification) && (
           <section className="eu-section">
-            <div className="eu-section-label"><span>{sec()}</span> Identity Verification</div>
-            <p className="eu-id-note">
-              Your passport or identity card is checked by Didit, our identity verification provider.
-              A secure window opens where you photograph your document and take a short selfie.
-              The photos stay with Didit — this form never receives or stores them, and only the
-              outcome plus the details printed on your document are kept.
-            </p>
+            <div className="eu-section-label"><span>{sec()}</span> {t.secIdentity}</div>
+            <p className="eu-id-note">{t.idNote}</p>
 
             {verifyState === 'idle' && !idVerificationAvailable && (
               <div className="eu-id-warning">
@@ -560,20 +581,14 @@ export default function Form({ embed = false }: { embed?: boolean }) {
                   <path fillRule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd"/>
                 </svg>
                 <div>
-                  <div className="eu-id-warning-title">Identity verification is temporarily unavailable</div>
-                  <div className="eu-id-warning-note">
-                    This form requires it, so it cannot be submitted right now. Please try again
-                    later or contact {companyDisplayName ?? 'the seller'}.
-                  </div>
+                  <div className="eu-id-warning-title">{t.idUnavailableTitle}</div>
+                  <div className="eu-id-warning-note">{t.idUnavailableNote(seller)}</div>
                 </div>
               </div>
             )}
 
             {verifyState === 'idle' && idVerificationAvailable && missingBeforeVerify.length > 0 && (
-              <p className="eu-missing-note">
-                Fill in the rest of the form first, then verify — still missing:{' '}
-                {missingBeforeVerify.join(', ')}.
-              </p>
+              <p className="eu-missing-note">{t.fillFirst(describe(missingBeforeVerify))}</p>
             )}
 
             {verifyState === 'idle' && idVerificationAvailable && (
@@ -584,7 +599,7 @@ export default function Form({ embed = false }: { embed?: boolean }) {
                     <path d="M10 2.5l6 2.5v4.5c0 3.5-2.4 6.6-6 8-3.6-1.4-6-4.5-6-8V5l6-2.5z" strokeLinecap="round" strokeLinejoin="round"/>
                     <path d="M7.5 10l1.8 1.8L13 8" strokeLinecap="round" strokeLinejoin="round"/>
                   </svg>
-                  Verify my identity
+                  {t.verifyButton}
                 </button>
               </div>
             )}
@@ -592,7 +607,7 @@ export default function Form({ embed = false }: { embed?: boolean }) {
             {verifyState === 'starting' && (
               <div className="eu-file-extracting">
                 <span className="eu-spinner eu-spinner--dark" />
-                <span>Opening secure verification…</span>
+                <span>{t.verifyOpening}</span>
               </div>
             )}
 
@@ -600,22 +615,19 @@ export default function Form({ embed = false }: { embed?: boolean }) {
               <div className="eu-verify-waiting">
                 <div className="eu-file-extracting">
                   <span className="eu-spinner eu-spinner--dark" />
-                  <span>Waiting for you to finish verification…</span>
+                  <span>{t.verifyWaiting}</span>
                 </div>
-                <p className="eu-verify-hint">
-                  Complete the steps in the verification window, then come back to this page.
-                  It updates automatically.
-                </p>
+                <p className="eu-verify-hint">{t.verifyWaitingHint}</p>
                 {verifyUrl && (
                   <p className="eu-verify-hint">
-                    The verification window was blocked by your browser —{' '}
+                    {t.verifyBlocked}{' '}
                     <a className="eu-terms-extlink" href={verifyUrl} target="_blank" rel="noopener noreferrer">
-                      open it in a new tab ↗
+                      {t.verifyBlockedLink} ↗
                     </a>
                   </p>
                 )}
                 <button type="button" className="eu-file-redo-btn" onClick={startVerification}>
-                  Window closed? Start again
+                  {t.verifyRestart}
                 </button>
               </div>
             )}
@@ -625,7 +637,7 @@ export default function Form({ embed = false }: { embed?: boolean }) {
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" width="20" height="20">
                   <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" strokeLinecap="round" strokeLinejoin="round"/>
                 </svg>
-                <span>Identity verified</span>
+                <span>{t.verified}</span>
               </div>
             )}
 
@@ -634,7 +646,7 @@ export default function Form({ embed = false }: { embed?: boolean }) {
                 <svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14" style={{ flexShrink: 0 }}>
                   <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-11a1 1 0 10-2 0v4a1 1 0 002 0V7zm-1 7a1 1 0 100 2 1 1 0 000-2z" clipRule="evenodd"/>
                 </svg>
-                <span>Your document is being reviewed manually. You can submit the form now — the seller will see the result.</span>
+                <span>{t.verifyInReview}</span>
               </div>
             )}
 
@@ -644,11 +656,10 @@ export default function Form({ embed = false }: { embed?: boolean }) {
                   <path fillRule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd"/>
                 </svg>
                 <div>
-                  <div className="eu-id-warning-title">Verification not passed</div>
+                  <div className="eu-id-warning-title">{t.verifyFailedTitle}</div>
                   <div className="eu-id-warning-note">
-                    You can still submit this form — it will be flagged for manual review by the seller.
-                    If you think something went wrong, you can{' '}
-                    <button type="button" className="eu-file-redo-btn" onClick={startVerification}>try again</button>.
+                    {t.verifyFailedNote}{' '}
+                    <button type="button" className="eu-file-redo-btn" onClick={startVerification}>{t.verifyTryAgain}</button>
                   </div>
                 </div>
               </div>
@@ -658,19 +669,24 @@ export default function Form({ embed = false }: { embed?: boolean }) {
 
           {/* SECTION – Terms */}
           <section className="eu-section eu-section-terms">
-            <div className="eu-section-label"><span>{sec()}</span> Terms &amp; Conditions</div>
+            <div className="eu-section-label"><span>{sec()}</span> {t.secTerms}</div>
             <div className="eu-terms-box">
               {cfg.customTermsMode === 'LINK' && cfg.customTermsUrl ? (
                 <>
-                  <p className="eu-terms-intro">Terms &amp; conditions of {companyDisplayName ?? 'the seller'}:</p>
+                  <p className="eu-terms-intro">{t.termsIntro(seller)}</p>
                   <p className="eu-terms-custom">
                     <a className="eu-terms-extlink" href={cfg.customTermsUrl} target="_blank" rel="noreferrer">
-                      Read {companyDisplayName ?? 'the seller'}&rsquo;s terms and conditions ↗
+                      {t.termsReadLink(seller)} ↗
                     </a>
                   </p>
                 </>
+              ) : isDefaultTerms(cfg.customTermsText) ? (
+                <p className="eu-terms-custom">{t.defaultTerms}</p>
               ) : (
-                <p className="eu-terms-custom">{cfg.customTermsText || DEFAULT_TERMS_TEXT}</p>
+                <>
+                  {lang !== 'en' && <p className="eu-terms-intro">{t.termsAsWritten(seller)}</p>}
+                  <p className="eu-terms-custom">{cfg.customTermsText}</p>
+                </>
               )}
             </div>
             <label className="eu-checkbox-label">
@@ -678,12 +694,12 @@ export default function Form({ embed = false }: { embed?: boolean }) {
               <span className="eu-checkbox-box" aria-hidden="true">
                 {agreed && <svg viewBox="0 0 12 12" fill="none"><path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>}
               </span>
-              <span>I have read and agree to the above terms and conditions <span className="eu-req">*</span></span>
+              <span>{t.agree} <span className="eu-req">*</span></span>
             </label>
           </section>
 
           {/* Required note */}
-          <p className="eu-req-note"><span className="eu-req">*</span> Required fields</p>
+          <p className="eu-req-note"><span className="eu-req">*</span> {t.requiredNote}</p>
 
           {/* Error */}
           {(submitState === 'error' || errorMsg) && (
@@ -694,21 +710,19 @@ export default function Form({ embed = false }: { embed?: boolean }) {
           <Turnstile onToken={setBotToken} theme={theme === 'dark' ? 'dark' : 'light'} />
 
           {/* Submit */}
-          {missing.length > 0 && (
-            <p className="eu-missing-note" aria-live="polite">
-              Still to complete: {missing.join(', ')}.
-            </p>
+          {missingKeys.length > 0 && (
+            <p className="eu-missing-note" aria-live="polite">{t.stillToComplete(describe(missingKeys))}</p>
           )}
           <div className="eu-submit-row">
             <button type="submit" className="eu-btn" disabled={busy || !canSubmit}>
               {busy ? (
                 <span className="eu-btn-inner">
                   <span className="eu-spinner" />
-                  Submitting…
+                  {t.submitting}
                 </span>
               ) : (
                 <span className="eu-btn-inner">
-                  <span>Send Statement</span>
+                  <span>{t.submit}</span>
                   <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" width="18" height="18">
                     <path d="M4 10h12M11 5l5 5-5 5" strokeLinecap="round" strokeLinejoin="round"/>
                   </svg>
@@ -719,7 +733,7 @@ export default function Form({ embed = false }: { embed?: boolean }) {
         </form>
 
         <footer className="eu-footer">
-          <p>This document is legally binding. All information provided is subject to verification.</p>
+          <p>{t.footer}</p>
         </footer>
       </div>
     </>
@@ -733,13 +747,15 @@ function Field({
   onChange: (e: React.ChangeEvent<HTMLInputElement>) => void; hint?: string;
   required?: boolean; autoComplete?: string;
 }) {
+  const { t } = useI18n();
   return (
     <div className="eu-field">
       <label className="eu-label" htmlFor={id}>
-        {label} {required ? <span className="eu-req">*</span> : <span className="eu-optional">(optional)</span>}
+        {label} {required ? <span className="eu-req">*</span> : <span className="eu-optional">{t.optional}</span>}
       </label>
-      <input className="eu-input" id={id} type={type} value={value} onChange={onChange} required={required} autoComplete={autoComplete} />
-      {hint && <span className="eu-hint">{hint}</span>}
+      <input className="eu-input" id={id} type={type} value={value} onChange={onChange} required={required}
+        autoComplete={autoComplete} aria-describedby={hint ? `${id}-hint` : undefined} />
+      {hint && <span className="eu-hint" id={`${id}-hint`}>{hint}</span>}
     </div>
   );
 }
@@ -813,6 +829,7 @@ const styles = `
     text-transform: uppercase;
   }
   .eu-title {
+    text-wrap: balance; overflow-wrap: break-word;
     font-family: 'Libre Baskerville', Georgia, serif;
     font-size: clamp(1.6rem, 4vw, 2.4rem);
     font-weight: 700;
@@ -897,6 +914,9 @@ const styles = `
     margin-top: 1rem;
   }
   .eu-grid-1 { display: grid; grid-template-columns: 1fr; gap: 1rem; }
+  /* Stacked grids inside one section need the same rhythm as fields inside a
+     grid; without it a label sat directly on the field above it. */
+  .eu-grid-1 + .eu-grid-1, .eu-grid-2 + .eu-grid-1 { margin-top: 1rem; }
 
   @media (max-width: 640px) {
     .eu-wrap { padding: 1.5rem 1rem 2rem; }
@@ -1294,8 +1314,12 @@ const styles = `
 
   /* THEME TOGGLE */
   .eu-header { position: relative; }
+  .eu-toolbar {
+    display: flex; justify-content: flex-end; align-items: center; gap: 8px;
+    margin-bottom: 1.25rem;
+  }
   .eu-theme-btn {
-    position: absolute; top: 0; right: 0;
+    flex-shrink: 0;
     background: transparent; border: 1px solid var(--border-dark);
     border-radius: 50%; width: 32px; height: 32px;
     display: flex; align-items: center; justify-content: center;
@@ -1303,6 +1327,8 @@ const styles = `
     transition: background 0.15s, color 0.15s, border-color 0.15s;
   }
   .eu-theme-btn:hover { background: var(--section-bg); color: var(--text-mid); border-color: var(--navy-mid); }
+  .eu-theme-btn:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+  @media (pointer: coarse) { .eu-theme-btn { width: 44px; height: 44px; } }
 
   /* ── DARK THEME ─────────────────────────────────── */
   .eu-dark {

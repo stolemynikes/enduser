@@ -1,12 +1,25 @@
 import { useEffect } from 'react';
 import { useDocumentTitle } from '../src/lib/useDocumentTitle.ts';
+import { useI18n } from '../src/i18n/index.ts';
+import { I18nProvider } from '../src/i18n/I18nProvider.tsx';
 
 // Where Didit sends the buyer once the hosted flow ends. This page is purely
 // cosmetic: it carries no outcome. The form window polls the server for the
 // decision, so nothing here is trusted — a buyer who lands on this URL directly
 // has verified nothing.
 export default function VerificationComplete() {
-  useDocumentTitle('Verification complete');
+  // Same origin as the form, so the language the buyer chose there is read
+  // back from this browser; otherwise their browser's own preference applies.
+  return (
+    <I18nProvider>
+      <Finished />
+    </I18nProvider>
+  );
+}
+
+function Finished() {
+  const { t } = useI18n();
+  useDocumentTitle(t.vcDocTitle);
 
   useEffect(() => {
     // Opened as a popup by the form — closing it hands focus back. Browsers
@@ -23,8 +36,8 @@ export default function VerificationComplete() {
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" width="44" height="44">
           <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
-        <h1>Verification finished</h1>
-        <p>You can close this window and return to the form — it updates automatically.</p>
+        <h1>{t.vcTitle}</h1>
+        <p>{t.vcBody}</p>
       </div>
     </>
   );
