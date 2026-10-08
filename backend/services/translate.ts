@@ -76,17 +76,23 @@ async function loadedLanguages(): Promise<Set<string>> {
 }
 
 /**
- * Scripts that settle the language on their own. LibreTranslate can only
- * detect what it has loaded, so a Greek statement on an instance without
- * Greek would come back as a low-confidence guess at something else.
+ * Text that is not mostly Latin script is settled here, without asking
+ * LibreTranslate: every language it is configured with is written in Latin
+ * script, and its detector can only ever answer with one of those — a Greek
+ * statement would come back as a confident guess at something else.
+ *
+ * Greek is only Greek. Cyrillic is Bulgarian only when the buyer chose
+ * Bulgarian; otherwise it may as well be Russian or Ukrainian, and naming it
+ * wrongly is worse than not naming it. Any other script is left unnamed.
  */
-function languageFromScript(text: string): string | null {
+function scriptLanguage(text: string, hint?: string | null): { latin: boolean; lang: string | null } {
   const letters = text.replace(/[^\p{L}]/gu, '');
-  if (letters.length < 4) return null;
+  if (letters.length < 4) return { latin: true, lang: null };
   const share = (re: RegExp) => (letters.match(re)?.length ?? 0) / letters.length;
-  if (share(/\p{Script=Greek}/gu) > 0.5) return 'el';
-  if (share(/\p{Script=Cyrillic}/gu) > 0.5) return 'bg';
-  return null;
+  if (share(/\p{Script=Latin}/gu) >= 0.5) return { latin: true, lang: null };
+  if (share(/\p{Script=Greek}/gu) > 0.5) return { latin: false, lang: 'el' };
+  if (share(/\p{Script=Cyrillic}/gu) > 0.5) return { latin: false, lang: hint === 'bg' ? 'bg' : null };
+  return { latin: false, lang: null };
 }
 
 /**
@@ -100,18 +106,27 @@ export async function translateStatement(text: string, hint?: string | null): Pr
   const q = (text ?? '').trim();
   if (!q) return { lang: null, translation: null };
 
-  const byScript = languageFromScript(q);
-  if (!TRANSLATION_ENABLED) return { lang: byScript ?? hint ?? null, translation: null };
+  const script = scriptLanguage(q, hint);
+  if (!script.latin) return { lang: script.lang, translation: null };
+  if (!TRANSLATION_ENABLED) return { lang: hint ?? null, translation: null };
 
   try {
     return await queued(async () => {
       const loaded = await loadedLanguages();
+      const [best] = await call<{ language: string; confidence: number }[]>('/detect', { q });
+      const confident = !!best && best.confidence >= MIN_CONFIDENCE;
 
-      let lang = byScript;
-      if (!lang) {
-        const [best] = await call<{ language: string; confidence: number }[]>('/detect', { q });
-        if (best && best.confidence >= MIN_CONFIDENCE) lang = best.language;
-        else lang = hint ?? best?.language ?? null;
+      let lang: string | null;
+      if (hint && !loaded.has(hint) && !READABLE.has(hint)) {
+        // The buyer chose a language this server cannot translate. The
+        // detector cannot answer with that language either — it only knows
+        // the loaded ones — so Portuguese comes back as a confident "Spanish"
+        // and would be translated as Spanish into nonsense. Only a detection
+        // of a language the reviewer reads anyway is believed over the
+        // buyer's choice; otherwise the choice stands, untranslated.
+        lang = confident && READABLE.has(best.language) ? best.language : hint;
+      } else {
+        lang = confident ? best.language : hint ?? best?.language ?? null;
       }
 
       if (!lang || READABLE.has(lang) || !loaded.has(lang)) return { lang, translation: null };
@@ -126,7 +141,7 @@ export async function translateStatement(text: string, hint?: string | null): Pr
     });
   } catch (err: any) {
     console.warn(`[translate] skipped: ${err?.message ?? err}`);
-    return { lang: byScript ?? hint ?? null, translation: null, unavailable: true };
+    return { lang: hint ?? null, translation: null, unavailable: true };
   }
 }
 

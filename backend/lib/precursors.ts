@@ -116,8 +116,14 @@ const BY_CID = new Map(PRECURSORS.map(e => [e.cid, e]));
 
 export type NameMatch = {
   entry: PrecursorEntry;
-  /** ISO 639-1 language of the name that matched. */
+  /** ISO 639-1 language of the name that matched — the first, when several share it. */
   lang: string;
+  /**
+   * Every language whose version uses this exact name. "acetona" is both the
+   * Spanish and the Portuguese name; naming only one of them would tell a
+   * Portuguese buyer's reviewer something untrue.
+   */
+  langs: string[];
   /** Whether the regulation itself uses that name, or only Wikidata does. */
   source: NameSource;
 };
@@ -127,13 +133,15 @@ export type NameMatch = {
 // formulas and E-numbers that are not names in any language a buyer writes in.
 const PHRASE = new Map<string, NameMatch>();
 const EXACT = new Map<string, NameMatch>();
-for (const e of PRECURSORS) PHRASE.set(normalizeName(e.name), { entry: e, lang: 'en', source: 'regulation' });
+for (const e of PRECURSORS) PHRASE.set(normalizeName(e.name), { entry: e, lang: 'en', langs: ['en'], source: 'regulation' });
 for (const [cas, lang, name, source] of PRECURSOR_NAMES) {
   const entry = BY_CAS.get(cas);
   const key = normalizeName(name);
   if (!entry || !key) continue;
   const target = source === 'regulation' ? PHRASE : EXACT;
-  if (!target.has(key)) target.set(key, { entry, lang, source });
+  const existing = target.get(key);
+  if (!existing) target.set(key, { entry, lang, langs: [lang], source });
+  else if (existing.entry === entry && !existing.langs.includes(lang)) existing.langs.push(lang);
 }
 
 export function findByCas(cas: string): PrecursorEntry | null {

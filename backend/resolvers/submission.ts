@@ -5,7 +5,7 @@ import { checkVies, matchViesAddress, type ViesAddressMatch } from '../services/
 import { DIDIT_ENABLED, retrieveDecision, deleteSession } from '../services/didit.ts';
 import { consumeSession, sessionMatches } from '../services/diditSessionStore.ts';
 import { checkSubstanceUse, SUBSTANCE_CHECK_ENABLED } from '../services/substanceCheck.ts';
-import { translateStatement } from '../services/translate.ts';
+import { TRANSLATION_ENABLED, translateStatement } from '../services/translate.ts';
 import { DEFAULT_CONFIG, resolveConfig, type FormConfig } from '../lib/formConfig.ts';
 
 // The ISO codes the public form is offered in (frontend/src/i18n/languages.ts).
@@ -45,6 +45,10 @@ export async function runSubstanceCheck(id: string) {
       statement: sub.statement,
       statementTranslation: sub.statementTranslation,
       statementLang: sub.statementLang || null,
+      // Still unset after ensureTranslation means the translator could not be
+      // reached this time — said in the note, so a green result for a
+      // statement nobody could read is not mistaken for a screened one.
+      translationUnavailable: TRANSLATION_ENABLED && sub.statementLang == null,
       buyerType: sub.buyerType,
     });
     await prisma.submission.update({

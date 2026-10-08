@@ -92,5 +92,25 @@ flags('Ik ga het opdrinken, high worden', 'nl', ING);  // English loanword insid
 clean('Für arme Schüler', 'de');
 flags('Une arme', 'fr', WEA);
 
+console.log('— Cheap disguises —');
+flags('to make a b o m b', 'en', EXP);
+flags('to make a b0mb', 'en', EXP);
+flags('f.i.r.e.w.o.r.k.s', 'en', EXP);
+flags('to get h1gh', 'en', ING);
+flags('for TATP', 'en', EXP);
+flags('things that go boom', 'en', EXP);
+flags('cook some crystal', 'en', DRU);
+flags('om iets op te blazen', 'nl', EXP);
+flags('voor een flinke knal oud en nieuw', 'nl', EXP);
+flags('damit es ordentlich knallt', 'de', EXP);
+flags('Silvesterkracher selber bauen', 'de', EXP);
+flags('um es zu konsumieren', 'de', ING);
+flags('pour faire un gros boum', 'fr', EXP);
+flags('pour régler son compte à quelqu’un', 'fr', WEA);
+// Digits are only read as letters inside a word; formulas and pH values stay.
+clean('Buffer at pH 4, C18 column, 3% H2O2 rinse', 'en');
+clean('Knallgasprobe im Chemieunterricht der 8. Klasse', 'de');
+clean('Lösungsmittel für Kunststoffe, 5 L', 'de');
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

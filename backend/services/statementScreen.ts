@@ -98,7 +98,7 @@ const GROUPS: Group[] = [
       nl: [words('drinken', 'opdrinken', 'drink', 'inslikken', 'slikken', 'opeten', 'eten', 'inhaleren', 'snuiven', 'sniffen',
         'high\\s+worden', 'high\\s+te\\s+worden', 'stoned\\s+worden')],
       // Not "essen": it is also the city.
-      de: [words('trinken', 'austrinken', 'schlucken', 'verschlucken', 'aufessen', 'inhalieren', 'schnuffeln', 'sniffen',
+      de: [words('trinken', 'austrinken', 'schlucken', 'verschlucken', 'aufessen', 'konsumieren', 'konsumiert', 'inhalieren', 'schnuffeln', 'sniffen',
         'high\\s+werden', 'high\\s+zu\\s+werden', 'berauschen', 'rausch')],
       fr: [words('boire', 'avaler', 'ingerer', 'manger', 'inhaler', 'sniffer', 'snifer', 'se\\s+droguer', 'pour\\s+planer')],
     },
@@ -108,15 +108,19 @@ const GROUPS: Group[] = [
     detail: 'The stated use refers to explosives, propellants or pyrotechnics — the exact risk the regulation exists to control.',
     patterns: {
       en: [words('explosi\\p{L}*', 'bomb\\p{L}*', 'detonat\\p{L}*', 'blow\\s+(?:it|things?|stuff)?\\s*up', 'firework\\p{L}*',
-        'pyrotechnic\\p{L}*', 'thermite', 'gun\\s?powder', 'flash\\s?powder', 'propellant\\p{L}*', 'ammunition'), /\bIED\b/],
+        'pyrotechnic\\p{L}*', 'thermite', 'gun\\s?powder', 'flash\\s?powder', 'propellant\\p{L}*', 'ammunition',
+        'go(?:es)?\\s+(?:boom|bang)', 'tatp', 'hmtd', 'anfo', 'petn', 'rdx', 'nitroglycerine?', 'molotov\\p{L}*', 'napalm'), /\bIED\b/],
       nl: [words('explosie\\p{L}*', 'explosief', 'explosieve', 'explosieven', 'ontploff\\p{L}*', 'opblazen', 'opgeblazen', 'bom', 'bommen',
         'bommetje\\p{L}*', 'springstof\\p{L}*', 'vuurwerk\\p{L}*', 'pyrotechni\\p{L}*', 'flitspoeder', 'knalpoeder', 'buskruit',
-        'zwart\\s+kruit', 'thermiet', 'ontsteker\\p{L}*', 'detonator\\p{L}*', 'laten\\s+knallen')],
+        'zwart\\s+kruit', 'thermiet', 'ontsteker\\p{L}*', 'detonator\\p{L}*', 'laten\\s+knallen', 'knallen', 'knal',
+        'op\\s+te\\s+blazen', 'blaas\\s+(?:\\p{L}+\\s+){0,3}op')],
       de: [words('sprengstoff\\p{L}*', 'sprengen', 'sprengung', 'gesprengt', 'explosion\\p{L}*', 'explodier\\p{L}*', 'explosiv\\p{L}*',
         'bombe', 'bomben', 'feuerwerk\\p{L}*', 'pyrotechni\\p{L}*', 'boller', 'knallkorper\\p{L}*', 'schwarzpulver', 'blitzknall\\p{L}*',
-        'thermit', 'zunder', 'detonator\\p{L}*', 'in\\s+die\\s+luft\\s+(?:jagen|sprengen)')],
+        'thermit', 'zunder', 'detonator\\p{L}*', 'in\\s+die\\s+luft\\s+(?:jagen|sprengen)',
+        // Not "Knall*": "Knallgasprobe" is a standard school experiment.
+        'knallt', 'knallen', '\\p{L}*kracher')],
       fr: [words('explosi\\p{L}*', 'exploser', 'faire\\s+sauter', 'bombe\\p{L}*', 'detonat\\p{L}*', 'feux?\\s+d.artifice',
-        'pyrotechni\\p{L}*', 'petard\\p{L}*', 'poudre\\s+noire', 'poudre\\s+eclair', 'thermite', 'engin\\s+explosif')],
+        'pyrotechni\\p{L}*', 'petard\\p{L}*', 'poudre\\s+noire', 'poudre\\s+eclair', 'thermite', 'engin\\s+explosif', 'boum')],
     },
   },
   {
@@ -126,14 +130,16 @@ const GROUPS: Group[] = [
       en: [words('weapon\\p{L}*', 'kill', 'hurt\\s+(?:someone|people|him|her|them)', 'poison', 'revenge', 'attack')],
       nl: [words('wapen', 'wapens', 'doden', 'vermoorden', 'vergiftig\\p{L}*', 'vergif', 'iemand\\s+pijn\\s+doen', 'wraak', 'aanslag', 'afrekenen\\s+met')],
       de: [words('waffe', 'waffen', 'toten', 'umbringen', 'ermorden', 'vergiften', 'giftgas', 'jemandem\\s+schaden', 'rache', 'anschlag')],
-      fr: [words('arme', 'armes', 'tuer', 'assassiner', 'empoisonner', 'poison', 'faire\\s+du\\s+mal', 'vengeance', 'me\\s+venger', 'attentat')],
+      fr: [words('arme', 'armes', 'tuer', 'assassiner', 'empoisonner', 'poison', 'faire\\s+du\\s+mal', 'vengeance', 'me\\s+venger', 'attentat',
+        'regler\\s+(?:son|ses)\\s+comptes?')],
     },
   },
   {
     category: 'Illicit drug manufacture',
     detail: 'The stated use suggests drug manufacture or extraction, a common diversion route for solvents.',
     patterns: {
-      en: [words('meth', 'methamphetamine', 'cocaine', 'cook(?:ing)?\\s+(?:up\\s+)?(?:a\\s+)?batch', 'narcotic\\p{L}*', 'drug\\s+(?:lab|manufactur\\p{L}*)')],
+      en: [words('meth', 'methamphetamine', 'cocaine', 'cook(?:ing)?\\s+(?:up\\s+)?(?:a\\s+)?batch',
+        'cook(?:ing)?\\s+(?:some\\s+)?(?:crystal|ice)', 'narcotic\\p{L}*', 'drug\\s+(?:lab|manufactur\\p{L}*)')],
       nl: [words('drugs\\s+(?:maken|koken|produceren)', 'drugslab\\p{L}*', 'xtc', 'mdma', 'amfetamine', 'methamfetamine', 'cocaine',
         'ghb', '(?:een\\s+)?batch\\s+koken', 'wiet\\s+(?:extraheren|olie\\s+maken)')],
       de: [words('drogen\\s+(?:herstellen|kochen|machen|produzieren)', 'drogenlabor\\p{L}*', 'amphetamin', 'methamphetamin', 'kokain',
@@ -171,6 +177,25 @@ const PLACEHOLDER = new RegExp(
 const MIN_MEANINGFUL_LENGTH = 8;
 
 /**
+ * Undoes the disguises that cost a buyer nothing: letters spaced or dotted
+ * apart ("b o m b", "f.i.r.e.w.o.r.k.s") and digits standing in for letters
+ * inside a word ("b0mb", "h1gh"). Only digits wedged between letters are
+ * swapped, so "pH 4", "C18" and "H2O2" are left as they are where it matters.
+ */
+function undisguise(text: string): string[] {
+  const LEET: Record<string, string> = { '0': 'o', '1': 'i', '3': 'e', '4': 'a', '5': 's', '7': 't', '@': 'a', '$': 's' };
+  const deleet = (t: string) => t.replace(/(?<=\p{L})[013457@$](?=\p{L})/gu, d => LEET[d]);
+  const RUN = /(?<![\p{L}\p{N}])(?:\p{L}[\s.\-_*]){2,}\p{L}(?![\p{L}\p{N}])/gu;
+  const squash = (m: string) => m.replace(/[\s.\-_*]/g, '');
+  // Twice: a spaced-out word often follows a one-letter word ("a b o m b"),
+  // and joining the whole run would give "abomb". The second variant keeps
+  // the run's first letter apart.
+  const whole = text.replace(RUN, squash);
+  const firstApart = text.replace(RUN, m => `${m[0]} ${squash(m.slice(1))}`);
+  return [deleet(whole), deleet(firstApart)];
+}
+
+/**
  * Returns the concerns raised by a stated use. An empty array means nothing
  * matched — which is not the same as "the stated use is legitimate".
  *
@@ -198,13 +223,18 @@ export function screenStatement(statement: string, lang?: string | null): Statem
     : LISTED.has(lang) ? Array.from(new Set<Lang>(['en', lang as Lang]))
     : ['en'];
 
-  let text = folded;
-  for (const l of langs) for (const safe of SAFE_PHRASES[l]) text = text.replace(safe, ' ');
+  const unsafe = (t: string) => {
+    for (const l of langs) for (const safe of SAFE_PHRASES[l]) t = t.replace(safe, ' ');
+    return t;
+  };
+  // Screened as written, and once more with the cheapest disguises undone.
+  // The variant only ever adds matches; it never removes one.
+  const texts = [folded, ...undisguise(folded)].map(unsafe);
 
   for (const group of GROUPS) {
     // The IED pattern is case-sensitive on purpose ("ied" is too common a
     // fragment), so it is tested against the unfolded text.
-    if (langs.some(l => group.patterns[l].some(p => p.test(p.flags.includes('u') ? text : raw)))) {
+    if (langs.some(l => group.patterns[l].some(p => p.flags.includes('u') ? texts.some(t => p.test(t)) : p.test(raw)))) {
       concerns.push({ category: group.category, detail: group.detail });
     }
   }

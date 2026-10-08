@@ -24,6 +24,9 @@ const DETECT: Record<string, { language: string; confidence: number }> = {
   'nettoyage': { language: 'it', confidence: 12 },
   'Reinigung von Glas.': { language: 'de', confidence: 88 },
   'Para limpiar.': { language: 'es', confidence: 85 },
+  // Portuguese on a server without Portuguese: the detector picks its nearest.
+  'Para bom uso no laboratório.': { language: 'es', confidence: 88 },
+  'I clean glass with it.': { language: 'en', confidence: 90 },
 };
 const TRANSLATE: Record<string, string> = {
   'Ich will es trinken.': 'I want to drink it.',
@@ -85,8 +88,20 @@ console.log('— Languages the server has not loaded —');
   const el = await translateStatement('Θα το χρησιμοποιήσω για καθαρισμό.');
   check('Greek is named from its script, not guessed at', el.lang === 'el' && el.translation === null, JSON.stringify(el));
   check('and LibreTranslate was not asked to detect it', detectCalls === before);
-  const bg = await translateStatement('Ще го използвам за почистване.');
-  check('Bulgarian likewise', bg.lang === 'bg' && bg.translation === null, JSON.stringify(bg));
+  const bg = await translateStatement('Ще го използвам за почистване.', 'bg');
+  check('Cyrillic from a buyer who chose Bulgarian is Bulgarian', bg.lang === 'bg' && bg.translation === null, JSON.stringify(bg));
+  const ru = await translateStatement('Я буду использовать это для очистки.', 'en');
+  check('Cyrillic otherwise is left unnamed, not called Bulgarian', ru.lang === null && ru.translation === null, JSON.stringify(ru));
+  const ar = await translateStatement('لتنظيف الأدوات الزجاجية في المختبر', 'en');
+  check('Arabic is left unnamed', ar.lang === null && ar.translation === null, JSON.stringify(ar));
+  check('and no non-Latin text was sent to the detector', detectCalls === before);
+
+  const before2 = translateCalls;
+  const pt = await translateStatement('Para bom uso no laboratório.', 'pt');
+  check('Portuguese detected as "Spanish" keeps the buyer’s choice and is not translated', pt.lang === 'pt' && pt.translation === null, JSON.stringify(pt));
+  check('so no Spanish-into-nonsense translation was made', translateCalls === before2);
+  const ptEn = await translateStatement('I clean glass with it.', 'pt');
+  check('a buyer on the Portuguese form writing English is read as English', ptEn.lang === 'en' && ptEn.translation === null, JSON.stringify(ptEn));
 }
 
 console.log('— One at a time on a small server —');
@@ -119,6 +134,13 @@ console.log('— The screen reads the translation —');
     ...base, statement: 'I want to drink it.', statementTranslation: 'I want to drink it.', statementLang: 'en',
   });
   check('a concern found in both is reported once', (both.note.match(/Ingestion/g) ?? []).length === 1, both.note.slice(0, 200));
+}
+
+{
+  const pending = await checkSubstanceUse({
+    substances: 'Aceton', casNumbers: 'n/a', buyerType: 'INDIVIDUAL', statement: 'Quiero beberlo.', translationUnavailable: true,
+  });
+  check('an untranslated statement during an outage says so in the note', /not been translated yet/.test(pending.note), pending.note.slice(0, 160));
 }
 
 console.log('— The translator being down —');

@@ -46,9 +46,15 @@ const languageName = (iso: string) => LANGUAGE_NAMES[iso] ?? iso;
 
 /** "the Dutch name in Reg. (EU) 2019/1148", or "a German name Wikidata records". */
 function describeNameMatch(m: NameMatch): string {
+  const names = m.langs.map(languageName);
+  const which = names.length === 1 ? names[0]
+    : names.length <= 3 ? `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`
+    : `${names.length}-language`;
   return m.source === 'regulation'
-    ? `the ${languageName(m.lang)} name for ${m.entry.name} in ${REG}`
-    : `a ${languageName(m.lang)} name for ${m.entry.name} (per Wikidata)`;
+    ? names.length > 3
+      ? `the name ${m.entry.name} has in ${names.length} language versions of ${REG}`
+      : `the ${which} name for ${m.entry.name} in ${REG}`
+    : `a ${which} name for ${m.entry.name} (per Wikidata)`;
 }
 
 /** Splits a free-text list field into trimmed items. */
@@ -146,12 +152,14 @@ async function recogniseForeignName(name: string, cas: string, compound: Compoun
  * "nothing matched", never "this use is legitimate", and the note says so.
  */
 export async function checkSubstanceUse(
-  { substances, casNumbers, concentration, statement, statementTranslation, statementLang, buyerType }:
+  { substances, casNumbers, concentration, statement, statementTranslation, statementLang, translationUnavailable, buyerType }:
     {
       substances: string; casNumbers: string; concentration?: string | null; statement?: string;
       /** English machine translation of `statement`, when one was made. Screened as a second pass. */
       statementTranslation?: string | null;
       statementLang?: string | null;
+      /** The translator was unreachable, so a statement in another language was screened as written only. */
+      translationUnavailable?: boolean;
       buyerType: 'INDIVIDUAL' | 'COMPANY';
     }
 ): Promise<SubstanceCheckResult> {
@@ -318,6 +326,14 @@ export async function checkSubstanceUse(
   // drink it" is worth a look whatever the CAS resolves to.
   const concerns = screenStatement(statement ?? '', statementLang);
   for (const c of concerns) problems.push(`${c.category}: ${c.detail}`);
+
+  if (translationUnavailable) {
+    // First among the findings, so the length cap on the note never cuts it.
+    findings.unshift(
+      'The stated use has not been translated yet — the on-server translator could not be reached. '
+      + 'If it is not in a language you read, it was only screened as written: re-run the check later to translate it.',
+    );
+  }
 
   // The word lists only know some languages. The translation catches the
   // rest — less reliably, since slang does not survive machine translation
