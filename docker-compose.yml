@@ -90,6 +90,12 @@ services:
       DIDIT_WORKFLOW_ID: ${DIDIT_WORKFLOW_ID}
       DIDIT_WEBHOOK_SECRET: ${DIDIT_WEBHOOK_SECRET}
       WIKIDATA_CONTACT: ${WIKIDATA_CONTACT:-}
+
+      # Statements in other languages are translated here, on this server.
+      # Leave it set even before the translator is up: until it answers,
+      # submissions simply arrive untranslated and the next check re-run
+      # tries again.
+      LIBRETRANSLATE_URL: http://libretranslate:5000
     healthcheck:
       # Checked so `docker compose ps` tells the truth and so Caddy waits for a
       # server that can actually answer. Note what this does *not* do: compose
@@ -110,6 +116,39 @@ services:
     # network has no egress, and the symptom would have been identity
     # verification failing with a network error nobody could explain.
     networks: [internal, default]
+
+  # Machine translation of buyers' stated use, so a statement in German or
+  # Polish can be read by the reviewer — without the text leaving this
+  # machine. Its own container with a hard memory cap: on a 4 GB host, the
+  # translator is the one thing allowed to be killed when memory runs out, and
+  # it comes back by itself. Postgres is never the casualty.
+  libretranslate:
+    image: libretranslate/libretranslate:v1.9.6
+    restart: unless-stopped
+    environment:
+      # Each language costs roughly 200 MB of memory. English is the pivot
+      # every translation goes through, and the language reviewers read; Dutch
+      # is read without help, but must be loaded to be recognised. Statements
+      # in languages not listed are named in the dashboard, not translated.
+      LT_LOAD_ONLY: ${TRANSLATE_LANGUAGES:-en,nl,de,fr,es,it,pl}
+      LT_DISABLE_WEB_UI: 'true'
+      # Two CPUs, shared with the API and Postgres. The API already sends one
+      # statement at a time.
+      LT_THREADS: '2'
+      # The form caps a statement at 2000 characters.
+      LT_CHAR_LIMIT: '2000'
+    volumes:
+      # The language models, downloaded on first start. Without this they are
+      # fetched again on every restart.
+      - translate-models:/home/libretranslate/.local
+    # Hard cap, and no swap beyond it: past this the kernel stops this
+    # container, not the database.
+    mem_limit: 2g
+    memswap_limit: 2g
+    # No ports, and only the default network: the API reaches it by name, it
+    # reaches the internet once to download models, and nothing outside this
+    # machine reaches it at all.
+    networks: [default]
 
   web:
     build: ./frontend
@@ -138,6 +177,7 @@ services:
 
 volumes:
   db-data:
+  translate-models:
   caddy-data:
   caddy-config:
 

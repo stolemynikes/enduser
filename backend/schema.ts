@@ -128,6 +128,15 @@ export const typeDefs = `#graphql
     casNumbers: String!
     concentration: String
     statement: String!
+    """Language the stated use is written in (ISO 639-1), when it could be told."""
+    statementLang: String
+    """
+    English machine translation of the stated use, made on this server. A
+    reading aid only — the original is the record.
+    """
+    statementTranslation: String
+    """Language the buyer chose on the form."""
+    locale: String
     idDocumentName: String
     idDocumentType: IdDocumentType
     idDocumentNumber: String
@@ -325,6 +334,8 @@ export const typeDefs = `#graphql
     diditSessionId: String
     agreedToTerms: Boolean!
     companySlug: String
+    """Language the buyer chose on the form (ISO 639-1). Anything else is ignored."""
+    locale: String
     """Cloudflare Turnstile response, required once TURNSTILE_SECRET is configured."""
     turnstileToken: String
   }

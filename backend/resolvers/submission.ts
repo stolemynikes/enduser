@@ -5,20 +5,46 @@ import { checkVies, matchViesAddress, type ViesAddressMatch } from '../services/
 import { DIDIT_ENABLED, retrieveDecision, deleteSession } from '../services/didit.ts';
 import { consumeSession, sessionMatches } from '../services/diditSessionStore.ts';
 import { checkSubstanceUse, SUBSTANCE_CHECK_ENABLED } from '../services/substanceCheck.ts';
+import { translateStatement } from '../services/translate.ts';
 import { DEFAULT_CONFIG, resolveConfig, type FormConfig } from '../lib/formConfig.ts';
+
+// The ISO codes the public form is offered in (frontend/src/i18n/languages.ts).
+const FORM_LOCALES = new Set(['bg', 'cs', 'da', 'de', 'el', 'en', 'es', 'et', 'fi', 'fr', 'ga', 'hr',
+  'hu', 'it', 'lt', 'lv', 'mt', 'nl', 'pl', 'pt', 'ro', 'sk', 'sl', 'sv']);
+
+/**
+ * Detects the stated use's language and stores a translation when one helps.
+ * Runs once per submission: `statementLang` is set afterwards ('' meaning
+ * "looked, could not tell"). Left unset when the translator was down, so the
+ * next check re-run tries again. Returns the row, translated or not.
+ */
+export async function ensureTranslation(id: string) {
+  const sub = await prisma.submission.findUnique({ where: { id } });
+  if (!sub || sub.statementLang != null) return sub;
+  const { lang, translation, unavailable } = await translateStatement(sub.statement, sub.locale);
+  if (unavailable) return sub;
+  return prisma.submission.update({
+    where: { id },
+    data: { statementLang: lang ?? '', statementTranslation: translation },
+  });
+}
 
 // Runs the substance/use compliance check for a submission and writes
 // the result back. Fire-and-forget from the submit mutation; also reused by the
 // re-run mutations and the startup requeue. Never throws.
 export async function runSubstanceCheck(id: string) {
   try {
-    const sub = await prisma.submission.findUnique({ where: { id } });
+    // Translated first, once, so the screen below can read the translation
+    // too. A re-run reuses it rather than translating the same text again.
+    const sub = await ensureTranslation(id);
     if (!sub) return;
     const result = await checkSubstanceUse({
       substances: sub.substances,
       casNumbers: sub.casNumbers,
       concentration: sub.concentration,
       statement: sub.statement,
+      statementTranslation: sub.statementTranslation,
+      statementLang: sub.statementLang || null,
       buyerType: sub.buyerType,
     });
     await prisma.submission.update({
@@ -142,8 +168,12 @@ export const submissionResolvers = {
         idDocumentNumber: _e,
         buyerType: submittedBuyerType,
         companySlug,
+        locale: submittedLocale,
         ...rest
       } = data as any;
+      // Stored only when it is one of the form's own languages: it is shown to
+      // reviewers and steers translation, so free text has no business here.
+      const locale = typeof submittedLocale === 'string' && FORM_LOCALES.has(submittedLocale) ? submittedLocale : null;
       let idExpiry: string | null = null;
       let idVerification: {
         sessionId: string | null;
@@ -359,6 +389,7 @@ export const submissionResolvers = {
           viesAddress,
           viesAddressMatch,
           buyerType,
+          locale,
           substanceCheckStatus: willCheckSubstance ? 'PENDING' : 'NOT_CHECKED',
           status: 'PENDING_REVIEW',
           ...(companyId ? { companyId } : {}),
@@ -406,7 +437,10 @@ export const submissionResolvers = {
       }).catch(() => {});
 
       // Background — don't make the customer wait for the LLM round-trip.
+      // The check translates first. A form without CAS numbers gets no check,
+      // but its stated use still deserves a translation the reviewer can read.
       if (willCheckSubstance) void runSubstanceCheck(submission.id);
+      else void ensureTranslation(submission.id).catch(() => {});
 
       return submission;
     },

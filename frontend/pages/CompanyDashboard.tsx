@@ -25,6 +25,7 @@ import {
   IDENTITY_AVAILABILITY, ID_UNAVAILABLE_WARNING, embedSnippet,
   draftFromConfig,
 } from '../src/lib/formConfigShared';
+import { StatementWithTranslation } from '../src/components/StatementTranslation.tsx';
 
 const PAGE_SIZE = 100;
 
@@ -32,7 +33,7 @@ const GET_SUBMISSIONS = gql`
   query CompanySubmissions($status: SubmissionStatus, $includeTest: Boolean, $limit: Int, $offset: Int) {
     companySubmissions(status: $status, includeTest: $includeTest, limit: $limit, offset: $offset) {
       id email orderNumber firstName lastName companyName vatNumber buyerType
-      street zipCode place country substances casNumbers concentration statement
+      street zipCode place country substances casNumbers concentration statement statementLang statementTranslation
       viesStatus viesName viesAddress viesAddressMatch status adminNote createdAt isTest
       idDocumentName idDocumentType idMrzValid idLikelySynthetic idDocumentExpiry
       idVerificationStatus idLivenessPassed idFaceMatch idVerificationWarnings idVerificationCheckedAt idVerificationPurged
@@ -139,7 +140,8 @@ type Submission = {
   id: string; email: string; orderNumber: string; firstName: string; lastName: string;
   companyName: string; vatNumber: string; buyerType: 'INDIVIDUAL' | 'COMPANY';
   street?: string; zipCode?: string; place?: string; country: string; substances: string;
-  casNumbers: string; concentration?: string | null; statement: string; viesStatus: 'VALID' | 'INVALID' | 'ERROR' | 'NOT_CHECKED';
+  casNumbers: string; concentration?: string | null; statement: string;
+  statementLang?: string | null; statementTranslation?: string | null; viesStatus: 'VALID' | 'INVALID' | 'ERROR' | 'NOT_CHECKED';
   viesName?: string | null; viesAddress?: string | null; viesAddressMatch: ViesAddressMatch;
   status: 'PENDING_REVIEW' | 'APPROVED' | 'DENIED'; adminNote?: string; createdAt: string; isTest?: boolean;
   idDocumentName?: string; idDocumentType?: IdDocumentType;
@@ -531,6 +533,9 @@ export default function CompanyDashboard() {
       ['CAS number', s.casNumbers || '—'],
       ['Concentration', s.concentration || '—'],
       ['Statement', s.statement],
+      ...(s.statementTranslation
+        ? [[`Machine translation${s.statementLang ? ` (from ${s.statementLang.toUpperCase()})` : ''}`, s.statementTranslation] as [string, string]]
+        : []),
       ['Compliance check', flag(s.substanceCheckStatus === 'FLAGGED',
         `${s.substanceCheckStatus}${s.substanceCheckNote ? ` — ${s.substanceCheckNote}` : ''}`)],
     ]);
@@ -1319,7 +1324,10 @@ export default function CompanyDashboard() {
                         <Detail label="CAS Number" value={selected.casNumbers || <Dim />} />
                         <Detail label="Concentration" value={selected.concentration || <Dim />} />
                       </div>
-                      <Detail label="Statement" value={selected.statement} />
+                      <Detail label="Statement" value={
+                      <StatementWithTranslation statement={selected.statement}
+                        lang={selected.statementLang} translation={selected.statementTranslation} />
+                    } />
                       {canCheck && (
                         <div className="cd-detail-grid" style={{ marginTop: '1.25rem', marginBottom: selected.substanceCheckNote ? '1rem' : 0 }}>
                           <Detail label="Compliance" value={<SubCheckBadge status={selected.substanceCheckStatus} />} />

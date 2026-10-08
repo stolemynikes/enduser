@@ -109,6 +109,8 @@ const resolvers = {
   // Prisma returns Date objects; the String scalar would coerce them to epoch
   // millis, which the dashboards can't parse — serialize to ISO 8601 instead.
   Submission: {
+    // '' is stored to mean "looked, could not tell"; to a client that is no language.
+    statementLang: (s: { statementLang?: string | null }) => s.statementLang || null,
     createdAt: (s: { createdAt: Date | string }) =>
       s.createdAt instanceof Date ? s.createdAt.toISOString() : s.createdAt,
     substanceCheckedAt: (s: { substanceCheckedAt?: Date | string | null }) =>

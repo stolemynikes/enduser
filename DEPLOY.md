@@ -163,7 +163,44 @@ echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
 Also worth doing, in the ordinary way: key-only SSH with root login disabled,
 and `unattended-upgrades` so security patches land without being remembered.
 
-## 4b. Backups
+## 4b. The translator, and the memory it costs
+
+Statements written in another language are translated on this server by
+LibreTranslate, so the reviewer can read them and the keyword screen can read
+them too. The text never leaves the machine.
+
+It is the largest thing in the stack. On a 4 GB server (Hetzner CX23):
+
+| | Memory |
+|---|---|
+| Ubuntu + Docker | ~400 MB |
+| Postgres + API + Caddy | ~450 MB |
+| LibreTranslate, 7 languages | ~1.1–1.5 GB, capped at 2 GB |
+| Left over | ~1.5 GB, plus the 2 GB swap from 4a |
+
+Each language costs about 200 MB. `TRANSLATE_LANGUAGES` in `.env` sets them;
+the default is `en,nl,de,fr,es,it,pl`. English must stay — every translation
+goes through it. A statement in a language not loaded is named in the
+dashboard ("Written in Greek") and not translated.
+
+**The first start is slow and hungry.** The models are downloaded and loaded
+before the translator answers — several minutes, and the moment memory peaks.
+Watch it once:
+
+```sh
+docker compose logs -f libretranslate
+docker stats --no-stream
+```
+
+Submissions that arrive in the meantime are stored untranslated; re-running
+the check on one translates it then. Nothing waits on the translator and
+nothing fails because of it.
+
+**The cap is deliberate.** `mem_limit: 2g` with no swap beyond it means that
+when memory runs out, the kernel stops the translator — which restarts by
+itself — and not Postgres.
+
+## 4c. Backups
 
 Two things, kept apart, which is the whole point:
 

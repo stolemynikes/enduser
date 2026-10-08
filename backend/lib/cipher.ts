@@ -44,7 +44,7 @@ export const PII_FIELDS = [
   'email', 'orderNumber', 'firstName', 'lastName',
   'street', 'zipCode', 'place', 'country',
   'companyName', 'vatNumber', 'substances', 'casNumbers',
-  'statement', 'idDocumentName', 'idDocumentNumber', 'adminNote',
+  'statement', 'statementTranslation', 'idDocumentName', 'idDocumentNumber', 'adminNote',
 ] as const;
 
 export function encryptData<T extends Record<string, unknown>>(data: T): T {

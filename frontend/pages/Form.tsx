@@ -357,6 +357,9 @@ function StatementForm({ embed }: { embed: boolean }) {
       substances: form.substances,
       statement: form.statement,
       agreedToTerms: true,
+      // The language the buyer read the form in — a hint for which language
+      // the stated use is written in, and later for replying in it.
+      locale: lang,
       ...(slug ? { companySlug: slug } : {}),
     };
     if (show(cfg.orderNumber)) input.orderNumber = form.orderNumber;

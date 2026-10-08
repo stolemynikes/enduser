@@ -146,8 +146,14 @@ async function recogniseForeignName(name: string, cas: string, compound: Compoun
  * "nothing matched", never "this use is legitimate", and the note says so.
  */
 export async function checkSubstanceUse(
-  { substances, casNumbers, concentration, statement, buyerType }:
-    { substances: string; casNumbers: string; concentration?: string | null; statement?: string; buyerType: 'INDIVIDUAL' | 'COMPANY' }
+  { substances, casNumbers, concentration, statement, statementTranslation, statementLang, buyerType }:
+    {
+      substances: string; casNumbers: string; concentration?: string | null; statement?: string;
+      /** English machine translation of `statement`, when one was made. Screened as a second pass. */
+      statementTranslation?: string | null;
+      statementLang?: string | null;
+      buyerType: 'INDIVIDUAL' | 'COMPANY';
+    }
 ): Promise<SubstanceCheckResult> {
   const names = splitList(substances ?? '');
   const casList = splitList(casNumbers ?? '');
@@ -279,6 +285,21 @@ export async function checkSubstanceUse(
   // drink it" is worth a look whatever the CAS resolves to.
   const concerns = screenStatement(statement ?? '');
   for (const c of concerns) problems.push(`${c.category}: ${c.detail}`);
+
+  // The word lists only know some languages. The translation catches the
+  // rest — less reliably, since slang does not survive machine translation
+  // well, so a flag that fired only here says where it came from and the
+  // reviewer reads the original before deciding anything.
+  if (statementTranslation) {
+    const seen = new Set(concerns.map(c => c.category));
+    const via = statementLang ? `the machine translation from ${languageName(statementLang)}` : 'the machine translation';
+    for (const c of screenStatement(statementTranslation)) {
+      if (seen.has(c.category) || c.category === 'Stated use not meaningful' || c.category === 'No stated use') continue;
+      seen.add(c.category);
+      concerns.push(c);
+      problems.push(`${c.category} (found in ${via} — check the original): ${c.detail}`);
+    }
+  }
 
   const flagged = problems.length > 0 || restricted;
   const screenNote = concerns.length

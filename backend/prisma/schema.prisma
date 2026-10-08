@@ -65,6 +65,15 @@ model Submission {
   substanceCheckStatus SubstanceCheckStatus @default(NOT_CHECKED)
   substanceCheckNote   String?
   substanceCheckedAt   DateTime?
+  /// Language the buyer chose on the form (ISO 639-1). A hint, not a fact: a
+  /// buyer can pick Dutch and write in English.
+  locale               String?
+  /// Language the stated use is actually written in, as detected.
+  statementLang        String?
+  /// Machine translation of the stated use into English, made on this server
+  /// (LibreTranslate). A reading aid for the reviewer; the original in
+  /// `statement` is the record. Encrypted like the original.
+  statementTranslation String?
   status              SubmissionStatus @default(PENDING_REVIEW)
   adminNote           String?
   reviewedById        String?

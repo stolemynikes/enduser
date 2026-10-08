@@ -9,12 +9,13 @@ import { useDocumentTitle } from '../src/lib/useDocumentTitle.ts';
 import { useModalDismiss } from '../src/lib/useModalDismiss.ts';
 import { approvable, blockingCategories, categoryFailing, isExpired, isPending, CATEGORY_LABEL } from '../src/lib/approvalGate.ts';
 import { Mark } from '../src/components/Mark.tsx';
+import { StatementWithTranslation } from '../src/components/StatementTranslation.tsx';
 
 const GET_SUBMISSIONS = gql`
   query GetSubmissions {
     submissions {
       id email orderNumber firstName lastName companyName vatNumber buyerType
-      street zipCode place country substances casNumbers concentration statement
+      street zipCode place country substances casNumbers concentration statement statementLang statementTranslation
       viesStatus viesName viesAddress viesAddressMatch status adminNote createdAt isTest
       idDocumentName idDocumentType idMrzValid idLikelySynthetic idDocumentExpiry
       idVerificationStatus idLivenessPassed idFaceMatch idVerificationWarnings idVerificationCheckedAt idVerificationPurged
@@ -121,7 +122,8 @@ type Submission = {
   id: string; email: string; orderNumber: string; firstName: string; lastName: string;
   companyName: string; vatNumber: string; buyerType: 'INDIVIDUAL' | 'COMPANY';
   street?: string; zipCode?: string; place?: string; country: string; substances: string;
-  casNumbers: string; concentration?: string | null; statement: string; viesStatus: 'VALID' | 'INVALID' | 'ERROR' | 'NOT_CHECKED';
+  casNumbers: string; concentration?: string | null; statement: string;
+  statementLang?: string | null; statementTranslation?: string | null; viesStatus: 'VALID' | 'INVALID' | 'ERROR' | 'NOT_CHECKED';
   viesName?: string | null; viesAddress?: string | null; viesAddressMatch: ViesAddressMatch;
   status: 'PENDING_REVIEW' | 'APPROVED' | 'DENIED'; adminNote?: string; createdAt: string; isTest: boolean;
   idDocumentName?: string; idDocumentType?: IdDocumentType;
@@ -613,7 +615,10 @@ export default function Dashboard() {
                       <Detail label="CAS Number" value={selected.casNumbers || <span style={{ color: 'var(--text-dim)' }}>—</span>} />
                       <Detail label="Concentration" value={selected.concentration || <span style={{ color: 'var(--text-dim)' }}>—</span>} />
                     </div>
-                    <Detail label="Statement" value={selected.statement} />
+                    <Detail label="Statement" value={
+                      <StatementWithTranslation statement={selected.statement}
+                        lang={selected.statementLang} translation={selected.statementTranslation} />
+                    } />
                     {canCheck && (
                       <div className="db-detail-grid" style={{ marginTop: '1.25rem', marginBottom: selected.substanceCheckNote ? '1rem' : 0 }}>
                         <Detail label="Compliance" value={<SubCheckBadge status={selected.substanceCheckStatus} />} />

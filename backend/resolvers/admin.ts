@@ -2,6 +2,7 @@ import { prisma } from '../lib/prisma.ts';
 import { signCompanyToken } from '../services/companyAuth.ts';
 import { checkVies, matchViesAddress } from '../services/vies.ts';
 import { checkSubstanceUse } from '../services/substanceCheck.ts';
+import { translateStatement } from '../services/translate.ts';
 import { runSubstanceCheck } from './submission.ts';
 import { notify } from '../lib/notifications.ts';
 import { GraphQLError } from 'graphql';
@@ -195,11 +196,17 @@ export const adminResolvers = {
       // Mirrors the public form's caps: the test tool reaches the same outbound
       // services, so it gets the same bounds.
       const cap = (v: unknown, max: number) => (typeof v === 'string' ? v.slice(0, max) : '');
+      // Translated like a real submission, so the tool shows what a reviewer
+      // would see for a statement in another language.
+      const text = cap(statement, 2000);
+      const { lang, translation } = await translateStatement(text);
       return checkSubstanceUse({
         substances: cap(substances, 255),
         casNumbers: cap(casNumbers, 255),
         concentration: cap(concentration, 100),
-        statement: cap(statement, 2000),
+        statement: text,
+        statementTranslation: translation,
+        statementLang: lang,
         buyerType,
       });
     },
