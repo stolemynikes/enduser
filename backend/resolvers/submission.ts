@@ -355,12 +355,11 @@ export const submissionResolvers = {
           }
         }
       }
-      // Queue the background substance/use compliance check when we have enough
-      // to check (substance + CAS) and the feature is configured.
-      const willCheckSubstance =
-        SUBSTANCE_CHECK_ENABLED &&
-        !!(rest.substances as string)?.trim() &&
-        !!(rest.casNumbers as string)?.trim();
+      // Every submission is checked. This used to require a CAS number, and a
+      // form with the CAS field hidden therefore never had its stated use
+      // screened — while "not checked" counts as green at approval. Without a
+      // CAS the check identifies the substance by name instead.
+      const willCheckSubstance = SUBSTANCE_CHECK_ENABLED && !!(rest.substances as string)?.trim();
 
       const submission = await prisma.submission.create({
         data: {

@@ -597,18 +597,13 @@ export default function Dashboard() {
                   <Detail label="Country" value={selected.country || <span style={{ color: 'var(--text-dim)' }}>—</span>} />
                   <Detail label="Submitted" value={new Date(selected.createdAt).toLocaleString('en-GB')} />
                 </div>
-                {(() => {
-                  const canCheck = selected.substanceCheckStatus !== 'NOT_CHECKED' || !!selected.casNumbers?.trim();
-                  return (
                   <div className={`db-id-block${selected.substanceCheckStatus === 'PENDING' ? ' db-id-block--checking' : selected.substanceCheckStatus === 'OK' ? ' db-id-block--ok' : selected.substanceCheckStatus === 'FLAGGED' ? ' db-id-block--suspicious' : ''}`}>
                     <div className="db-id-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem' }}>
                       <span>Substance Information</span>
-                      {canCheck && (
                         <button className="db-btn-view" disabled={rechecking || selected.substanceCheckStatus === 'PENDING'}
                           onClick={() => handleRecheckSubstance(selected.id)}>
                           {rechecking || selected.substanceCheckStatus === 'PENDING' ? 'Checking…' : selected.substanceCheckStatus === 'NOT_CHECKED' ? 'Run check' : 'Re-run check'}
                         </button>
-                      )}
                     </div>
                     <div className="db-detail-grid" style={{ marginBottom: '1.25rem' }}>
                       <Detail label="Substance(s)" value={selected.substances} />
@@ -619,19 +614,15 @@ export default function Dashboard() {
                       <StatementWithTranslation statement={selected.statement}
                         lang={selected.statementLang} translation={selected.statementTranslation} />
                     } />
-                    {canCheck && (
                       <div className="db-detail-grid" style={{ marginTop: '1.25rem', marginBottom: selected.substanceCheckNote ? '1rem' : 0 }}>
                         <Detail label="Compliance" value={<SubCheckBadge status={selected.substanceCheckStatus} />} />
                         {selected.substanceCheckedAt && (
                           <Detail label="Checked" value={<span title={formatDate(selected.substanceCheckedAt)}>{relativeTime(selected.substanceCheckedAt)}</span>} />
                         )}
                       </div>
-                    )}
                     {selected.substanceCheckNote && <Detail label="Assessment" value={selected.substanceCheckNote} />}
                     {renderOverride('SUBSTANCE')}
                   </div>
-                  );
-                })()}
                 {selected.adminNote && (
                   <div className="db-detail-full">
                     <Detail label="Admin Note" value={selected.adminNote} />

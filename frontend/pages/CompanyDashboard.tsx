@@ -1306,13 +1306,10 @@ export default function CompanyDashboard() {
                     <Detail label="Country" value={selected.country || <Dim />} />
                     <Detail label="Submitted" value={new Date(selected.createdAt).toLocaleString('en-GB')} />
                   </div>
-                  {(() => {
-                    const canCheck = selected.substanceCheckStatus !== 'NOT_CHECKED' || !!selected.casNumbers?.trim();
-                    return (
                     <div className={`cd-id-block${selected.substanceCheckStatus === 'PENDING' ? ' cd-id-block--checking' : selected.substanceCheckStatus === 'OK' ? ' cd-id-block--ok' : selected.substanceCheckStatus === 'FLAGGED' ? ' cd-id-block--suspicious' : ''}`}>
                       <div className="cd-id-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem' }}>
                         <span>Substance Information</span>
-                        {canManage && canCheck && (
+                        {canManage && (
                           <button className="cd-btn-view" disabled={rechecking || selected.substanceCheckStatus === 'PENDING'}
                             onClick={() => handleRecheckSubstance(selected.id)}>
                             {rechecking || selected.substanceCheckStatus === 'PENDING' ? 'Checking…' : selected.substanceCheckStatus === 'NOT_CHECKED' ? 'Run check' : 'Re-run check'}
@@ -1328,19 +1325,15 @@ export default function CompanyDashboard() {
                       <StatementWithTranslation statement={selected.statement}
                         lang={selected.statementLang} translation={selected.statementTranslation} />
                     } />
-                      {canCheck && (
                         <div className="cd-detail-grid" style={{ marginTop: '1.25rem', marginBottom: selected.substanceCheckNote ? '1rem' : 0 }}>
                           <Detail label="Compliance" value={<SubCheckBadge status={selected.substanceCheckStatus} />} />
                           {selected.substanceCheckedAt && (
                             <Detail label="Checked" value={<span title={formatDate(selected.substanceCheckedAt)}>{relativeTime(selected.substanceCheckedAt)}</span>} />
                           )}
                         </div>
-                      )}
                       {selected.substanceCheckNote && <Detail label="Assessment" value={selected.substanceCheckNote} />}
                       {renderOverride('SUBSTANCE')}
                     </div>
-                    );
-                  })()}
                   {selected.adminNote && (
                     <div className="cd-detail-full">
                       <Detail label="Note" value={selected.adminNote} />

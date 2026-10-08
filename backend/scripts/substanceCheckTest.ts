@@ -114,10 +114,28 @@ const cases: { label: string; args: Parameters<typeof checkSubstanceUse>[0]; exp
     args: { substances: 'Acetone', casNumbers: 'n/a', statement: OK_USE, buyerType: 'COMPANY' },
     expect: 'FLAGGED', mustSay: 'not a valid CAS',
   },
+  // Without a CAS the check used to stop — and "not checked" is green at
+  // approval, so a form with the CAS field hidden was approvable with nothing
+  // screened. It now identifies by name and always screens the statement.
   {
-    label: 'no CAS at all → ERROR (blocks approval, not a pass)',
-    args: { substances: 'Acetone', casNumbers: '', statement: OK_USE, buyerType: 'COMPANY' },
-    expect: 'ERROR',
+    label: 'no CAS, unlisted name → checked by name, says so',
+    args: { substances: 'Toluene', casNumbers: '', statement: OK_USE, buyerType: 'COMPANY' },
+    expect: 'OK', mustSay: 'identified by name only',
+  },
+  {
+    label: 'no CAS, listed name in Dutch → FLAGGED from the annex',
+    args: { substances: 'salpeterzuur', casNumbers: '', statement: OK_USE, buyerType: 'INDIVIDUAL' },
+    expect: 'FLAGGED', mustSay: 'Dutch name for Nitric acid',
+  },
+  {
+    label: 'no CAS, suspicious stated use → FLAGGED (the statement is screened regardless)',
+    args: { substances: 'Toluene', casNumbers: '', statement: 'to make a bomb', buyerType: 'COMPANY' },
+    expect: 'FLAGGED', mustSay: 'Explosive',
+  },
+  {
+    label: 'no CAS, a name nothing knows → FLAGGED, not silently OK',
+    args: { substances: 'Blorbium extract', casNumbers: '', statement: OK_USE, buyerType: 'COMPANY' },
+    expect: 'FLAGGED', mustSay: 'could not be identified',
   },
   {
     label: 'multiple substances, one restricted → FLAGGED',

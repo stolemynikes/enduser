@@ -158,20 +158,52 @@ export async function checkSubstanceUse(
   const names = splitList(substances ?? '');
   const casList = splitList(casNumbers ?? '');
 
-  if (!casList.length) {
-    return { status: 'ERROR', note: 'No CAS number was provided, so the substance could not be identified.' };
-  }
-
   const problems: string[] = [];   // drive FLAGGED
   const findings: string[] = [];   // context for the reviewer
   let restricted = false;
+
+  // No CAS number: the seller hides the field, or left it optional and the
+  // buyer skipped it. This used to end the check — and a check that never ran
+  // counts as green, so those forms were approvable with the stated use never
+  // screened at all. Now the names are checked against the annexes (every
+  // language version) and PubChem, and the statement is screened as always.
+  // Weaker than a CAS match, and the note says so.
+  if (!casList.length) {
+    findings.push(
+      'No CAS number was given, so the substance was identified by name only — a name can be '
+      + 'ambiguous or misspelled where a CAS number is not.',
+    );
+    for (const name of names) {
+      const match = identifyName(name);
+      if (match) {
+        if (match.entry.annex === 'I') restricted = true;
+        findings.push(`The declared name "${name}" is ${describeNameMatch(match)}. ${describeListing(match.entry, buyerType)}`);
+        continue;
+      }
+      try {
+        const compound = await resolveCompound(name);
+        const entry = compound ? findByCid(compound.cid) : null;
+        if (entry) {
+          if (entry.annex === 'I') restricted = true;
+          findings.push(`"${name}" resolves to ${compound!.title} (PubChem CID ${compound!.cid}). ${describeListing(entry, buyerType)}`);
+        } else if (compound) {
+          findings.push(`"${name}" resolves to ${compound.title} (PubChem CID ${compound.cid}). Not listed in Annex I or II of ${REG}.`);
+        } else {
+          problems.push(`"${name}" could not be identified, and no CAS number was given to identify it by.`);
+        }
+      } catch (err) {
+        if (!(err instanceof PubChemUnavailable)) throw err;
+        findings.push(`"${name}" could not be looked up — PubChem was unreachable. Identify it by hand before approving.`);
+      }
+    }
+  }
 
   try {
     // Pair names to CAS numbers by position only when the counts line up. A
     // mismatched count means we cannot tell which name belongs to which number,
     // so each is checked independently instead of guessing.
     const paired = names.length === casList.length && names.length > 0;
-    if (!paired && names.length > 0) {
+    if (!paired && names.length > 0 && casList.length > 0) {
       findings.push(
         `${names.length} substance name(s) were declared against ${casList.length} CAS number(s), `
         + 'so they could not be matched up one-to-one — each was checked separately.',
@@ -258,8 +290,9 @@ export async function checkSubstanceUse(
       }
     }
 
-    // Names that were never paired still deserve an annex check.
-    if (!paired) {
+    // Names that were never paired still deserve an annex check. (Without any
+    // CAS they were checked above, more thoroughly.)
+    if (!paired && casList.length > 0) {
       for (const name of names) {
         const match = identifyName(name);
         if (match) {
