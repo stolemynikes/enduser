@@ -3,6 +3,8 @@ import { gql } from '@apollo/client';
 import { useQuery, useMutation, useLazyQuery } from '@apollo/client/react';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from '../src/components/Toast.tsx';
+import { AccessRequestsTab } from '../src/components/AccessRequests.tsx';
+import { ACCESS_REQUESTS, type AccessRequest } from '../src/lib/accessRequests.ts';
 import { AdminRevealDocument } from '../src/components/AdminRevealDocument.tsx';
 import { formatDate, relativeTime } from '../src/lib/format.ts';
 import { useDocumentTitle } from '../src/lib/useDocumentTitle.ts';
@@ -63,7 +65,7 @@ const CLEAR_OVERRIDE = gql`
 const ADMIN_COMPANIES = gql`
   query AdminCompanies {
     adminCompanies {
-      id name slug membersCount submissionsCount pendingCount configured lastSubmissionAt createdAt
+      id name slug accessStatus membersCount submissionsCount pendingCount configured lastSubmissionAt createdAt
     }
   }
 `;
@@ -143,10 +145,11 @@ type IdVerificationStatus = 'NOT_CHECKED' | 'PENDING' | 'IN_REVIEW' | 'APPROVED'
 type ViesAddressMatch = 'NOT_CHECKED' | 'UNAVAILABLE' | 'MATCH' | 'PARTIAL' | 'MISMATCH';
 
 type Filter = 'ALL' | 'PENDING_REVIEW' | 'APPROVED' | 'DENIED';
-type Tab = 'submissions' | 'companies' | 'insights' | 'test';
+type Tab = 'submissions' | 'access' | 'companies' | 'insights' | 'test';
 
 type CompanyActivity = {
   id: string; name: string; slug: string; membersCount: number; submissionsCount: number;
+  accessStatus: 'PENDING' | 'APPROVED' | 'REJECTED';
   pendingCount: number; configured: boolean; lastSubmissionAt?: string | null; createdAt: string;
 };
 
@@ -160,6 +163,10 @@ type Insights = {
 export default function Dashboard() {
   const navigate = useNavigate();
   const toast = useToast();
+  // The sidebar counts requests waiting for a decision, refreshed every minute
+  // so a new one shows up without reloading the page.
+  const { data: accessData } = useQuery<{ accessRequests: AccessRequest[] }>(ACCESS_REQUESTS, { pollInterval: 60_000 });
+  const waitingAccess = (accessData?.accessRequests ?? []).filter(r => r.status === 'PENDING').length;
   useDocumentTitle('Admin — EU Statement');
   const [tab, setTab] = useState<Tab>(() =>
     (localStorage.getItem('admin-tab') as Tab) ?? 'submissions'
@@ -399,6 +406,15 @@ export default function Dashboard() {
                 </svg>
                 <span className="db-sb-label">Submissions</span>
               </button>
+              <button className={`db-sb-item${tab === 'access' ? ' db-sb-active' : ''}`} onClick={() => setTab('access')}
+                aria-label={waitingAccess ? `Access requests, ${waitingAccess} waiting` : 'Access requests'}>
+                <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8">
+                  <path d="M10 2.5l6 2.5v4.5c0 3.5-2.4 6.6-6 8-3.6-1.4-6-4.5-6-8V5l6-2.5z" strokeLinecap="round" strokeLinejoin="round" />
+                  <path d="M7.5 10l1.8 1.8L13 8" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+                <span className="db-sb-label">Access requests</span>
+                {waitingAccess > 0 && <span className="db-sb-count" aria-hidden="true">{waitingAccess}</span>}
+              </button>
               <button className={`db-sb-item${tab === 'companies' ? ' db-sb-active' : ''}`} onClick={() => setTab('companies')}>
                 <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8">
                   <path d="M3 17V5a1 1 0 011-1h7a1 1 0 011 1v12M12 9h4a1 1 0 011 1v7M3 17h14M6 7h2M6 10h2M6 13h2" strokeLinecap="round" strokeLinejoin="round" />
@@ -555,6 +571,7 @@ export default function Dashboard() {
           )}
           </>)}
 
+          {tab === 'access' && <AccessRequestsTab />}
           {tab === 'companies' && (
             <CompaniesTab
               companies={companiesData?.adminCompanies ?? []}
@@ -940,7 +957,9 @@ function CompaniesTab({ companies, loading, error, busy, onOpen }: {
                 {c.pendingCount > 0 && <span className="db-badge db-badge-amber db-pending-badge">{c.pendingCount} pending</span>}
               </td>
               <td>
-                {c.configured
+                {c.accessStatus === 'PENDING' ? <span className="db-badge db-badge-amber">Awaiting approval</span>
+                  : c.accessStatus === 'REJECTED' ? <span className="db-badge db-badge-red">Declined</span>
+                  : c.configured
                   ? <span className="db-badge db-badge-green">Live</span>
                   : <span className="db-badge db-badge-grey">Not set up</span>}
               </td>
@@ -1445,6 +1464,12 @@ const dashStyles = `
   }
   .db-nav-title { font-size: 12px; font-weight: 500; color: var(--text-mid); letter-spacing: 0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
   .db-sb-nav { display: flex; flex-direction: column; gap: 2px; margin-top: 0.25rem; }
+  .db-sb-count {
+    margin-left: auto; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums;
+    background: var(--amber); color: #0b0d13;
+  }
   .db-sb-item {
     font-family: inherit; font-size: 13px; font-weight: 500; color: var(--text-mid);
     background: transparent; border: none; border-radius: var(--r-sm);

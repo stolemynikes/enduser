@@ -24,6 +24,8 @@ const transporter = PREVIEW
 
 const FROM_ADDRESS = process.env.SMTP_FROM ?? 'noreply@enduser.com';
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL ?? 'admin@enduser.com';
+/** Where requests and platform notices go — exported so callers can budget against it. */
+export const ADMIN_INBOX = ADMIN_EMAIL;
 const APP_URL = (process.env.FRONTEND_URL ?? 'http://localhost:5173').replace(/\/+$/, '');
 const PLATFORM = 'EU Statement';
 
@@ -174,5 +176,46 @@ export async function sendAdminNotification(submissionId: string, companyName: s
     html: layout(`<p>A new end-user statement was submitted by <strong>${esc(companyName)}</strong>
       and is pending review.</p>
       <p>Submission ID: ${esc(submissionId)}</p>`),
+  });
+}
+
+/** A company asked for access. The admin decides in the dashboard. */
+export async function sendAccessRequestToAdmin(companyName: string, ownerName: string, ownerEmail: string, note: string | null) {
+  return transporter.sendMail({
+    from: { name: PLATFORM, address: FROM_ADDRESS },
+    to: ADMIN_EMAIL,
+    subject: `Access request: ${companyName}`,
+    html: layout(`<p><strong>${esc(companyName)}</strong> asked for access.</p>
+      <p>${esc(ownerName)} &lt;${esc(ownerEmail)}&gt;</p>
+      ${note ? `<blockquote style="margin:0;padding:8px 12px;border-left:3px solid #ccc;color:#444">${esc(note)}</blockquote>` : '<p style="color:#888">No note was given.</p>'}
+      <p><a href="${esc(APP_URL)}/admin/dashboard"
+        style="display:inline-block;background:#1a3160;color:#fff;padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:600">Review the request</a></p>`),
+  });
+}
+
+/** The applicant's request was approved: their form is now open. */
+export async function sendAccessApproved(to: string, name: string, companyName: string, formUrl: string) {
+  return transporter.sendMail({
+    from: { name: PLATFORM, address: FROM_ADDRESS }, to,
+    subject: `${companyName} is approved`,
+    html: layout(`<p>Hi ${esc(name)},</p>
+      <p>Your access request for <strong>${esc(companyName)}</strong> is approved. Once your form is set up it accepts end-user statements at:</p>
+      <p><a href="${esc(formUrl)}">${esc(formUrl)}</a></p>
+      <p><a href="${esc(APP_URL)}/company/dashboard"
+        style="display:inline-block;background:#1a3160;color:#fff;padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:600">Open your dashboard</a></p>`),
+  });
+}
+
+/** The applicant's request was declined, with the reason given. */
+export async function sendAccessRejected(to: string, name: string, companyName: string, reason: string) {
+  return transporter.sendMail({
+    from: { name: PLATFORM, address: FROM_ADDRESS }, to,
+    // The sender address takes no replies; a reply reaches the admin who decided.
+    replyTo: ADMIN_EMAIL,
+    subject: `Your access request for ${companyName}`,
+    html: layout(`<p>Hi ${esc(name)},</p>
+      <p>Your access request for <strong>${esc(companyName)}</strong> was not approved.</p>
+      <p style="padding:8px 12px;border-left:3px solid #ccc;color:#444">${esc(reason)}</p>
+      <p>If you think this is a mistake, reply to this message.</p>`),
   });
 }

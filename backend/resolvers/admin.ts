@@ -6,6 +6,48 @@ import { translateStatement } from '../services/translate.ts';
 import { runSubstanceCheck } from './submission.ts';
 import { notify } from '../lib/notifications.ts';
 import { GraphQLError } from 'graphql';
+import { accessStatus } from '../lib/access.ts';
+import { mailBudgetAllows } from '../lib/mailBudget.ts';
+import { sendAccessApproved, sendAccessRejected } from '../services/email.ts';
+
+const APP_URL = (process.env.FRONTEND_URL ?? 'http://localhost:5173').replace(/\/+$/, '');
+
+const ACCESS_SELECT = {
+  id: true, name: true, slug: true, createdAt: true, formConfig: true, deletedAt: true,
+  approvedAt: true, rejectedAt: true, rejectionReason: true, requestNote: true,
+  members: {
+    where: { role: 'OWNER' as const }, orderBy: { createdAt: 'asc' as const }, take: 1,
+    select: { user: { select: { name: true, email: true, emailVerifiedAt: true } } },
+  },
+};
+type AccessRow = {
+  id: string; name: string; slug: string; createdAt: Date; formConfig: unknown;
+  approvedAt: Date | null; rejectedAt: Date | null; rejectionReason: string | null; requestNote: string | null;
+  members: { user: { name: string; email: string; emailVerifiedAt: Date | null } }[];
+};
+
+function toAccessRequest(c: AccessRow) {
+  const owner = c.members[0]?.user;
+  return {
+    id: c.id, name: c.name, slug: c.slug,
+    status: accessStatus(c),
+    requestNote: c.requestNote,
+    ownerName: owner?.name ?? null,
+    ownerEmail: owner?.email ?? null,
+    ownerEmailVerified: owner?.emailVerifiedAt != null,
+    formConfigured: c.formConfig != null,
+    rejectionReason: c.rejectionReason,
+    createdAt: c.createdAt.toISOString(),
+    decidedAt: (c.approvedAt ?? c.rejectedAt)?.toISOString() ?? null,
+  };
+}
+
+/** The company to decide on; a closed one cannot be. */
+async function decidable(id: string) {
+  const c = await prisma.company.findUnique({ where: { id }, select: ACCESS_SELECT });
+  if (!c || c.deletedAt) throw new GraphQLError('Company not found.');
+  return c;
+}
 
 type Ctx = { admin?: boolean; adminId?: string; needsEnrolment?: boolean };
 type BuyerType = 'INDIVIDUAL' | 'COMPANY';
@@ -40,6 +82,21 @@ function weekStart(d: Date) {
 
 export const adminResolvers = {
   Query: {
+    accessRequests: async (_: unknown, __: unknown, ctx: Ctx) => {
+      requireAdmin(ctx);
+      const [pending, decided] = await Promise.all([
+        prisma.company.findMany({
+          where: { deletedAt: null, approvedAt: null, rejectedAt: null },
+          orderBy: { createdAt: 'asc' }, take: 100, select: ACCESS_SELECT,
+        }),
+        prisma.company.findMany({
+          where: { deletedAt: null, OR: [{ rejectedAt: { not: null } }, { approvedById: { not: null } }] },
+          orderBy: { createdAt: 'desc' }, take: 20, select: ACCESS_SELECT,
+        }),
+      ]);
+      return [...pending, ...decided].map(toAccessRequest);
+    },
+
     adminCompanies: async (_: unknown, __: unknown, ctx: Ctx) => {
       requireAdmin(ctx);
       const companies = await prisma.company.findMany({
@@ -66,6 +123,7 @@ export const adminResolvers = {
         id: c.id,
         name: c.name,
         slug: c.slug,
+        accessStatus: accessStatus(c),
         membersCount: c._count.members,
         submissionsCount: c._count.submissions,
         pendingCount: pendingBy.get(c.id) ?? 0,
@@ -213,6 +271,47 @@ export const adminResolvers = {
   },
 
   Mutation: {
+    approveCompanyAccess: async (_: unknown, { id }: { id: string }, ctx: Ctx) => {
+      const adminId = requireAdmin(ctx);
+      const c = await decidable(id);
+      if (c.approvedAt) return toAccessRequest(c);
+      const updated = await prisma.company.update({
+        where: { id },
+        // Approving a previously declined company clears the old decision.
+        data: { approvedAt: new Date(), approvedById: adminId, rejectedAt: null, rejectionReason: null },
+        select: ACCESS_SELECT,
+      });
+      const owner = updated.members[0]?.user;
+      if (owner && await mailBudgetAllows(owner.email, 'access-decision')) {
+        void sendAccessApproved(owner.email, owner.name, updated.name, `${APP_URL}/${updated.slug}`).catch(() => {});
+      }
+      return toAccessRequest(updated);
+    },
+
+    rejectCompanyAccess: async (_: unknown, { id, reason }: { id: string; reason: string }, ctx: Ctx) => {
+      requireAdmin(ctx);
+      const why = typeof reason === 'string' ? reason.trim() : '';
+      // The applicant is told why; a refusal without a reason is not one they can answer.
+      if (why.length < 3) throw new GraphQLError('Give a reason — the applicant is told it.');
+      if (why.length > 1000) throw new GraphQLError('Keep the reason under 1000 characters.');
+      const c = await decidable(id);
+      if (c.approvedAt) {
+        // Closing an approved company's form is a different act with different
+        // consequences for buyers already mid-way; it is not done from here.
+        throw new GraphQLError('This company is already approved.');
+      }
+      const updated = await prisma.company.update({
+        where: { id },
+        data: { rejectedAt: new Date(), rejectionReason: why },
+        select: ACCESS_SELECT,
+      });
+      const owner = updated.members[0]?.user;
+      if (owner && await mailBudgetAllows(owner.email, 'access-decision')) {
+        void sendAccessRejected(owner.email, owner.name, updated.name, why).catch(() => {});
+      }
+      return toAccessRequest(updated);
+    },
+
     // Issues a company OWNER token for the target company so the admin sees
     // exactly the owner's dashboard. The token carries support/adminId claims
     // and the session is recorded in SupportAccess.

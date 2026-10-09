@@ -136,6 +136,16 @@ model Company {
   deletionRequestedById String?
   /// Set when the grace period expires and the tenant is purged.
   deletedAt   DateTime?
+  /// Access is granted by hand. A new company can sign in and set up, but its
+  /// public form stays closed until a platform admin approves it — a form on
+  /// this domain collects identity documents, and who gets one is decided
+  /// before the first buyer arrives, not after.
+  approvedAt      DateTime?
+  approvedById    String?
+  rejectedAt      DateTime?
+  rejectionReason String?
+  /// What the applicant said about their business when requesting access.
+  requestNote     String?
   members     CompanyMember[]
   notifications Notification[]
   invites     CompanyInvite[]

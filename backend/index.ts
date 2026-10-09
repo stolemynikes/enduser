@@ -35,6 +35,7 @@ import {
 } from './services/diditSessionStore.ts';
 import { WEBHOOK_CONFIGURED, claimEvent, pruneEvents, verifyWebhook } from './services/diditWebhook.ts';
 import { purgeDeletedCompanies, DELETION_GRACE_DAYS, RETENTION_MONTHS } from './lib/retention.ts';
+import { accessStatus } from './lib/access.ts';
 import { pruneAuthTokens } from './lib/authTokens.ts';
 import { pruneMailBudget } from './lib/mailBudget.ts';
 import { pruneRevealLog } from './lib/reveal.ts';
@@ -139,6 +140,7 @@ const resolvers = {
   // time — that's the "setup completed" marker.
   Company: {
     formConfigured: (c: { formConfig?: unknown }) => c.formConfig != null,
+    accessStatus: (c: { approvedAt?: Date | null; rejectedAt?: Date | null }) => accessStatus(c),
     deletionRequestedAt: (c: { deletionRequestedAt?: Date | string | null }) =>
       c.deletionRequestedAt instanceof Date ? c.deletionRequestedAt.toISOString() : c.deletionRequestedAt ?? null,
     // When the grace period runs out, so the dashboard can count down.

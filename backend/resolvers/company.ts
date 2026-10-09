@@ -4,7 +4,9 @@ import { prisma } from '../lib/prisma.ts';
 import { signCompanyToken } from '../services/companyAuth.ts';
 import {
   sendCompanyInvite, sendApproved, sendDenied, sendPasswordReset, sendEmailVerification,
+  sendAccessRequestToAdmin, ADMIN_INBOX,
 } from '../services/email.ts';
+import { REGISTRATION_OPEN, formOpen } from '../lib/access.ts';
 import { consumeToken, issueToken } from '../lib/authTokens.ts';
 import { hashToken, randomToken } from '../lib/tokens.ts';
 import { mailBudgetAllows } from '../lib/mailBudget.ts';
@@ -84,24 +86,6 @@ function requireOwnerOrPlus(ctx: Ctx) {
   const m = requireCompany(ctx);
   if (m.role !== 'OWNER' && m.role !== 'EMPLOYEE_PLUS') throw new Error('Insufficient permissions');
   return m;
-}
-
-/**
- * A form is only live once its owner has proved they own the address they signed
- * up with.
- *
- * Without this, anyone could register using someone else's address, claim a slug
- * trading on their name, and have a working public form on this domain —
- * collecting buyers' details and pushing them through a real identity check
- * under a brand they do not own.
- */
-async function ownerVerified(companyId: string): Promise<boolean> {
-  const owner = await prisma.companyMember.findFirst({
-    where: { companyId, role: 'OWNER' },
-    select: { user: { select: { emailVerifiedAt: true } } },
-    orderBy: { createdAt: 'asc' },
-  });
-  return owner?.user.emailVerifiedAt != null;
 }
 
 async function membershipOrThrow(companyId: string, companyUserId: string) {
@@ -329,8 +313,8 @@ export const companyResolvers = {
       if (!company || company.deletedAt) return null;
       return {
         companyName: company.name,
-        // Configured *and* the owner's address confirmed — see ownerVerified().
-        configured: company.formConfig != null && await ownerVerified(company.id),
+        // Configured, approved and the owner's address confirmed — see lib/access.ts.
+        configured: company.formConfig != null && await formOpen(company.id),
         config: resolveConfig(company.formConfig),
         // The form asks for identity verification only when the platform can
         // actually run one — otherwise the buyer would fill in everything and
@@ -425,8 +409,8 @@ export const companyResolvers = {
   Mutation: {
     registerCompany: async (
       _: unknown,
-      { name, slug, email, password, yourName, turnstileToken }:
-        { name: string; slug: string; email: string; password: string; yourName: string; turnstileToken?: string }
+      { name, slug, email, password, yourName, turnstileToken, requestNote }:
+        { name: string; slug: string; email: string; password: string; yourName: string; turnstileToken?: string; requestNote?: string }
     ) => {
       await verifyHumanOrThrow(turnstileToken);
       // The company name is shown on a public form and inside every email this
@@ -449,11 +433,15 @@ export const companyResolvers = {
       }
 
       const passwordHash = await bcrypt.hash(password, 12);
+      const note = typeof requestNote === 'string' ? requestNote.trim().slice(0, 1000) || null : null;
 
       const company = await prisma.company.create({
         data: {
           name: companyName,
           slug: slugClean,
+          requestNote: note,
+          // Registration is a request; see lib/access.ts.
+          approvedAt: REGISTRATION_OPEN ? new Date() : null,
           members: {
             create: {
               role: 'OWNER',
@@ -467,6 +455,14 @@ export const companyResolvers = {
 
       const member = await prisma.companyMember.findFirst({ where: { companyId: company.id }, include: { user: true } });
       void sendVerification(member!.user);
+      if (!REGISTRATION_OPEN) {
+        // One message per request to the platform admin. Budgeted per recipient
+        // like every other mail, so a burst of sign-ups cannot become a burst
+        // of mail.
+        if (await mailBudgetAllows(ADMIN_INBOX, 'access-request')) {
+          void sendAccessRequestToAdmin(companyName, ownerName, address, note).catch(() => {});
+        }
+      }
       const token = signCompanyToken({ companyUserId: member!.userId, companyId: company.id, role: 'OWNER' });
       return buildAuthPayload(token, company, 'OWNER');
     },

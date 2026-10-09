@@ -8,8 +8,8 @@ import { Wordmark } from '../src/components/Mark.tsx';
 import { Turnstile } from '../src/components/Turnstile.tsx';
 
 const REGISTER_COMPANY = gql`
-  mutation RegisterCompany($name: String!, $slug: String!, $email: String!, $password: String!, $yourName: String!, $turnstileToken: String) {
-    registerCompany(name: $name, slug: $slug, email: $email, password: $password, yourName: $yourName, turnstileToken: $turnstileToken) {
+  mutation RegisterCompany($name: String!, $slug: String!, $email: String!, $password: String!, $yourName: String!, $turnstileToken: String, $requestNote: String) {
+    registerCompany(name: $name, slug: $slug, email: $email, password: $password, yourName: $yourName, turnstileToken: $turnstileToken, requestNote: $requestNote) {
       token
       role
       company { id name slug }
@@ -30,12 +30,13 @@ function strengthOf(pw: string): Strength {
 
 export default function CompanyRegister() {
   const navigate = useNavigate();
-  useDocumentTitle('Register — EU Statement');
+  useDocumentTitle('Request access — EU Statement');
   const [companyName, setCompanyName] = useState('');
   const [yourName, setYourName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [password2, setPassword2] = useState('');
+  const [about, setAbout] = useState('');
   const [botToken, setBotToken] = useState('');
   const [error, setError] = useState('');
   const [register, { loading }] = useMutation<any>(REGISTER_COMPANY);
@@ -57,7 +58,7 @@ export default function CompanyRegister() {
     if (password.length < 8) { setError('Password must be at least 8 characters.'); return; }
     if (password2 !== password) { setError('Passwords don’t match.'); return; }
     try {
-      const { data } = await register({ variables: { name: companyName, slug, email, password, yourName, turnstileToken: botToken || undefined } });
+      const { data } = await register({ variables: { name: companyName, slug, email, password, yourName, turnstileToken: botToken || undefined, requestNote: about.trim() || undefined } });
       localStorage.setItem('companyToken', data.registerCompany.token);
       localStorage.setItem('companyRole', data.registerCompany.role);
       localStorage.setItem('companyName', data.registerCompany.company.name);
@@ -77,12 +78,15 @@ export default function CompanyRegister() {
             <Wordmark size={20} textClassName="cr-brand" accentClassName="cr-brand-accent" />
             <span className="cr-logo-tag">COMPANY</span>
           </div>
-          <h1 className="cr-title">Register your company</h1>
-          <p className="cr-sub">Create an account to manage end-user statements</p>
+          <h1 className="cr-title">Request access</h1>
+          <p className="cr-sub">
+            Every company is reviewed before its form goes live — the form collects identity
+            documents, so we check who runs one. You can sign in and set up while you wait.
+          </p>
           <form onSubmit={handleSubmit} className="cr-form">
             <div className="cr-field">
-              <label className="cr-label">Company Name</label>
-              <input className="cr-input" type="text" value={companyName}
+              <label className="cr-label" htmlFor="cr-company">Company Name</label>
+              <input id="cr-company" className="cr-input" type="text" value={companyName} autoComplete="organization"
                 onChange={e => setCompanyName(e.target.value)} required autoFocus />
             </div>
             <div className="cr-field">
@@ -95,18 +99,18 @@ export default function CompanyRegister() {
             </div>
             <hr className="cr-divider" />
             <div className="cr-field">
-              <label className="cr-label">Your Name</label>
-              <input className="cr-input" type="text" value={yourName}
+              <label className="cr-label" htmlFor="cr-name">Your Name</label>
+              <input id="cr-name" className="cr-input" type="text" value={yourName}
                 onChange={e => setYourName(e.target.value)} required autoComplete="name" />
             </div>
             <div className="cr-field">
-              <label className="cr-label">Your Email</label>
-              <input className="cr-input" type="email" value={email}
+              <label className="cr-label" htmlFor="cr-email">Your Email</label>
+              <input id="cr-email" className="cr-input" type="email" value={email}
                 onChange={e => setEmail(e.target.value)} required autoComplete="email" />
             </div>
             <div className="cr-field">
-              <label className="cr-label">Password</label>
-              <PasswordInput className="cr-input" value={password}
+              <label className="cr-label" htmlFor="cr-password">Password</label>
+              <PasswordInput id="cr-password" className="cr-input" value={password}
                 onChange={setPassword} required minLength={8} autoComplete="new-password" />
               {password.length === 0 ? (
                 <span className="cr-hint">Minimum 8 characters</span>
@@ -124,8 +128,8 @@ export default function CompanyRegister() {
               )}
             </div>
             <div className="cr-field">
-              <label className="cr-label">Confirm Password</label>
-              <PasswordInput className={`cr-input${mismatch ? ' cr-input-bad' : ''}${match && strength !== 'short' ? ' cr-input-good' : ''}`}
+              <label className="cr-label" htmlFor="cr-password2">Confirm Password</label>
+              <PasswordInput id="cr-password2" className={`cr-input${mismatch ? ' cr-input-bad' : ''}${match && strength !== 'short' ? ' cr-input-good' : ''}`}
                 value={password2}
                 onChange={setPassword2} required minLength={8} autoComplete="new-password" />
               {mismatch && (
@@ -135,11 +139,27 @@ export default function CompanyRegister() {
                 <span className="cr-pw-note cr-pw-strong"><span className="cr-check">✓</span> Passwords match</span>
               )}
             </div>
+            <hr className="cr-divider" />
+            <div className="cr-field">
+              <label className="cr-label" htmlFor="cr-about">
+                About your business <span className="cr-optional">(optional, but it speeds things up)</span>
+              </label>
+              <textarea id="cr-about" className="cr-input cr-textarea" rows={3} maxLength={1000}
+                value={about} onChange={e => setAbout(e.target.value)} aria-describedby="cr-about-hint" />
+              <span className="cr-hint" id="cr-about-hint">
+                Your website, what you sell and roughly how many orders need a statement.
+              </span>
+            </div>
             <Turnstile onToken={setBotToken} theme="dark" />
                 {error && <div className="cr-error" role="alert">{error}</div>}
             <button className="cr-btn" type="submit" disabled={loading || !slug || !passwordOk}>
-              {loading ? 'Creating account…' : 'Create company account'}
+              {loading ? 'Sending request…' : 'Request access'}
             </button>
+            <p className="cr-legal">
+              By requesting access you agree to the <Link to="/terms" target="_blank">Terms</Link>,
+              the <Link to="/dpa" target="_blank">Data Processing Agreement</Link> and
+              the <Link to="/privacy" target="_blank">Privacy Policy</Link>.
+            </p>
           </form>
           <p className="cr-footer-link">
             Already have an account? <Link to="/login">Sign in</Link>
@@ -192,6 +212,11 @@ const styles = `
     transition: border-color 0.2s, box-shadow 0.2s;
   }
   .cr-input:focus { border-color: #5b9cf6; box-shadow: 0 0 0 3px rgba(91,156,246,0.15); }
+  .cr-textarea { resize: vertical; min-height: 76px; line-height: 1.5; }
+  .cr-optional { font-weight: 400; text-transform: none; letter-spacing: 0; opacity: 0.6; }
+  .cr-legal { font-size: 11.5px; line-height: 1.6; color: rgba(240,242,248,0.5); text-align: center; }
+  .cr-legal a { color: rgba(240,242,248,0.75); text-decoration: underline; text-underline-offset: 2px; }
+  .cr-legal a:hover { color: #5b9cf6; }
   .cr-input-bad, .cr-input-bad:focus { border-color: rgba(240,78,94,0.6); box-shadow: 0 0 0 3px rgba(240,78,94,0.12); }
   .cr-input-good, .cr-input-good:focus { border-color: rgba(62,207,142,0.55); box-shadow: 0 0 0 3px rgba(62,207,142,0.1); }
   .cr-meter { height: 4px; background: rgba(255,255,255,0.07); border-radius: 100px; overflow: hidden; margin-top: 2px; }

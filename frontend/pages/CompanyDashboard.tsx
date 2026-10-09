@@ -123,7 +123,7 @@ const CLEAR_OVERRIDE = gql`
   }
 `;
 const MY_COMPANY = gql`
-  query MyCompany { myCompany { id formConfigured deletionRequestedAt deletionScheduledFor } myRole }
+  query MyCompany { myCompany { id formConfigured accessStatus rejectionReason deletionRequestedAt deletionScheduledFor } myRole }
 `;
 
 type IdDocumentType = 'PASSPORT' | 'ID_CARD';
@@ -903,6 +903,25 @@ export default function CompanyDashboard() {
                   {resending ? 'Sending…' : 'Send the link again'}
                 </button>
                 <button className="cd-banner-x" aria-label="Dismiss" onClick={() => setVerificationDismissed(true)}>×</button>
+              </span>
+            </div>
+          )}
+          {/* Not dismissible: it states why the form is closed, and the reason
+              stays true until someone decides. Words carry the state, not only the colour. */}
+          {myCompanyData?.myCompany?.accessStatus === 'PENDING' && (
+            <div className="cd-banner cd-banner--info" role="status">
+              <span>
+                <b>Your access request is being reviewed.</b> You can set up your form and invite your
+                team now; the form goes live once it is approved. You&rsquo;ll get an email either way.
+              </span>
+            </div>
+          )}
+          {myCompanyData?.myCompany?.accessStatus === 'REJECTED' && (
+            <div className="cd-banner cd-banner--danger" role="status">
+              <span>
+                <b>Your access request was not approved.</b>
+                {myCompanyData.myCompany.rejectionReason && <> Reason: {myCompanyData.myCompany.rejectionReason}</>}
+                {' '}Reply to the email you received if you think this is a mistake.
               </span>
             </div>
           )}
@@ -1773,6 +1792,7 @@ const styles = `
     border-radius: var(--cd-r); padding: 12px 16px; margin-bottom: 18px; font-size: 12.5px; color: var(--cd-text);
   }
   .cd-banner--danger { background: rgba(240,78,94,0.08); border-color: rgba(240,78,94,0.3); }
+  .cd-banner--info { background: rgba(91,156,246,0.08); border-color: rgba(91,156,246,0.3); }
   .cd-banner-actions { display: flex; align-items: center; gap: 8px; }
   .cd-banner-btn {
     font: inherit; font-size: 11.5px; padding: 6px 12px; cursor: pointer; white-space: nowrap;

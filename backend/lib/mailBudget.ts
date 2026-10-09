@@ -28,6 +28,11 @@ const BUDGETS: Record<string, { max: number; minutes: number }> = {
   // the public form, so they are budgeted per tenant / per inbox too.
   'seller-notify': { max: 60, minutes: 60 },
   'admin-notify': { max: 60, minutes: 60 },
+  // Sign-ups notify the platform admin. Generous for real interest, small
+  // enough that a scripted burst of registrations cannot flood the inbox.
+  'access-request': { max: 20, minutes: 60 },
+  // The applicant hears about the decision once; a decision is not repeated.
+  'access-decision': { max: 5, minutes: 60 },
 };
 
 /**

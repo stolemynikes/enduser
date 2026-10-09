@@ -112,7 +112,7 @@ export default function LandingPage() {
           <Wordmark size={20} textClassName="lp-brand" accentClassName="lp-brand-accent" />
           <div className="lp-nav-right">
             <Link to="/login" className="lp-nav-link">Sign in</Link>
-            <Link to="/register" className="lp-nav-cta">Get started</Link>
+            <Link to="/register" className="lp-nav-cta">Request access</Link>
           </div>
         </nav>
 
@@ -135,7 +135,7 @@ export default function LandingPage() {
                 verify identity &amp; VAT automatically, and approve or deny in one dashboard.
               </p>
               <div className="lp-hero-actions">
-                <Link to="/register" className="lp-btn-primary">Register your company</Link>
+                <Link to="/register" className="lp-btn-primary">Request access</Link>
                 <a href="#how" className="lp-btn-secondary">See how it works</a>
               </div>
             </div>
@@ -280,9 +280,9 @@ export default function LandingPage() {
         <section className="lp-cta lp-reveal">
           <div className="lp-cta-inner">
             <h2 className="lp-cta-title">Start collecting statements today</h2>
-            <p className="lp-cta-sub">Register your company, share your form link, and review your first submission in minutes.</p>
+            <p className="lp-cta-sub">Request access, set up your form while we review it, and share the link once it is approved.</p>
             <div className="lp-hero-actions">
-              <Link to="/register" className="lp-btn-primary lp-btn-lg">Register your company</Link>
+              <Link to="/register" className="lp-btn-primary lp-btn-lg">Request access</Link>
               <Link to="/login" className="lp-btn-secondary lp-btn-lg">Sign in</Link>
             </div>
           </div>
@@ -291,6 +291,13 @@ export default function LandingPage() {
         {/* ============ FOOTER ============ */}
         <footer className="lp-footer">
           <span className="lp-brand lp-brand--small">eu<span className="lp-brand-accent">statement</span></span>
+          <nav className="lp-footer-links" aria-label="Legal and documentation">
+            <Link to="/docs">Docs</Link>
+            <Link to="/how-it-works">For buyers</Link>
+            <Link to="/privacy">Privacy</Link>
+            <Link to="/terms">Terms</Link>
+            <Link to="/dpa">DPA</Link>
+          </nav>
           <span className="lp-footer-copy">© {new Date().getFullYear()} eustatement — end-user statement management</span>
         </footer>
 
@@ -564,6 +571,14 @@ const styles = `
     border-top: 1px solid rgba(255,255,255,0.06);
   }
   .lp-footer-copy { font-size: 11.5px; color: #4e566e; }
+  .lp-footer-links { display: flex; flex-wrap: wrap; gap: 4px 6px; }
+  .lp-footer-links a {
+    font-size: 12px; color: #8a93ab; text-decoration: none;
+    padding: 10px 8px; border-radius: 6px; /* 44px-tall hit area with the line height */
+    transition: color 150ms ease-out;
+  }
+  .lp-footer-links a:hover { color: #f0f2f8; }
+  .lp-footer-links a:focus-visible { outline: 2px solid #5b9cf6; outline-offset: 1px; }
 
   /* ===== RESPONSIVE ===== */
   @media (max-width: 880px) {

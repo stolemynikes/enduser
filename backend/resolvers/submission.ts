@@ -201,7 +201,7 @@ export const submissionResolvers = {
           // unconfirmed account accepts nothing, so registering under someone
           // else's address buys an attacker a dead page rather than a working
           // collection point.
-          if (co.deletedAt || co.members[0]?.user.emailVerifiedAt == null) {
+          if (co.deletedAt || co.members[0]?.user.emailVerifiedAt == null || !co.approvedAt) {
             throw buyerError('FORM_NOT_OPEN', 'This form is not accepting submissions yet.');
           }
           companyId = co.id;

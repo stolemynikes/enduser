@@ -222,11 +222,20 @@ export const typeDefs = `#graphql
     EMPLOYEE
   }
 
+  enum AccessStatus {
+    PENDING
+    APPROVED
+    REJECTED
+  }
+
   type Company {
     id: ID!
     name: String!
     slug: String!
     formConfigured: Boolean!
+    """Whether a platform admin has opened this company's form. Until then it takes no submissions."""
+    accessStatus: AccessStatus!
+    rejectionReason: String
     """Set once the owner closes the account; the purge follows 30 days later."""
     deletionRequestedAt: String
     deletionScheduledFor: String
@@ -278,10 +287,28 @@ export const typeDefs = `#graphql
     role: CompanyRole!
   }
 
+  """A company that asked for access, as the platform admin sees it."""
+  type AccessRequest {
+    id: ID!
+    name: String!
+    slug: String!
+    status: AccessStatus!
+    requestNote: String
+    ownerName: String
+    ownerEmail: String
+    """Whether the applicant has confirmed the address they signed up with."""
+    ownerEmailVerified: Boolean!
+    formConfigured: Boolean!
+    rejectionReason: String
+    createdAt: String!
+    decidedAt: String
+  }
+
   type CompanyActivity {
     id: ID!
     name: String!
     slug: String!
+    accessStatus: AccessStatus!
     membersCount: Int!
     submissionsCount: Int!
     pendingCount: Int!
@@ -494,6 +521,8 @@ export const typeDefs = `#graphql
     myAccount: MyAccount!
     identityVerificationAvailable: Boolean!
     adminCompanies: [CompanyActivity!]!
+    """Undecided access requests first, then the most recent decisions."""
+    accessRequests: [AccessRequest!]!
     adminInsights: AdminInsights!
     adminMfaStatus: MfaStatus!
     adminPasskeys: [PasskeyInfo!]!
@@ -514,7 +543,11 @@ export const typeDefs = `#graphql
     overrideSubmissionCheck(id: ID!, category: OverrideCategory!, reason: String!): Submission!
     clearSubmissionCheckOverride(id: ID!, category: OverrideCategory!): Submission!
     adminLogin(username: String!, password: String!, turnstileToken: String, totp: String): AuthPayload!
-    registerCompany(name: String!, slug: String!, email: String!, password: String!, yourName: String!, turnstileToken: String): CompanyAuthPayload!
+    registerCompany(name: String!, slug: String!, email: String!, password: String!, yourName: String!, turnstileToken: String, requestNote: String): CompanyAuthPayload!
+    """Opens a company's form. Platform admin only."""
+    approveCompanyAccess(id: ID!): AccessRequest!
+    """Declines an access request with a reason the applicant is told. Platform admin only."""
+    rejectCompanyAccess(id: ID!, reason: String!): AccessRequest!
     companyLogin(email: String!, password: String!, turnstileToken: String, totp: String): CompanyAuthPayload!
     inviteMember(email: String!, role: CompanyRole!): CompanyInviteResult!
     acceptInvite(token: String!, name: String!, password: String!): CompanyAuthPayload!
