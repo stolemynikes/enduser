@@ -167,7 +167,7 @@ export default function Dashboard() {
   // so a new one shows up without reloading the page.
   const { data: accessData } = useQuery<{ accessRequests: AccessRequest[] }>(ACCESS_REQUESTS, { pollInterval: 60_000 });
   const waitingAccess = (accessData?.accessRequests ?? []).filter(r => r.status === 'PENDING').length;
-  useDocumentTitle('Admin — EU Statement');
+  useDocumentTitle('Admin — eustatement');
   const [tab, setTab] = useState<Tab>(() =>
     (localStorage.getItem('admin-tab') as Tab) ?? 'submissions'
   );

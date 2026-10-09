@@ -330,7 +330,7 @@ export const adminResolvers = {
         companyId,
         kind: 'SUPPORT_ACCESS',
         title: 'Platform support opened your account',
-        body: 'A support session was started by EU Statement staff. '
+        body: 'A support session was started by eustatement staff. '
           + 'If you did not ask for help, reply to your last email from us.',
       });
       console.log(`[support] admin ${adminId} opened support session for company ${owner.company.slug} (${companyId})`);

@@ -30,7 +30,7 @@ function strengthOf(pw: string): Strength {
 
 export default function CompanyRegister() {
   const navigate = useNavigate();
-  useDocumentTitle('Request access — EU Statement');
+  useDocumentTitle('Request access — eustatement');
   const [companyName, setCompanyName] = useState('');
   const [yourName, setYourName] = useState('');
   const [email, setEmail] = useState('');

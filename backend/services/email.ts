@@ -27,7 +27,7 @@ const ADMIN_EMAIL = process.env.ADMIN_EMAIL ?? 'admin@enduser.com';
 /** Where requests and platform notices go — exported so callers can budget against it. */
 export const ADMIN_INBOX = ADMIN_EMAIL;
 const APP_URL = (process.env.FRONTEND_URL ?? 'http://localhost:5173').replace(/\/+$/, '');
-const PLATFORM = 'EU Statement';
+const PLATFORM = 'eustatement';
 
 /**
  * The buyer filled in a form belonging to a seller, not to us — so the seller's

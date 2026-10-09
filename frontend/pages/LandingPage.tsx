@@ -8,7 +8,7 @@ import { Wordmark } from '../src/components/Mark.tsx';
 gsap.registerPlugin(ScrollTrigger);
 
 export default function LandingPage() {
-  useDocumentTitle('EU Statement — Compliant end-user statements');
+  useDocumentTitle('eustatement — Compliant end-user statements');
   const root = useRef<HTMLDivElement>(null);
 
   useLayoutEffect(() => {

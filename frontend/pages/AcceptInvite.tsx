@@ -19,7 +19,7 @@ const ACCEPT_INVITE = gql`
 export default function AcceptInvite() {
   const { token } = useParams<{ token: string }>();
   const navigate = useNavigate();
-  useDocumentTitle('Accept invitation — EU Statement');
+  useDocumentTitle('Accept invitation — eustatement');
   const [name, setName] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');

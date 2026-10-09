@@ -165,7 +165,7 @@ export default function CompanyDashboard() {
   const navigate = useNavigate();
   const toast = useToast();
   const confirm = useConfirm();
-  useDocumentTitle(`${localStorage.getItem('companyName') ?? 'Company'} — EU Statement`);
+  useDocumentTitle(`${localStorage.getItem('companyName') ?? 'Company'} — eustatement`);
   // The stored role is only a first paint — the authoritative one comes back
   // with MyCompany below, so editing localStorage no longer changes what the
   // dashboard offers.

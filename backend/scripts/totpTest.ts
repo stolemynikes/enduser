@@ -120,11 +120,11 @@ check('a code for one secret does not fit another',
   !verifyTotp(generateSecret(), totp(generateSecret(), now), { atMs: now }).ok);
 check('steps are 30 seconds', counterFor(60_000) - counterFor(30_000) === 1);
 
-const uri = otpauthUri({ secret: 'JBSWY3DPEHPK3PXP', account: 'owner@example.com', issuer: 'EU Statement' });
+const uri = otpauthUri({ secret: 'JBSWY3DPEHPK3PXP', account: 'owner@example.com', issuer: 'eustatement' });
 check('the otpauth URI names the issuer and the account',
-  uri.startsWith('otpauth://totp/EU%20Statement%3Aowner%40example.com?')
+  uri.startsWith('otpauth://totp/eustatement%3Aowner%40example.com?')
   && uri.includes('secret=JBSWY3DPEHPK3PXP')
-  && uri.includes('issuer=EU+Statement')
+  && uri.includes('issuer=eustatement')
   && uri.includes('period=30')
   && uri.includes('digits=6'), uri);
 check('the typed form is grouped in fours',

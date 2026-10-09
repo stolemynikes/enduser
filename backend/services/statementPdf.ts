@@ -54,7 +54,7 @@ export function buildStatementPdf(
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ size: 'A4', margin: 56, info: {
       Title: 'End-User Statement',
-      Author: sellerName ?? 'EU Statement',
+      Author: sellerName ?? 'eustatement',
       Subject: `End-user statement ${submission.id}`,
     } });
 

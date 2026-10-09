@@ -96,7 +96,7 @@ function page(items: Captured[]): string {
 
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"/>
-<title>Email templates — EU Statement</title>
+<title>Email templates — eustatement</title>
 <style>
   :root { --ink:#0b0d13; --muted:#6b7485; --line:#e4e7ef; --accent:#5b9cf6; --ground:#f6f7fb; }
   body { margin:0; padding:40px 24px; background:var(--ground); color:var(--ink);

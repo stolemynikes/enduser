@@ -25,7 +25,7 @@ import { prisma } from './prisma.ts';
 
 export type AccountKind = 'companyUser' | 'admin';
 
-const RP_NAME = 'EU Statement';
+const RP_NAME = 'eustatement';
 
 /**
  * Which hostname credentials are bound to.

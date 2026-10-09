@@ -213,7 +213,7 @@ Chosen from the audit's QoL list and built in one pass. Twelve items:
   any Employee+ — the roles that can act on it — as bcc, so recipients do not see
   each other. The platform-admin notice is unchanged.
 - **Mail carries the seller's name.** Buyer-facing messages come from
-  "{Company} via EU Statement" and are signed by the company, with a line saying
+  "{Company} via eustatement" and are signed by the company, with a line saying
   it was sent on their behalf. The envelope address stays ours because SPF and
   DKIM are bound to our domain. Found and fixed alongside it: **company-side
   approve and deny sent the buyer nothing at all** — only the platform-admin path

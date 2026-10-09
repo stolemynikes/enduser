@@ -1,4 +1,4 @@
-# Coordinated vulnerability disclosure for EU Statement.
+# Coordinated vulnerability disclosure for eustatement.
 #
 # RFC 9116. If you have found a weakness in this platform, the address below is
 # the fastest way to reach somebody who can fix it. You will get a reply.

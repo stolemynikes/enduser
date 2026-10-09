@@ -18,7 +18,7 @@ import { formatSecretForTyping, generateSecret, otpauthUri, verifyTotp } from '.
 export type AccountKind = 'companyUser' | 'admin';
 
 /** What the apps will show as the heading for this entry. */
-const ISSUER = 'EU Statement';
+const ISSUER = 'eustatement';
 
 /** How many recovery codes an enrolment hands out. */
 const RECOVERY_CODE_COUNT = 10;

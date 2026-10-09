@@ -41,7 +41,7 @@ const COMPANY_LOGIN = gql`
 
 export default function CompanyLogin() {
   const navigate = useNavigate();
-  useDocumentTitle('Sign in — EU Statement');
+  useDocumentTitle('Sign in — eustatement');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [botToken, setBotToken] = useState('');

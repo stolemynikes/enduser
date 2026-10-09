@@ -18,7 +18,7 @@ const ADMIN_LOGIN = gql`
 `;
 
 export default function AdminLogin() {
-  useDocumentTitle('Admin sign in — EU Statement');
+  useDocumentTitle('Admin sign in — eustatement');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [botToken, setBotToken] = useState('');
