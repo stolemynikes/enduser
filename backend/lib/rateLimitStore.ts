@@ -5,6 +5,7 @@
 // deploy), and a second instance would double every limit.
 import type { Store, IncrementResponse, Options } from 'express-rate-limit';
 import { prisma } from './prisma.ts';
+import { pseudonym } from './tokens.ts';
 
 export class PrismaRateLimitStore implements Store {
   private windowMs = 60_000;
@@ -28,7 +29,7 @@ export class PrismaRateLimitStore implements Store {
   async increment(key: string): Promise<IncrementResponse> {
     const windowStart = this.windowStart();
     const resetTime = new Date(windowStart.getTime() + this.windowMs);
-    const composite = `${this.prefix}:${key}`;
+    const composite = this.keyFor(key);
     try {
       const row = await prisma.rateLimitHit.upsert({
         where: { key_windowStart: { key: composite, windowStart } },
@@ -47,13 +48,23 @@ export class PrismaRateLimitStore implements Store {
   async decrement(key: string): Promise<void> {
     const windowStart = this.windowStart();
     await prisma.rateLimitHit.updateMany({
-      where: { key: `${this.prefix}:${key}`, windowStart, count: { gt: 0 } },
+      where: { key: this.keyFor(key), windowStart, count: { gt: 0 } },
       data: { count: { decrement: 1 } },
     }).catch(() => {});
   }
 
   async resetKey(key: string): Promise<void> {
-    await prisma.rateLimitHit.deleteMany({ where: { key: `${this.prefix}:${key}` } }).catch(() => {});
+    await prisma.rateLimitHit.deleteMany({ where: { key: this.keyFor(key) } }).catch(() => {});
+  }
+
+  /**
+   * The key is the caller's IP address. It is counted, not kept: stored as a
+   * keyed hash, so the table holds no addresses — the Privacy Policy says as
+   * much, and this is what makes it true. The prefix stays readable so a
+   * limiter's rows can still be found.
+   */
+  private keyFor(key: string): string {
+    return `${this.prefix}:${pseudonym(key)}`;
   }
 }
 

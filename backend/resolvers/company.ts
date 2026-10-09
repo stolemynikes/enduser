@@ -105,6 +105,11 @@ const RESERVED_SLUGS = new Set([
   // Identity verification (Didit) routes and the embeddable form wrapper.
   'embed', 'verification-complete', 'verification-session', 'verification-status',
   'didit-webhook',
+  // The other public pages, and the account routes that were missing here: a
+  // company called "Reset" would otherwise have taken /reset/... from everyone.
+  'docs', 'privacy', 'terms', 'dpa', 'how-it-works', 'legal', 'help', 'contact',
+  'security', 'about', 'pricing', 'status',
+  'forgot', 'reset', 'verify', 'health', 'robots.txt', 'security-policy.txt',
   // Retired in-house OCR routes — still reserved so an old link can never be
   // shadowed by a company form.
   'extract-id', 'phone-session', 'phone-capture', 'phone-result',
