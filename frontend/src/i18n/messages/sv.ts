@@ -152,6 +152,9 @@ Det eller de beställda ämnena:
     BOT_CHECK_FAILED: 'Robotkontrollen godkändes inte. Försök igen.',
   },
 
+  poweredBy: 'Drivs av',
+  howItWorksLink: 'Hur fungerar det?',
+
   vcDocTitle: 'Kontrollen är klar',
   vcTitle: 'Kontrollen är slutförd',
   vcBody: 'Du kan stänga det här fönstret och gå tillbaka till formuläret. Det uppdateras av sig självt.',

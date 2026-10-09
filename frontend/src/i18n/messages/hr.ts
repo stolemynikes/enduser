@@ -152,6 +152,9 @@ Naručena tvar ili tvari:
     BOT_CHECK_FAILED: 'Provjera protiv robota nije uspjela. Pokušajte ponovno.',
   },
 
+  poweredBy: 'Pokreće',
+  howItWorksLink: 'Kako ovo funkcionira?',
+
   vcDocTitle: 'Provjera dovršena',
   vcTitle: 'Provjera je završena',
   vcBody: 'Ovaj prozor možete zatvoriti i vratiti se na obrazac. Sam se ažurira.',

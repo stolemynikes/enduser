@@ -152,6 +152,9 @@ A megrendelt anyag(ok)at:
     BOT_CHECK_FAILED: 'A robotszűrés nem sikerült. Próbálja újra.',
   },
 
+  poweredBy: 'Üzemelteti:',
+  howItWorksLink: 'Hogyan működik?',
+
   vcDocTitle: 'Ellenőrzés kész',
   vcTitle: 'Az ellenőrzés befejeződött',
   vcBody: 'Bezárhatja ezt az ablakot, és visszatérhet az űrlaphoz. Az magától frissül.',

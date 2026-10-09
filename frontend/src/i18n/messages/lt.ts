@@ -152,6 +152,9 @@ Užsakyta (-os) medžiaga (-os):
     BOT_CHECK_FAILED: 'Apsaugos nuo robotų patikra nepavyko. Bandykite dar kartą.',
   },
 
+  poweredBy: 'Veikia su',
+  howItWorksLink: 'Kaip tai veikia?',
+
   vcDocTitle: 'Patikrinimas atliktas',
   vcTitle: 'Patikrinimas baigtas',
   vcBody: 'Galite uždaryti šį langą ir grįžti prie formos. Ji atsinaujina pati.',

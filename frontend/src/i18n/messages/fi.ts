@@ -152,6 +152,9 @@ Tilattua ainetta tai tilattuja aineita:
     BOT_CHECK_FAILED: 'Robottitarkistus ei mennyt läpi. Yrittäkää uudelleen.',
   },
 
+  poweredBy: 'Palvelun tarjoaa',
+  howItWorksLink: 'Miten tämä toimii?',
+
   vcDocTitle: 'Tarkistus valmis',
   vcTitle: 'Tarkistus on päättynyt',
   vcBody: 'Voitte sulkea tämän ikkunan ja palata lomakkeeseen. Se päivittyy itsestään.',

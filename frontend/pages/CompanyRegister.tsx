@@ -90,7 +90,7 @@ export default function CompanyRegister() {
                 onChange={e => setCompanyName(e.target.value)} required autoFocus />
             </div>
             <div className="cr-field">
-              <label className="cr-label">Form URL</label>
+              <span className="cr-label">Form URL</span>
               <div className="cr-slug-preview">
                 <span className="cr-slug-prefix">/</span>
                 <span className={`cr-slug-value${slug ? '' : ' cr-slug-empty'}`}>{slug || 'your-company'}</span>

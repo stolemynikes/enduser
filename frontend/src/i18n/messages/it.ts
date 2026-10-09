@@ -152,6 +152,9 @@ La/le sostanza/e ordinata/e:
     BOT_CHECK_FAILED: 'Il controllo anti-robot non è stato superato. Riprovi.',
   },
 
+  poweredBy: 'Realizzato con',
+  howItWorksLink: 'Come funziona?',
+
   vcDocTitle: 'Verifica completata',
   vcTitle: 'Verifica terminata',
   vcBody: 'Può chiudere questa finestra e tornare al modulo. Si aggiorna da solo.',

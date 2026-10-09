@@ -152,6 +152,9 @@ A(s) substância(s) encomendada(s):
     BOT_CHECK_FAILED: 'A verificação anti-robô não foi aprovada. Tente novamente.',
   },
 
+  poweredBy: 'Com tecnologia',
+  howItWorksLink: 'Como funciona?',
+
   vcDocTitle: 'Verificação concluída',
   vcTitle: 'Verificação terminada',
   vcBody: 'Pode fechar esta janela e voltar ao formulário. Ele atualiza-se sozinho.',

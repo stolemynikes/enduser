@@ -152,6 +152,9 @@ Der/die bestellte(n) Stoff(e):
     BOT_CHECK_FAILED: 'Die Prüfung gegen Roboter wurde nicht bestanden. Bitte versuchen Sie es erneut.',
   },
 
+  poweredBy: 'Bereitgestellt von',
+  howItWorksLink: 'Wie funktioniert das?',
+
   vcDocTitle: 'Prüfung abgeschlossen',
   vcTitle: 'Prüfung beendet',
   vcBody: 'Sie können dieses Fenster schließen und zum Formular zurückkehren. Es aktualisiert sich selbst.',

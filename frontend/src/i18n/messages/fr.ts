@@ -152,6 +152,9 @@ La ou les substances commandées :
     BOT_CHECK_FAILED: 'La vérification anti-robot a échoué. Veuillez réessayer.',
   },
 
+  poweredBy: 'Propulsé par',
+  howItWorksLink: 'Comment cela fonctionne-t-il ?',
+
   vcDocTitle: 'Vérification terminée',
   vcTitle: 'Vérification terminée',
   vcBody: 'Vous pouvez fermer cette fenêtre et revenir au formulaire. Il se met à jour tout seul.',

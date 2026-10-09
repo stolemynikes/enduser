@@ -158,6 +158,9 @@ Maidir leis an tsubstaint nó na substaintí a ordaíodh:
     BOT_CHECK_FAILED: 'Níor éirigh leis an seiceáil frith-róbait. Bain triail eile as.',
   },
 
+  poweredBy: 'Á chumhachtú ag',
+  howItWorksLink: 'Conas a oibríonn sé?',
+
   vcDocTitle: 'Fíorú críochnaithe',
   vcTitle: 'Tá an fíorú thart',
   vcBody: 'Is féidir leat an fhuinneog seo a dhúnadh agus filleadh ar an bhfoirm. Nuashonraíonn sí í féin.',

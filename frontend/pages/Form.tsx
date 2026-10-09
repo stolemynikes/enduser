@@ -737,6 +737,16 @@ function StatementForm({ embed }: { embed: boolean }) {
 
         <footer className="eu-footer">
           <p>{t.footer}</p>
+          {/* New tab on purpose: following either link must not cost the buyer a
+              half-filled form, and inside a seller's iframe it must not navigate
+              the frame away from the form either. */}
+          <p className="eu-powered">
+            {t.poweredBy}{' '}
+            <a href="/" target="_blank" rel="noopener">eustatement</a>
+            <span aria-hidden="true"> · </span>
+            <a href={`/how-it-works?lang=${lang}${slug ? `&seller=${encodeURIComponent(slug)}` : ''}`}
+              target="_blank" rel="noopener">{t.howItWorksLink}</a>
+          </p>
         </footer>
       </div>
     </>
@@ -1302,6 +1312,18 @@ const styles = `
   }
 
   /* FOOTER */
+  /* .eu-footer p is uppercase and tiny for the legal line; this line is read. */
+  .eu-footer .eu-powered {
+    margin-top: 0.75rem;
+    font-size: 11.5px; letter-spacing: 0.02em; text-transform: none;
+    color: var(--text-mid);
+  }
+  .eu-powered a {
+    color: var(--navy-mid); text-decoration: underline; text-underline-offset: 2px;
+    display: inline-block; padding: 6px 2px; /* a larger hit area without moving the line */
+  }
+  .eu-powered a:hover { color: var(--navy); }
+  .eu-powered a:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
   .eu-footer {
     margin-top: 2.5rem;
     padding-top: 1rem;

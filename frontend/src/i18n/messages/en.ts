@@ -181,6 +181,10 @@ The ordered substance(s):
   },
 
   // ── Page Didit returns the buyer to ────────────────────────────────────
+  /** Under every form. The name stays as the product name in every language. */
+  poweredBy: 'Powered by',
+  howItWorksLink: 'How does this work?',
+
   vcDocTitle: 'Verification complete',
   vcTitle: 'Verification finished',
   vcBody: 'You can close this window and go back to the form. It updates by itself.',

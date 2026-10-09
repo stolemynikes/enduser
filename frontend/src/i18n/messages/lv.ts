@@ -152,6 +152,9 @@ Pasūtīto vielu (vielas):
     BOT_CHECK_FAILED: 'Pretrobotu pārbaude nebija sekmīga. Mēģiniet vēlreiz.',
   },
 
+  poweredBy: 'Nodrošina',
+  howItWorksLink: 'Kā tas darbojas?',
+
   vcDocTitle: 'Pārbaude pabeigta',
   vcTitle: 'Pārbaude ir beigusies',
   vcBody: 'Varat aizvērt šo logu un atgriezties pie veidlapas. Tā atjaunojas pati.',

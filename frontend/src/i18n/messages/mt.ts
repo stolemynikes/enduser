@@ -155,6 +155,9 @@ Is-sustanza/i ordnata/i:
     BOT_CHECK_FAILED: 'Il-kontroll kontra r-robots ma għaddiex. Erġa’ pprova.',
   },
 
+  poweredBy: 'Imħaddem minn',
+  howItWorksLink: 'Kif jaħdem?',
+
   vcDocTitle: 'Verifika lesta',
   vcTitle: 'Il-verifika ntemmet',
   vcBody: 'Tista’ tagħlaq din it-tieqa u tmur lura għall-formola. Taġġorna ruħha.',

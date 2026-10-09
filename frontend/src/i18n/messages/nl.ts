@@ -152,6 +152,9 @@ De bestelde stof(fen):
     BOT_CHECK_FAILED: 'De controle tegen robots is niet geslaagd. Probeer het opnieuw.',
   },
 
+  poweredBy: 'Mogelijk gemaakt door',
+  howItWorksLink: 'Hoe werkt dit?',
+
   vcDocTitle: 'Controle voltooid',
   vcTitle: 'Controle afgerond',
   vcBody: 'U kunt dit venster sluiten en teruggaan naar het formulier. Het werkt zichzelf bij.',

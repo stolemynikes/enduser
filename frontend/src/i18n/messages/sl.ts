@@ -152,6 +152,9 @@ Naročena snov oziroma snovi:
     BOT_CHECK_FAILED: 'Preverjanje proti robotom ni uspelo. Poskusite znova.',
   },
 
+  poweredBy: 'Omogoča',
+  howItWorksLink: 'Kako to deluje?',
+
   vcDocTitle: 'Preverjanje zaključeno',
   vcTitle: 'Preverjanje je končano',
   vcBody: 'To okno lahko zaprete in se vrnete na obrazec. Posodobi se sam.',

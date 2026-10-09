@@ -152,6 +152,9 @@ Objednaná látka (látky):
     BOT_CHECK_FAILED: 'Kontrola proti robotom neprešla. Skúste to znova.',
   },
 
+  poweredBy: 'Prevádzkuje',
+  howItWorksLink: 'Ako to funguje?',
+
   vcDocTitle: 'Overenie dokončené',
   vcTitle: 'Overenie skončilo',
   vcBody: 'Toto okno môžete zavrieť a vrátiť sa k formuláru. Aktualizuje sa sám.',

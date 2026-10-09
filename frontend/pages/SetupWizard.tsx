@@ -28,7 +28,7 @@ const LAUNCH_STEP = SECURITY_STEP + 1;
 const TOTAL_STEPS = LAUNCH_STEP + 1;
 
 const WIZARD_ACCOUNT = gql`
-  query WizardAccount { myAccount { id mfaEnabled recoveryCodesLeft } }
+  query WizardAccount { myAccount { id mfaEnabled recoveryCodesLeft } myCompany { id accessStatus } }
 `;
 
 type Props = {
@@ -50,6 +50,9 @@ export default function SetupWizard({ companyName, companySlug, onDone }: Props)
   const { data: cfgData } = useQuery<any>(MY_FORM_CONFIG);
   const { data: idAvailData } = useQuery<any>(IDENTITY_AVAILABILITY);
   const { data: accountData, refetch: refetchAccount } = useQuery<any>(WIZARD_ACCOUNT);
+  // A new company sets up while its access request is reviewed; promising
+  // "you're live" would be untrue until an admin approves it.
+  const awaitingApproval = accountData?.myCompany?.accessStatus === 'PENDING';
   const mfaEnabled: boolean = accountData?.myAccount?.mfaEnabled ?? false;
   const identityAvailable: boolean = idAvailData?.identityVerificationAvailable ?? true;
   // Seeded once from the server, then owned by the wizard. Adjusted during
@@ -164,8 +167,13 @@ export default function SetupWizard({ companyName, companySlug, onDone }: Props)
             <span className="wz-wordmark"><Mark size={18} /> eu<b>statement</b></span>
             <h1 className="wz-title">Welcome, {companyName}</h1>
             <p className="wz-sub">
-              Let&rsquo;s set up your end-user statement form — a few quick choices and
-              you&rsquo;re live at <span className="wz-slug">/{companySlug}</span>.
+              {awaitingApproval ? (
+                <>Let&rsquo;s set up your end-user statement form while your access request is reviewed. It
+                goes live at <span className="wz-slug">/{companySlug}</span> once it is approved.</>
+              ) : (
+                <>Let&rsquo;s set up your end-user statement form — a few quick choices and
+                you&rsquo;re live at <span className="wz-slug">/{companySlug}</span>.</>
+              )}
             </p>
             <p className="wz-always">
               <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" width="12" height="12">
@@ -302,16 +310,22 @@ export default function SetupWizard({ companyName, companySlug, onDone }: Props)
 
           {revealed >= LAUNCH_STEP && (
             <div className="wz-step wz-launch" data-step={LAUNCH_STEP}>
-              <span className="wz-launch-icon">🚀</span>
-              <h2 className="wz-launch-title">Ready to launch</h2>
+              <span className="wz-launch-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M5 12.5l4.5 4.5L19 7.5" />
+                </svg>
+              </span>
+              <h2 className="wz-launch-title">{awaitingApproval ? 'Ready to save' : 'Ready to launch'}</h2>
               <p className="wz-launch-sub">
                 Your form collects {requiredCount} required and {optionalCount} optional extra
                 field{optionalCount === 1 ? '' : 's'}, identity verification{' '}
                 {draft.idVerification === 'REQUIRED' ? 'on' : 'off'}, terms as{' '}
                 {draft.customTermsMode === 'TEXT' ? 'text' : 'a link'}. You can change all of
                 this later under <b>Form Settings</b> — where you also find the code to put
-                the form straight on your own website. Your form goes live once you confirm your
-                email address.
+                the form straight on your own website.{' '}
+                {awaitingApproval
+                  ? 'Your form goes live once your access request is approved and your email address is confirmed — you’ll get an email.'
+                  : 'Your form goes live once you confirm your email address.'}
               </p>
               {!mfaEnabled && (
                 <p className="wz-launch-note">
@@ -322,7 +336,7 @@ export default function SetupWizard({ companyName, companySlug, onDone }: Props)
               )}
               {saveError && <span className="wz-error">{saveError}</span>}
               <button className="wz-launch-btn" onClick={launch} disabled={saving}>
-                {saving ? 'Launching…' : 'Save & launch form'}
+                {saving ? 'Saving…' : awaitingApproval ? 'Save form' : 'Save & launch form'}
               </button>
             </div>
           )}
@@ -444,7 +458,11 @@ const styles = `
   .wz-next-btn:hover { transform: translateY(-1px); box-shadow: 0 4px 16px rgba(26,49,96,0.55); }
 
   .wz-launch { text-align: center; padding: 2rem 1.5rem 2.25rem; }
-  .wz-launch-icon { font-size: 28px; display: block; margin-bottom: 0.5rem; }
+  .wz-launch-icon {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 44px; height: 44px; border-radius: 50%; margin-bottom: 0.75rem;
+    background: rgba(91,156,246,0.12); color: #5b9cf6;
+  }
   .wz-launch-title { font-size: 19px; font-weight: 800; letter-spacing: -0.02em; margin-bottom: 0.5rem; }
   .wz-launch-sub { font-size: 12.5px; color: var(--wz-text-mid); line-height: 1.7; max-width: 420px; margin: 0 auto 1.25rem; }
   .wz-launch-sub b { color: var(--wz-text); font-weight: 600; }

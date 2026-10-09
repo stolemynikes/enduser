@@ -152,6 +152,9 @@ Det eller de bestilte stoffer:
     BOT_CHECK_FAILED: 'Robotkontrollen blev ikke bestået. Prøv igen.',
   },
 
+  poweredBy: 'Leveret af',
+  howItWorksLink: 'Hvordan fungerer det?',
+
   vcDocTitle: 'Kontrol gennemført',
   vcTitle: 'Kontrollen er afsluttet',
   vcBody: 'Du kan lukke dette vindue og gå tilbage til formularen. Den opdaterer sig selv.',

@@ -152,6 +152,9 @@ Substanța (substanțele) comandată (comandate):
     BOT_CHECK_FAILED: 'Verificarea anti-robot nu a reușit. Încercați din nou.',
   },
 
+  poweredBy: 'Furnizat de',
+  howItWorksLink: 'Cum funcționează?',
+
   vcDocTitle: 'Verificare finalizată',
   vcTitle: 'Verificarea s-a încheiat',
   vcBody: 'Puteți închide această fereastră și reveni la formular. Se actualizează singur.',

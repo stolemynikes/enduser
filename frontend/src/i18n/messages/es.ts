@@ -152,6 +152,9 @@ La(s) sustancia(s) pedida(s):
     BOT_CHECK_FAILED: 'No se ha superado la comprobación antirrobot. Inténtelo de nuevo.',
   },
 
+  poweredBy: 'Con la tecnología de',
+  howItWorksLink: '¿Cómo funciona?',
+
   vcDocTitle: 'Verificación completada',
   vcTitle: 'Verificación terminada',
   vcBody: 'Puede cerrar esta ventana y volver al formulario. Se actualiza solo.',

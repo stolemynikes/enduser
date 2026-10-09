@@ -152,6 +152,9 @@ Zamówiona(-e) substancja(-e):
     BOT_CHECK_FAILED: 'Kontrola antyrobotowa nie powiodła się. Proszę spróbować ponownie.',
   },
 
+  poweredBy: 'Obsługiwane przez',
+  howItWorksLink: 'Jak to działa?',
+
   vcDocTitle: 'Weryfikacja zakończona',
   vcTitle: 'Weryfikacja zakończona',
   vcBody: 'Można zamknąć to okno i wrócić do formularza. Odświeża się on sam.',

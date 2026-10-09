@@ -152,6 +152,9 @@ Tellitud ainet või aineid:
     BOT_CHECK_FAILED: 'Robotikontroll ei läinud läbi. Proovige uuesti.',
   },
 
+  poweredBy: 'Teenust pakub',
+  howItWorksLink: 'Kuidas see toimib?',
+
   vcDocTitle: 'Kontroll on lõpetatud',
   vcTitle: 'Kontroll on lõppenud',
   vcBody: 'Võite selle akna sulgeda ja vormi juurde tagasi minna. See uueneb ise.',

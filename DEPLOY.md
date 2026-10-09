@@ -215,6 +215,25 @@ the key is one theft away from being plaintext.
 
 Test a restore before you need one. An untested backup is a belief.
 
+**Keep no dump longer than 30 days.** The Privacy Policy and the DPA both say
+backups rotate out within 30 days; that is only true if something deletes them:
+
+```sh
+find /path/to/backups -name 'enduser-*.sql.gz' -mtime +30 -delete
+```
+
+### Before launch: the legal pages
+
+`/privacy`, `/terms`, `/dpa`, `/docs` and the buyers' `/how-it-works` read their
+facts from `frontend/src/lib/legal.ts`. Three things there are placeholders:
+
+- `CONTACT_EMAIL` — create the mailbox on the production domain.
+- The email provider in `SUB_PROCESSORS` — name it once SMTP is chosen.
+- Didit's legal entity and location — copy them from the DPA you sign with Didit.
+
+Then set `LAST_UPDATED`. Any later change to retention, verification or
+sub-processors changes that file and that date in the same commit.
+
 ## 5. Enrol, then enforce
 
 In this order, or the next step locks you out:
