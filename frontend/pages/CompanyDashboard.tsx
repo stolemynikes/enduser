@@ -634,7 +634,7 @@ export default function CompanyDashboard() {
   const supportBanner = supportMode ? (
     <>
       <style>{supportStyles}</style>
-      <div className="cd-support-banner">
+      <div className={`cd-support-banner${theme === 'light' ? ' cd-support-banner--light' : ''}`}>
         <span>Support view — acting as <b>{companyName}</b></span>
         <button className="cd-support-return" onClick={exitSupport}>Return to admin</button>
       </div>
@@ -854,7 +854,7 @@ export default function CompanyDashboard() {
         <nav className="cd-sidebar">
           <div className="cd-sb-top">
             <div className="cd-sb-brand">
-              <span className="cd-nav-wordmark"><Mark size={17} /> <span className="wordmark-text">eustatement</span></span>
+              <span className="cd-nav-wordmark"><Mark size={17} tone={theme === 'light' ? 'light' : 'dark'} /> <span className="wordmark-text">eustatement</span></span>
               <div className="cd-sb-meta">
                 <span className="cd-nav-tag">{roleLabels[role]}</span>
                 <span className="cd-nav-title">{companyName}</span>
@@ -1724,6 +1724,7 @@ const supportStyles = `
     white-space: nowrap;
   }
   .cd-support-banner b { font-weight: 600; }
+  .cd-support-banner--light { background: #fff4e0; border-color: rgba(161,92,7,0.35); color: #7a4505; box-shadow: 0 6px 24px rgba(15,23,42,0.12); }
   .cd-support-return {
     border: none; cursor: pointer;
     padding: 6px 13px; border-radius: 100px;
@@ -1783,6 +1784,7 @@ const styles = `
     color: #1a1405; background: var(--cd-amber); border-radius: var(--cd-r-pill);
     padding: 1px 6px; min-width: 18px; text-align: center;
   }
+  .cd-light .cd-sb-count { color: #ffffff; }
   .cd-sb-item svg { flex-shrink: 0; opacity: 0.7; }
   .cd-sb-active svg { opacity: 1; }
   .cd-sb-link { text-decoration: none; }
@@ -2138,16 +2140,24 @@ const styles = `
   .cd-invite-link { font-size: 11px; color: var(--cd-text-mid); background: var(--cd-surface2); border: 1px solid var(--cd-border2); border-radius: var(--cd-r-sm); padding: 10px 12px; word-break: break-all; }
 
   /* ── LIGHT THEME ─────────────────────────────────── */
+  /* Light theme. Every text colour clears 4.5:1 on white, borders are strong
+     enough to see the cards, and the status colours are the deeper shades
+     that stay readable on a pale ground (the dark theme's bright green and
+     amber all but vanish on white). */
   .cd-light {
-    --cd-bg:       #f4f6fb;
+    --cd-bg:       #eceff4;
     --cd-surface:  #ffffff;
-    --cd-surface2: #f0f2f8;
-    --cd-surface3: #e8ebf4;
-    --cd-border:   rgba(0,0,0,0.08);
-    --cd-border2:  rgba(0,0,0,0.13);
-    --cd-text:     #111827;
-    --cd-text-mid: #4b5568;
-    --cd-text-dim: #94a3b8;
+    --cd-surface2: #f1f3f7;
+    --cd-surface3: #e3e7ee;
+    --cd-border:   rgba(15,23,42,0.12);
+    --cd-border2:  rgba(15,23,42,0.2);
+    --cd-text:     #0f172a;
+    --cd-text-mid: #374151;
+    --cd-text-dim: #5b6474;
+    --cd-accent:   #c8283a;
+    --cd-green:    #12804f;
+    --cd-amber:    #a15c07;
+    --cd-blue:     #1f5fd1;
   }
   .cd-light .cd-row--green { background: rgba(62,207,142,0.09); }
   .cd-light .cd-row--green:hover { background: rgba(62,207,142,0.15); }

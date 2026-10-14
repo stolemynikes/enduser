@@ -164,7 +164,7 @@ export default function SetupWizard({ companyName, companySlug, onDone }: Props)
         <div className="wz-progress"><div className="wz-progress-fill" style={{ width: `${(revealed / (TOTAL_STEPS - 1)) * 100}%` }} /></div>
         <div className="wz-col">
           <div className="wz-intro">
-            <span className="wz-wordmark"><Mark size={18} /> <span className="wordmark-text">eustatement</span></span>
+            <span className="wz-wordmark"><Mark size={18} tone={theme === 'light' ? 'light' : 'dark'} /> <span className="wordmark-text">eustatement</span></span>
             <h1 className="wz-title">Welcome, {companyName}</h1>
             <p className="wz-sub">
               {awaitingApproval ? (

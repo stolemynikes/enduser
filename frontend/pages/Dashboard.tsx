@@ -401,7 +401,7 @@ export default function Dashboard() {
         <nav className="db-sidebar">
           <div className="db-sb-top">
             <div className="db-sb-brand">
-              <span className="db-nav-wordmark"><Mark size={17} /> <span className="wordmark-text">eustatement</span></span>
+              <span className="db-nav-wordmark"><Mark size={17} tone={theme === 'light' ? 'light' : 'dark'} /> <span className="wordmark-text">eustatement</span></span>
               <div className="db-sb-meta">
                 <span className="db-nav-tag">ADMIN</span>
                 <span className="db-nav-title">End-User Statements</span>
@@ -1989,16 +1989,22 @@ const dashStyles = `
   }
 
   /* ── LIGHT THEME ─────────────────────────────────── */
+  /* Light theme: text at 4.5:1 or better on white, visible borders, and the
+     deeper status colours that stay readable on a pale ground. */
   .db-light {
-    --bg:       #f4f6fb;
+    --bg:       #eceff4;
     --surface:  #ffffff;
-    --surface2: #f0f2f8;
-    --surface3: #e8ebf4;
-    --border:   rgba(0,0,0,0.08);
-    --border2:  rgba(0,0,0,0.13);
-    --text:     #111827;
-    --text-mid: #4b5568;
-    --text-dim: #94a3b8;
+    --surface2: #f1f3f7;
+    --surface3: #e3e7ee;
+    --border:   rgba(15,23,42,0.12);
+    --border2:  rgba(15,23,42,0.2);
+    --text:     #0f172a;
+    --text-mid: #374151;
+    --text-dim: #5b6474;
+    --accent:   #c8283a;
+    --green:    #12804f;
+    --amber:    #a15c07;
+    --blue:     #1f5fd1;
     --shadow-sm: 0 2px 8px rgba(0,0,0,0.07);
     --shadow-md: 0 8px 32px rgba(0,0,0,0.1);
     --shadow-lg: 0 24px 64px rgba(0,0,0,0.16);
@@ -2014,8 +2020,8 @@ const dashStyles = `
   .db-light .db-sb-theme, .db-light .db-sb-signout { color: #6b7280; }
   .db-light .db-sb-theme:hover, .db-light .db-sb-signout:hover { color: #111827; background: rgba(0,0,0,0.05); }
   .db-light .db-filter-btn { background: var(--surface2); border-color: var(--border2); color: var(--text-mid); }
-  .db-light .db-filter-active { background: #111827; border-color: #111827; color: #fff; }
-  .db-light .db-filter-active .db-filter-count { background: rgba(255,255,255,0.2); color: #fff; }
+  .db-light .db-filter-active { background: var(--surface3); border-color: var(--border2); color: var(--text); }
+  .db-light .db-filter-active .db-filter-count { background: rgba(15,23,42,0.12); color: var(--text); }
   .db-light .db-date, .db-light .db-date-preset { background: #fff; color: #111827; border-color: rgba(0,0,0,0.13); }
   .db-light .db-date { color-scheme: light; }
   .db-light .db-date-preset { color: var(--text-mid); }
