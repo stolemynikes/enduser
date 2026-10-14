@@ -65,7 +65,6 @@ export function RevealDocumentNumber({
   // by Apollo — the mutation result is read once, here.
   useEffect(() => {
     if (value == null) return;
-    setRemaining(VISIBLE_MS);
     const started = Date.now();
     const tick = setInterval(() => {
       const left = VISIBLE_MS - (Date.now() - started);
@@ -86,6 +85,7 @@ export function RevealDocumentNumber({
     try {
       const { data } = await reveal({ variables: { id: submissionId, credential } });
       setValue(data.revealDocumentNumber.documentNumber ?? '—');
+      setRemaining(VISIBLE_MS);
       setAsking(false);
       setCredential('');
     } catch (err: any) {

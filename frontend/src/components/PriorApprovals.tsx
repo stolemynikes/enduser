@@ -9,6 +9,7 @@
 // buyer whose identity check just failed is still blocked. The notice says what
 // matched — the same person, the same company, the same substances — because
 // "we have seen this before" is only useful if you can see on what grounds.
+import { useState } from 'react';
 import { gql } from '@apollo/client';
 import { useQuery } from '@apollo/client/react';
 
@@ -48,6 +49,8 @@ export function PriorApprovals({
     variables: { id: submissionId },
     fetchPolicy: 'cache-and-network',
   });
+  // Read once when the panel opens; "months ago" does not need to tick.
+  const [now] = useState(Date.now);
 
   const prior = data?.priorApprovals;
   const matches: Match[] = prior?.matches ?? [];
@@ -56,7 +59,7 @@ export function PriorApprovals({
   if (total === 0) return null;
 
   const months = oldestAt
-    ? Math.floor((Date.now() - new Date(oldestAt).getTime()) / (30 * 24 * 60 * 60 * 1000))
+    ? Math.floor((now - new Date(oldestAt).getTime()) / (30 * 24 * 60 * 60 * 1000))
     : 0;
   const date = (iso: string) =>
     new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });

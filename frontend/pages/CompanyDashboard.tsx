@@ -220,12 +220,12 @@ export default function CompanyDashboard() {
     variables: listVariables,
     notifyOnNetworkStatusChange: true,
   });
-  // The queue is refused outright while a factor is required and this account
-  // has none, so that refusal is the signal — read off the query's own error
-  // rather than through a callback, which Apollo 4 no longer offers here.
-  useEffect(() => {
-    if (subError && mfaEnrolmentRequired(subError)) setEnrolmentRequired(true);
-  }, [subError]);
+  // The queue is refused outright while a second factor is required and this
+  // account has none, so that refusal — not a flag on the account — is what
+  // tells us to show the enrolment screen. One source of truth, and it is the
+  // server's. Read straight off the query's own error: it clears once a
+  // refetch succeeds, which is how the block lifting is noticed.
+  const enrolmentRequired = !!subError && mfaEnrolmentRequired(subError);
   const { data: countData, refetch: refetchCounts } = useQuery<any>(GET_COUNTS, {
     variables: { includeTest: testMode },
   });
@@ -234,11 +234,6 @@ export default function CompanyDashboard() {
   const loadingMore = useRef(false);
   const { data: memberData, refetch: refetchMembers } = useQuery<any>(GET_MEMBERS, { skip: !isOwner });
   const { data: accountData, refetch: refetchAccount } = useQuery<any>(MY_ACCOUNT);
-  // The queue is refused outright while a second factor is required and this
-  // account has none, so that refusal — not a flag on the account — is what
-  // tells us to show the enrolment screen. One source of truth, and it is the
-  // server's.
-  const [enrolmentRequired, setEnrolmentRequired] = useState(false);
   const [refreshSession] = useMutation<any>(REFRESH_SESSION);
   const { data: companiesData } = useQuery<any>(MY_COMPANIES);
   const account = accountData?.myAccount;
@@ -662,15 +657,14 @@ export default function CompanyDashboard() {
     setFilter('ALL');
     setPendingOpenId(id);
   };
-  useEffect(() => {
-    if (!pendingOpenId) return;
-    const row = submissions.find(r => r.id === pendingOpenId);
-    if (row) {
-      setSelected(row);
-      setModalMode('view');
-      setPendingOpenId(null);
-    }
-  }, [pendingOpenId, submissions]);
+  // Claimed during render (React's "adjust state when inputs change" pattern):
+  // the update applies before paint, without an extra effect pass.
+  const pendingRow = pendingOpenId ? submissions.find(r => r.id === pendingOpenId) : undefined;
+  if (pendingRow) {
+    setSelected(pendingRow);
+    setModalMode('view');
+    setPendingOpenId(null);
+  }
   const members: Member[] = memberData?.companyMembers ?? [];
 
   const availableFilters: Filter[] = canManage ? ['ALL', 'PENDING_REVIEW', 'APPROVED', 'DENIED'] : ['APPROVED', 'DENIED'];
@@ -786,7 +780,6 @@ export default function CompanyDashboard() {
           // it again rather than assuming the enrolment was enough.
           try {
             await refetch();
-            setEnrolmentRequired(false);
           } catch {
             // Still refused — stay on this screen.
           }

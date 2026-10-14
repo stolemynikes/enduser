@@ -42,7 +42,6 @@ export function AdminRevealDocument({ submissionId }: { submissionId: string }) 
   // Held in memory only, and dropped on a timer.
   useEffect(() => {
     if (value == null) return;
-    setRemaining(VISIBLE_MS);
     const started = Date.now();
     const tick = setInterval(() => {
       const left = VISIBLE_MS - (Date.now() - started);
@@ -58,6 +57,7 @@ export function AdminRevealDocument({ submissionId }: { submissionId: string }) 
     try {
       const { data } = await reveal({ variables: { id: submissionId, credential } });
       setValue(data.revealSubmissionDocumentNumber.documentNumber ?? '—');
+      setRemaining(VISIBLE_MS);
       setAsking(false);
       setCredential('');
     } catch (err: any) {

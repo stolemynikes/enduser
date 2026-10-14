@@ -14,7 +14,7 @@
 //     what people end up with otherwise and it tells them nothing later
 //   - a destructive remove is confirmed, and the last factor cannot be removed
 //   - every async action has a pending, a success and a specific failure state
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { gql } from '@apollo/client';
 import { useMutation, useQuery } from '@apollo/client/react';
 import { startRegistration } from '@simplewebauthn/browser';
@@ -56,21 +56,16 @@ export function PasskeySettings({ onChanged }: { onChanged?: () => void }) {
   const [finish] = useMutation<any>(FINISH);
   const [remove] = useMutation<any>(REMOVE);
 
-  const [supported, setSupported] = useState<boolean | null>(null);
+  // Checked once, up front: a button that fails on press is worse than a
+  // button that explains why it is not there.
+  const [supported] = useState(
+    () => typeof window !== 'undefined' && typeof window.PublicKeyCredential !== 'undefined',
+  );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [added, setAdded] = useState('');
 
   const passkeys: Passkey[] = data?.myPasskeys ?? [];
-
-  useEffect(() => {
-    // Checked once, up front: a button that fails on press is worse than a
-    // button that explains why it is not there.
-    setSupported(
-      typeof window !== 'undefined'
-      && typeof window.PublicKeyCredential !== 'undefined',
-    );
-  }, []);
 
   const enrol = async () => {
     setError('');
