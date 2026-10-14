@@ -806,10 +806,12 @@ function needsReview(s: Submission): boolean {
 }
 
 // Traffic-light row color: green=approved, red=denied/needs-attention, yellow=pending.
-function rowColor(s: Submission): 'green' | 'red' | 'yellow' {
+// Only a decision colours the row; open statements stay neutral, and the
+// status and check badges say whether one needs a closer look.
+function rowColor(s: Submission): 'green' | 'red' | 'plain' {
   if (s.status === 'APPROVED') return 'green';
   if (s.status === 'DENIED') return 'red';
-  return needsReview(s) ? 'red' : 'yellow';
+  return 'plain';
 }
 
 function ViesBadge({ status }: { status: 'VALID' | 'INVALID' | 'ERROR' | 'NOT_CHECKED' }) {
@@ -1548,9 +1550,6 @@ const dashStyles = `
   .db-row--green { background: rgba(62,207,142,0.06); }
   .db-row--green:hover { background: rgba(62,207,142,0.12); }
   .db-row--green td:first-child { box-shadow: inset 3px 0 0 var(--green); }
-  .db-row--yellow { background: rgba(245,166,35,0.06); }
-  .db-row--yellow:hover { background: rgba(245,166,35,0.12); }
-  .db-row--yellow td:first-child { box-shadow: inset 3px 0 0 var(--amber); }
   .db-row--red { background: rgba(240,78,94,0.06); }
   .db-row--red:hover { background: rgba(240,78,94,0.12); }
   .db-row--red td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
@@ -1939,8 +1938,6 @@ const dashStyles = `
   .db-light .db-row:hover { background: var(--surface2); }
   .db-light .db-row--green { background: rgba(62,207,142,0.09); }
   .db-light .db-row--green:hover { background: rgba(62,207,142,0.15); }
-  .db-light .db-row--yellow { background: rgba(245,166,35,0.1); }
-  .db-light .db-row--yellow:hover { background: rgba(245,166,35,0.16); }
   .db-light .db-row--red { background: rgba(240,78,94,0.08); }
   .db-light .db-row--red:hover { background: rgba(240,78,94,0.14); }
   .db-light .db-cell-mono { color: #4b5568; }

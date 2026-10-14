@@ -1564,10 +1564,12 @@ function needsReview(s: Submission): boolean {
  * The badges in the row carry the detail either way, so none of this is the
  * only signal.
  */
-function rowColor(s: Submission): 'green' | 'red' | 'attention' | 'plain' {
+// Only a decision colours the row; open statements stay neutral, and the
+// status and check badges say whether one needs a closer look.
+function rowColor(s: Submission): 'green' | 'red' | 'plain' {
   if (s.status === 'APPROVED') return 'green';
   if (s.status === 'DENIED') return 'red';
-  return needsReview(s) ? 'attention' : 'plain';
+  return 'plain';
 }
 
 function ViesBadge({ status }: { status: string }) {
@@ -1848,7 +1850,6 @@ const styles = `
   .cd-row--plain td:first-child { box-shadow: inset 3px 0 0 transparent; }
   /* Pending with a failing check: the rail marks it without washing the row,
      so a queue of twenty rows still has twenty readable rows. */
-  .cd-row--attention td:first-child { box-shadow: inset 3px 0 0 var(--cd-amber); }
   .cd-row--red { background: rgba(240,78,94,0.06); }
   .cd-row--red:hover { background: rgba(240,78,94,0.12); }
   .cd-row--red td:first-child { box-shadow: inset 3px 0 0 var(--cd-accent); }
