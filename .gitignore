@@ -6,3 +6,6 @@ graphify-out/
 
 # Deployment secrets live next to docker-compose.yml.
 .env
+
+# The Cloudflare Origin Certificate and its private key, mounted into Caddy.
+certs/

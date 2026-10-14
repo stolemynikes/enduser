@@ -63,7 +63,7 @@ Passkeys are bound to the host in `FRONTEND_URL` (here `eustatement.com`; the
 `www.` form is accepted too). A passkey enrolled while testing on another
 address — a tunnel, a Tailscale name — does not carry over and has to be added
 again once the site runs on its real domain.
-| `TRUST_PROXY_HOPS` | count your proxies | Too high and `X-Forwarded-For` is forgeable, so every IP-keyed limit is evaded; too low and every client looks like the proxy and shares one bucket. Behind Cloudflare alone it is 1 |
+| `TRUST_PROXY_HOPS` | count your proxies | Too high and `X-Forwarded-For` is forgeable, so every IP-keyed limit is evaded; too low and every client looks like the proxy and shares one bucket. Caddy alone is 1; Cloudflare in front of Caddy is 2 |
 | `SMTP_*` | real credentials | **No mail has ever been delivered.** Every decision, invitation and reset currently fails into a `.catch` |
 | `TURNSTILE_SECRET` / `TURNSTILE_SITE_KEY` | from Cloudflare | Without them the anti-robot check is inert and the public form is free to script |
 | `REQUIRE_MFA` | `1` — *after* step 5 | Setting it first locks you out of your own product |
@@ -78,10 +78,28 @@ docker compose up -d --build
 docker compose logs -f api
 ```
 
-Three containers. `web` is Caddy: it terminates TLS with a certificate it
-fetches itself, serves the built app, proxies `/graphql` and the identity
-routes, and sets the security headers. `api` is the server. `db` is Postgres on
+Three containers. `web` is Caddy: it terminates TLS, serves the built app,
+proxies `/graphql` and the identity routes, and sets the security headers. `api` is the server. `db` is Postgres on
 an internal network with no route to or from the internet.
+
+**The certificate.** Behind Cloudflare, with the Hetzner firewall admitting
+only Cloudflare's ranges on 80 and 443, Let's Encrypt cannot validate the
+server, so `TLS_MODE=origin` uses a Cloudflare Origin Certificate instead
+(Cloudflare → SSL/TLS → Origin Server; RSA, `eustatement.com` and
+`*.eustatement.com`, 15 years). Put both halves next to `docker-compose.yml`:
+
+```sh
+mkdir -p certs && chmod 700 certs
+nano certs/origin.pem      # the certificate
+nano certs/origin.key      # the private key — shown once by Cloudflare
+chmod 600 certs/origin.key
+```
+
+Then set Cloudflare's SSL/TLS mode to **Full (strict)**. Never Flexible: that
+sends visitors' traffic to this server unencrypted. The same Cloudflare ranges
+are listed in the Caddyfile's `trusted_proxies`, so Caddy passes the visitor's
+address through and `TRUST_PROXY_HOPS=2` picks it out; if Cloudflare ever
+publishes new ranges, update both places.
 
 The API container runs `prisma migrate deploy` before starting, which is
 idempotent, so a redeploy is safe. It is not safe to *race*, so this expects a

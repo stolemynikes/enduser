@@ -157,11 +157,12 @@ services:
       api:
         condition: service_healthy
     environment:
-      # A bare hostname makes Caddy fetch a certificate for it. Use
-      # `:80` instead while testing, or on a host where something else
-      # terminates TLS.
+      # The hostnames Caddy answers for, e.g. `eustatement.com,
+      # www.eustatement.com`. Use `:80` while testing without TLS.
       SITE_ADDRESS: ${SITE_ADDRESS:?e.g. eustatement.com, or :80 to test without TLS}
-      ACME_EMAIL: ${ACME_EMAIL:-}
+      # `origin` uses the Cloudflare Origin Certificate in ./certs; `auto`
+      # has Caddy fetch one from Let's Encrypt. See the Caddyfile.
+      TLS_MODE: ${TLS_MODE:-auto}
     ports:
       - '80:80'
       - '443:443'
@@ -170,6 +171,9 @@ services:
       # Certificates survive a restart; without this Caddy re-requests them on
       # every deploy and meets Let's Encrypt's rate limit.
       - caddy-data:/data
+      # The Cloudflare Origin Certificate, for TLS_MODE=origin: origin.pem and
+      # origin.key, kept on the host and never in the image or the repository.
+      - ./certs:/certs:ro
       - caddy-config:/config
     # Only `default`: it needs the internet and the api container, and has no
     # business being able to reach the database at all.

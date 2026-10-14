@@ -8,18 +8,43 @@
 # nothing complains. Keep the two in step.
 
 {
-	# Where Let's Encrypt sends expiry warnings. Compose substitutes it.
-	email {$ACME_EMAIL}
-	# Cloudflare and other proxies send the real client address here. Caddy
-	# rewrites it so the backend's own TRUST_PROXY_HOPS sees one honest hop
-	# rather than guessing at a chain.
+	# Proxies in front send the real client address in X-Forwarded-For. Caddy
+	# only keeps that header from addresses listed here; from anyone else it
+	# throws it away and records the connecting address instead. Behind
+	# Cloudflare that means listing Cloudflare, or every visitor arrives at the
+	# backend as one of a handful of Cloudflare addresses and shares their
+	# rate-limit buckets. The ranges are https://www.cloudflare.com/ips — they
+	# change rarely, but check them when the Hetzner firewall is updated, since
+	# that firewall admits the same list.
 	servers {
-		trusted_proxies static private_ranges
+		trusted_proxies static private_ranges 173.245.48.0/20 103.21.244.0/22 103.22.200.0/22 103.31.4.0/22 141.101.64.0/18 108.162.192.0/18 190.93.240.0/20 188.114.96.0/20 197.234.240.0/22 198.41.128.0/17 162.158.0.0/15 104.16.0.0/13 104.24.0.0/14 172.64.0.0/13 131.0.72.0/22 2400:cb00::/32 2606:4700::/32 2803:f800::/32 2405:b500::/32 2405:8100::/32 2a06:98c0::/29 2c0f:f248::/32
 	}
 }
 
+# Where the certificate comes from. TLS_MODE picks one of these by name.
+#
+# origin: the Cloudflare Origin Certificate, mounted from ./certs on the host.
+# Cloudflare is the only thing that talks to this server (the Hetzner firewall
+# admits nothing else on 80/443), so a certificate only Cloudflare trusts is
+# enough, and it lasts fifteen years. Let's Encrypt cannot work in that setup
+# anyway: its validation servers are not Cloudflare and never get through.
+(tls-origin) {
+	tls /certs/origin.pem /certs/origin.key
+}
+# auto: Caddy fetches and renews a Let's Encrypt certificate itself. For a host
+# reached directly, or with SITE_ADDRESS=:80 when testing without TLS.
+(tls-auto) {
+}
+
 {$SITE_ADDRESS} {
+	import tls-{$TLS_MODE:auto}
 	encode gzip zstd
+
+	# One address for the app. www works because people type it, but passkeys,
+	# sessions in localStorage and the links in emails all belong to one
+	# origin, so www is sent to the bare domain rather than served as a twin.
+	@www header_regexp www Host ^www\.(.+)$
+	redir @www https://{re.www.1}{uri} permanent
 
 	# --- The API and the routes the identity provider calls -----------------
 	# Same origin as the app on purpose: the browser never makes a
