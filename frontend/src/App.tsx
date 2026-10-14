@@ -45,7 +45,7 @@ function RouteLoading() {
     <div
       role="status"
       aria-live="polite"
-      style={{ minHeight: '100vh', background: '#0b0d13' }}
+      style={{ minHeight: '100vh', background: '#0f0f10' }}
     >
       <span style={{
         position: 'absolute', width: 1, height: 1, overflow: 'hidden',

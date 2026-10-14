@@ -2,16 +2,19 @@ import { useState } from 'react';
 import { gql } from '@apollo/client';
 import { useMutation } from '@apollo/client/react';
 import { useParams } from 'react-router-dom';
+import { useFieldValidation } from '../src/lib/useFieldValidation.ts';
 import { PasswordInput } from '../src/components/PasswordInput.tsx';
 import { useDocumentTitle } from '../src/lib/useDocumentTitle.ts';
 import { authStyles } from '../src/lib/authStyles.ts';
 import { Wordmark } from '../src/components/Mark.tsx';
+import { BackHome } from '../src/components/BackHome.tsx';
 
 const RESET = gql`
   mutation ResetPassword($token: String!, $password: String!) { resetPassword(token: $token, password: $password) }
 `;
 
 export default function ResetPassword() {
+  const { formProps } = useFieldValidation();
   useDocumentTitle('Set a new password');
   const { token } = useParams<{ token: string }>();
   const [password, setPassword] = useState('');
@@ -37,8 +40,9 @@ export default function ResetPassword() {
       <style>{authStyles}</style>
       <div className="au-wrap">
         <div className="au-card">
+          <BackHome />
           <div className="au-logo">
-            <Wordmark size={20} textClassName="au-brand" accentClassName="au-brand-accent" />
+            <Wordmark size={20} textClassName="au-brand" />
           </div>
           {done ? (
             <>
@@ -50,7 +54,7 @@ export default function ResetPassword() {
             <>
               <h1 className="au-title">Set a new password</h1>
               <p className="au-sub">At least 8 characters.</p>
-              <form onSubmit={submit} className="au-form">
+              <form {...formProps} onSubmit={submit} className="au-form">
                 <div className="au-field">
                   <label className="au-label" htmlFor="rp-pw">New password</label>
                   <PasswordInput id="rp-pw" className="au-input" value={password}

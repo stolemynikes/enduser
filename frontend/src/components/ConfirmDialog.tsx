@@ -83,7 +83,7 @@ const styles = `
   }
   .confirm-box {
     width: 100%; max-width: 380px;
-    background: #151926; border: 1px solid rgba(255,255,255,0.1); border-radius: 14px;
+    background: #1a1a1c; border: 1px solid rgba(255,255,255,0.1); border-radius: 14px;
     padding: 22px; outline: none;
     font-family: 'Inter', system-ui, sans-serif; color: #f0f2f8;
     box-shadow: 0 16px 48px rgba(0,0,0,0.45);
@@ -98,7 +98,7 @@ const styles = `
   }
   .confirm-cancel { background: transparent; border-color: rgba(255,255,255,0.14); color: #c2c8da; }
   .confirm-cancel:hover { background: rgba(255,255,255,0.06); }
-  .confirm-ok { background: #5b9cf6; color: #0b0d13; }
+  .confirm-ok { background: #5b9cf6; color: #0f0f10; }
   .confirm-ok:hover { background: #79afff; }
   .confirm-danger { background: #f04e5e; color: #fff; }
   .confirm-danger:hover { background: #ff6473; }

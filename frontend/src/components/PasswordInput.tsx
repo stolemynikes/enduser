@@ -38,8 +38,10 @@ export function PasswordInput({ className, value, onChange, autoComplete, requir
         aria-pressed={show}
         style={{
           position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)',
-          background: 'transparent', border: 'none', cursor: 'pointer', padding: 6,
-          color: 'currentColor', opacity: 0.55, display: 'flex', lineHeight: 0,
+          background: 'transparent', border: 'none', cursor: 'pointer', padding: 8,
+          // A mid grey that reads on both the dark and the light fields; a page can
+          // set --pw-icon to tune it.
+          color: 'var(--pw-icon, #8a8a8f)', display: 'flex', lineHeight: 0, borderRadius: 6,
         }}
       >
         {show ? (

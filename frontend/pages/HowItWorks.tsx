@@ -207,13 +207,13 @@ const styles = `
     font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
   }
   .hw-page.hw-dark {
-    --paper: #0d1117; --surface: #161b27; --surface2: #1a2035;
+    --paper: #0f0f10; --surface: #19191b; --surface2: #1f1f22;
     --text: #e8eaf0; --text-mid: #b4bac6; --text-light: #8f97a6;
     --navy: #9dbcf0; --navy-mid: #7ba7e8; --accent: #f07070;
     --border: rgba(255,255,255,0.10); --border-dark: rgba(255,255,255,0.18); --focus: #7ba7e8;
-    --section-bg: #1a2035; --white: #161b27; --link: #9dbcf0;
+    --section-bg: #1f1f22; --white: #19191b; --link: #9dbcf0;
   }
-  html.hw-dark-page, html.hw-dark-page body { background: #0d1117; }
+  html.hw-dark-page, html.hw-dark-page body { background: #0f0f10; }
 
   .hw-wrap { max-width: 760px; margin: 0 auto; padding: 1.5rem 1.25rem 3rem; }
   .hw-toolbar { display: flex; justify-content: flex-end; gap: 8px; margin-bottom: 1.5rem; }

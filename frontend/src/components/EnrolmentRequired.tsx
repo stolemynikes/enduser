@@ -34,7 +34,7 @@ export function EnrolmentRequired({
       <style>{styles}</style>
       <div className="er-card">
         <header className="er-head">
-          <Wordmark size={18} textClassName="er-brand" accentClassName="er-brand-accent" />
+          <Wordmark size={18} textClassName="er-brand" />
           <h1 className="er-title">One more step before you can continue</h1>
           <p className="er-lede">
             This account can read the details every buyer submits — their name, their address and,
@@ -70,9 +70,9 @@ export function EnrolmentRequired({
 const styles = `
   .er-wrap {
     /* The dashboard's own tokens, since both panels style themselves from them. */
-    --cd-bg: #0b0d13; --cd-surface: #151926; --cd-surface2: #1b2030; --cd-surface3: #232940;
+    --cd-bg: #0f0f10; --cd-surface: #1a1a1c; --cd-surface2: #1f1f21; --cd-surface3: #2a2a2d;
     --cd-border: rgba(255,255,255,0.07); --cd-border2: rgba(255,255,255,0.12);
-    --cd-text: #f0f2f8; --cd-text-mid: #8b93ad; --cd-text-dim: #4e566e;
+    --cd-text: #f0f2f8; --cd-text-mid: #9a9a9f; --cd-text-dim: #5e5e63;
     --cd-accent: #f04e5e; --cd-green: #3ecf8e; --cd-amber: #f5a623; --cd-blue: #5b9cf6;
     --cd-r: 12px; --cd-r-sm: 8px; --cd-r-pill: 100px;
 

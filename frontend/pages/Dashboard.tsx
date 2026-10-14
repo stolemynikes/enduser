@@ -1409,15 +1409,15 @@ const dashStyles = `
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
   :root {
-    --bg:       #0b0d13;
-    --surface:  #151926;
-    --surface2: #1b2030;
-    --surface3: #232940;
+    --bg:       #0f0f10;
+    --surface:  #1a1a1c;
+    --surface2: #1f1f21;
+    --surface3: #2a2a2d;
     --border:   rgba(255,255,255,0.07);
     --border2:  rgba(255,255,255,0.12);
     --text:     #f0f2f8;
-    --text-mid: #8b93ad;
-    --text-dim: #4e566e;
+    --text-mid: #9a9a9f;
+    --text-dim: #5e5e63;
     --accent:   #f04e5e;
     --green:    #3ecf8e;
     --amber:    #f5a623;
@@ -1468,7 +1468,7 @@ const dashStyles = `
     margin-left: auto; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px;
     display: inline-flex; align-items: center; justify-content: center;
     font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums;
-    background: var(--amber); color: #0b0d13;
+    background: var(--amber); color: #0f0f10;
   }
   .db-sb-item {
     font-family: inherit; font-size: 13px; font-weight: 500; color: var(--text-mid);
@@ -1604,7 +1604,7 @@ const dashStyles = `
     font-family: 'Inter', system-ui, sans-serif;
     font-size: 13px;
     color: #f0f2f8;
-    background: linear-gradient(160deg, #151926, #10131c); border: 1px solid var(--border2); border-radius: 16px;
+    background: linear-gradient(160deg, #1a1a1c, #141415); border: 1px solid var(--border2); border-radius: 16px;
     width: 100%; max-width: 620px; max-height: 88vh; overflow-y: auto;
     box-shadow: var(--shadow-lg);
     animation: slideUp 0.2s var(--ease);
@@ -1615,10 +1615,10 @@ const dashStyles = `
     padding: 1.5rem 1.75rem 1.25rem; border-bottom: 1px solid var(--border);
   }
   .db-modal-company { font-size: 16px; font-weight: 700; letter-spacing: -0.01em; color: #f0f2f8; }
-  .db-modal-sub { font-size: 12px; color: #8b93ad; margin-top: 4px; }
+  .db-modal-sub { font-size: 12px; color: #9a9a9f; margin-top: 4px; }
   .db-modal-close {
     background: rgba(255,255,255,0.06); border: none; width: 28px; height: 28px;
-    border-radius: 50%; font-size: 13px; color: #8b93ad;
+    border-radius: 50%; font-size: 13px; color: #9a9a9f;
     cursor: pointer; display: flex; align-items: center; justify-content: center;
     flex-shrink: 0; margin-left: 1rem; transition: all 0.2s var(--ease);
   }
@@ -1629,7 +1629,7 @@ const dashStyles = `
   .db-detail { display: flex; flex-direction: column; gap: 5px; }
   .db-detail-label {
     font-size: 9px; font-weight: 600; letter-spacing: 0.13em; text-transform: uppercase;
-    color: #5d6577;
+    color: #77777c;
   }
   .db-detail-value {
     font-size: 13px; color: #d0d5e8; white-space: pre-wrap;
@@ -1642,7 +1642,7 @@ const dashStyles = `
 
   /* ID BLOCK */
   .db-id-block {
-    background: #0c0f16;
+    background: #0d0d0e;
     border: 1px solid rgba(255,255,255,0.07);
     border-radius: 10px;
     padding: 1rem 1.25rem 1.25rem;
@@ -1666,7 +1666,7 @@ const dashStyles = `
   .db-id-block--checking .db-id-title { color: rgba(91,156,246,0.85); }
   .db-id-title {
     font-size: 10px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase;
-    color: #6b7485; margin-bottom: 0.875rem;
+    color: #8a8a8f; margin-bottom: 0.875rem;
   }
   .db-id-alert {
     margin-top: 0.875rem;
@@ -1703,7 +1703,7 @@ const dashStyles = `
 
   /* DENY FORM */
   .db-deny-heading { font-size: 15px; font-weight: 600; color: #f0f2f8; margin-bottom: 0.4rem; }
-  .db-deny-sub { font-size: 12px; color: #8b93ad; margin-bottom: 1.25rem; line-height: 1.6; }
+  .db-deny-sub { font-size: 12px; color: #9a9a9f; margin-bottom: 1.25rem; line-height: 1.6; }
   .db-deny-textarea {
     font-family: 'Inter', sans-serif; font-size: 13px; color: #f0f2f8;
     background: var(--surface2); border: 1px solid var(--border2); border-radius: var(--r-sm);

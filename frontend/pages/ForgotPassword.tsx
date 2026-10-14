@@ -1,9 +1,11 @@
 import { useState } from 'react';
 import { gql } from '@apollo/client';
 import { useMutation } from '@apollo/client/react';
+import { useFieldValidation } from '../src/lib/useFieldValidation.ts';
 import { useDocumentTitle } from '../src/lib/useDocumentTitle.ts';
 import { authStyles } from '../src/lib/authStyles.ts';
 import { Wordmark } from '../src/components/Mark.tsx';
+import { BackHome } from '../src/components/BackHome.tsx';
 import { Turnstile } from '../src/components/Turnstile.tsx';
 
 const REQUEST_RESET = gql`
@@ -11,6 +13,7 @@ const REQUEST_RESET = gql`
 `;
 
 export default function ForgotPassword() {
+  const { formProps } = useFieldValidation();
   useDocumentTitle('Reset your password');
   const [email, setEmail] = useState('');
   const [sent, setSent] = useState(false);
@@ -33,8 +36,9 @@ export default function ForgotPassword() {
       <style>{authStyles}</style>
       <div className="au-wrap">
         <div className="au-card">
+          <BackHome />
           <div className="au-logo">
-            <Wordmark size={20} textClassName="au-brand" accentClassName="au-brand-accent" />
+            <Wordmark size={20} textClassName="au-brand" />
           </div>
           {sent ? (
             <>
@@ -51,7 +55,7 @@ export default function ForgotPassword() {
             <>
               <h1 className="au-title">Reset your password</h1>
               <p className="au-sub">We'll email you a link to set a new one.</p>
-              <form onSubmit={submit} className="au-form">
+              <form {...formProps} onSubmit={submit} className="au-form">
                 <div className="au-field">
                   <label className="au-label" htmlFor="fp-email">Email</label>
                   <input id="fp-email" className="au-input" type="email" value={email}

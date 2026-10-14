@@ -1361,17 +1361,17 @@ const styles = `
     --navy-mid:    #5b8fd4;
     --accent:      #e85555;
     --gold:        #c9a84c;
-    --paper:       #0d1117;
-    --white:       #161b27;
+    --paper:       #0f0f10;
+    --white:       #19191b;
     --border:      rgba(255,255,255,0.09);
     --border-dark: rgba(255,255,255,0.16);
     --text:        #e8eaf0;
     --text-mid:    #9ca3af;
     --text-light:  #6b7480;
     --focus:       #7ba7e8;
-    --section-bg:  #1a2035;
+    --section-bg:  #1f1f22;
   }
-  html.eu-dark-page, body.eu-dark-page, .eu-dark { background: #0d1117; }
+  html.eu-dark-page, body.eu-dark-page, .eu-dark { background: #0f0f10; }
   .eu-dark .eu-section { background: var(--white); }
   .eu-dark .eu-section-terms { background: #13172280; }
   .eu-dark .eu-terms-box { background: var(--section-bg); }

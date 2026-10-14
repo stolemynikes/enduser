@@ -55,7 +55,7 @@ export function DocLayout({ title, intro, children }: { title: string; intro?: R
       <a className="doc-skip" href="#doc-main">Skip to content</a>
       <header className="doc-top">
         <div className="doc-top-inner">
-          <Link to="/" className="doc-brand">eu<span>statement</span></Link>
+          <Link to="/" className="doc-brand">eustatement</Link>
           <nav className="doc-nav" aria-label="Documentation and legal">
             {NAV.map(n => (
               <Link key={n.to} to={n.to} aria-current={pathname === n.to ? 'page' : undefined}>{n.label}</Link>
@@ -109,13 +109,16 @@ const styles = `
   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
   .doc-page {
-    --bg: #0b0d13; --surface: #12151f; --text: #e9ecf4; --text-mid: #a3abc2; --text-dim: #7c859e;
+    --bg: #0f0f10; --surface: #171718; --text: #f2f2f0; --text-mid: #a3a3a6; --text-dim: #8a8a8f;
     --border: rgba(255,255,255,0.08); --accent: #5b9cf6; --accent-text: #8fbcff; --code-bg: rgba(255,255,255,0.06);
     min-height: 100dvh; background: var(--bg); color: var(--text);
     font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
   }
+  /* The page behind the document matches it, so no white shows below a short page or on overscroll. */
+  html:has(.doc-page), body:has(.doc-page) { background: #0f0f10; }
+  html:has(.doc-page.doc-light), body:has(.doc-page.doc-light) { background: #fbfbfd; }
   .doc-page.doc-light {
-    --bg: #fbfbfd; --surface: #ffffff; --text: #141822; --text-mid: #475069; --text-dim: #5f6880;
+    --bg: #fbfbfd; --surface: #ffffff; --text: #18181a; --text-mid: #475069; --text-dim: #5f6880;
     --border: rgba(20,24,34,0.10); --accent: #1f5fd1; --accent-text: #1f5fd1; --code-bg: rgba(20,24,34,0.05);
   }
 

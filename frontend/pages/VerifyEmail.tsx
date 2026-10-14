@@ -5,6 +5,7 @@ import { useParams } from 'react-router-dom';
 import { useDocumentTitle } from '../src/lib/useDocumentTitle.ts';
 import { authStyles } from '../src/lib/authStyles.ts';
 import { Wordmark } from '../src/components/Mark.tsx';
+import { BackHome } from '../src/components/BackHome.tsx';
 
 const VERIFY = gql`mutation VerifyEmail($token: String!) { verifyEmail(token: $token) }`;
 
@@ -28,8 +29,9 @@ export default function VerifyEmail() {
       <style>{authStyles}</style>
       <div className="au-wrap">
         <div className="au-card">
+          <BackHome />
           <div className="au-logo">
-            <Wordmark size={20} textClassName="au-brand" accentClassName="au-brand-accent" />
+            <Wordmark size={20} textClassName="au-brand" />
           </div>
           {state === 'working' && <><h1 className="au-title">Confirming…</h1><p className="au-sub">One moment.</p></>}
           {state === 'done' && (

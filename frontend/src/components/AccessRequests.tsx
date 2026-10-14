@@ -200,7 +200,7 @@ const styles = `
   }
   .ar-btn:disabled { opacity: 0.45; cursor: not-allowed; }
   .ar-btn:focus-visible, .ar-link:focus-visible, .ar-textarea:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
-  .ar-btn-primary { background: var(--blue); color: #0b0d13; }
+  .ar-btn-primary { background: var(--blue); color: #0f0f10; }
   .ar-btn-primary:hover:not(:disabled) { background: #74acf8; }
   .ar-btn-ghost { background: transparent; color: var(--text); border-color: var(--border2); }
   .ar-btn-ghost:hover:not(:disabled) { border-color: var(--text-mid); }

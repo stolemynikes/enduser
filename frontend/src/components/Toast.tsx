@@ -67,7 +67,7 @@ const styles = `
     display: flex; align-items: center; gap: 10px;
     padding: 11px 14px; border-radius: 10px;
     font-family: 'Inter', system-ui, sans-serif; font-size: 13px; line-height: 1.4;
-    color: #f0f2f8; background: #1b2030;
+    color: #f0f2f8; background: #1f1f21;
     border: 1px solid rgba(255,255,255,0.1);
     box-shadow: 0 8px 28px rgba(0,0,0,0.35);
     animation: toast-in 0.22s cubic-bezier(0.22,1,0.36,1);
@@ -75,7 +75,7 @@ const styles = `
   .toast-icon {
     flex-shrink: 0; width: 18px; height: 18px; border-radius: 50%;
     display: flex; align-items: center; justify-content: center;
-    font-size: 11px; font-weight: 700; color: #0b0d13;
+    font-size: 11px; font-weight: 700; color: #0f0f10;
   }
   .toast-msg { flex: 1; }
   .toast--success { border-color: rgba(62,207,142,0.5); }

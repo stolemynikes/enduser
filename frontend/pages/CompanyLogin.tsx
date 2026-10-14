@@ -2,9 +2,11 @@ import { useState } from 'react';
 import { gql } from '@apollo/client';
 import { useMutation } from '@apollo/client/react';
 import { useNavigate, Link } from 'react-router-dom';
+import { useFieldValidation } from '../src/lib/useFieldValidation.ts';
 import { PasswordInput } from '../src/components/PasswordInput.tsx';
 import { useDocumentTitle } from '../src/lib/useDocumentTitle.ts';
 import { Wordmark } from '../src/components/Mark.tsx';
+import { BackHome } from '../src/components/BackHome.tsx';
 import { Turnstile } from '../src/components/Turnstile.tsx';
 import { TotpInput } from '../src/components/TotpInput.tsx';
 import { mfaSignal } from '../src/lib/mfaError.ts';
@@ -40,6 +42,7 @@ const COMPANY_LOGIN = gql`
 `;
 
 export default function CompanyLogin() {
+  const { formProps } = useFieldValidation();
   const navigate = useNavigate();
   useDocumentTitle('Sign in — eustatement');
   const [email, setEmail] = useState('');
@@ -124,13 +127,14 @@ export default function CompanyLogin() {
       <style>{styles}</style>
       <div className="cl-wrap">
         <div className="cl-card">
+          <BackHome />
           <div className="cl-logo">
-            <Wordmark size={20} textClassName="cl-brand" accentClassName="cl-brand-accent" />
+            <Wordmark size={20} textClassName="cl-brand" />
             <span className="cl-logo-tag">COMPANY</span>
           </div>
           <h1 className="cl-title">Sign in</h1>
           <p className="cl-sub">Access your company dashboard</p>
-          <form onSubmit={handleSubmit} className="cl-form">
+          <form {...formProps} onSubmit={handleSubmit} className="cl-form">
             <div className="cl-field">
               <label className="cl-label" htmlFor="cl-email">Email</label>
               <input id="cl-email" className="cl-input" type="email" value={email}
@@ -183,13 +187,13 @@ export default function CompanyLogin() {
 
 const styles = `
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  html, body { background: #0b0d13; font-family: 'Inter', system-ui, sans-serif; }
+  html, body { background: #0f0f10; font-family: 'Inter', system-ui, sans-serif; }
   .cl-wrap {
     min-height: 100vh; display: flex; align-items: center; justify-content: center;
-    background: #0b0d13; padding: 1.5rem;
+    background: #0f0f10; padding: 1.5rem;
   }
   .cl-card {
-    background: linear-gradient(160deg, #151926, #10131c); border: 1px solid rgba(255,255,255,0.09);
+    background: linear-gradient(160deg, #1a1a1c, #141415); border: 1px solid rgba(255,255,255,0.09);
     border-radius: 16px; padding: 2.5rem 2rem; width: 100%; max-width: 400px;
     box-shadow: 0 24px 64px rgba(0,0,0,0.5);
   }
@@ -202,10 +206,10 @@ const styles = `
     padding: 3px 10px; border-radius: 100px; text-transform: uppercase;
   }
   .cl-title { font-size: 22px; font-weight: 600; color: #f0f2f8; margin-bottom: 6px; }
-  .cl-sub { font-size: 13px; color: #6b7485; margin-bottom: 2rem; }
+  .cl-sub { font-size: 13px; color: #8a8a8f; margin-bottom: 2rem; }
   .cl-form { display: flex; flex-direction: column; gap: 1rem; }
   .cl-field { display: flex; flex-direction: column; gap: 6px; }
-  .cl-hint { font-size: 11px; line-height: 1.5; color: #6b7485; }
+  .cl-hint { font-size: 11px; line-height: 1.5; color: #8a8a8f; }
   .cl-passkey {
     display: inline-flex; align-items: center; justify-content: center; gap: 7px;
     font-family: inherit; font-size: 12px; font-weight: 600; cursor: pointer;
@@ -219,31 +223,31 @@ const styles = `
   .cl-passkey:focus-visible { outline: 2px solid #5b9cf6; outline-offset: 2px; }
   .cl-passkey:disabled { opacity: 0.5; cursor: not-allowed; }
   @media (prefers-reduced-motion: reduce) { .cl-passkey { transition: none; } }
-  .cl-label { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #6b7485; }
+  .cl-label { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #8a8a8f; }
   .cl-input {
     font-family: inherit; font-size: 13px; color: #f0f2f8;
-    background: #0c0f16; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px;
+    background: #0d0d0e; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px;
     padding: 10px 14px; outline: none;
     transition: border-color 0.2s, box-shadow 0.2s;
   }
   .cl-input:focus { border-color: #5b9cf6; box-shadow: 0 0 0 3px rgba(91,156,246,0.15); }
   .cl-forgot { font-size: 12px; text-align: right; margin-top: -4px; }
-  .cl-forgot a { color: #6b7485; text-decoration: none; }
+  .cl-forgot a { color: #8a8a8f; text-decoration: none; }
   .cl-forgot a:hover { color: #5b9cf6; }
   .cl-error {
     background: rgba(240,78,94,0.1); border: 1px solid rgba(240,78,94,0.25);
     border-radius: 8px; padding: 10px 14px; font-size: 12px; color: #f04e5e;
   }
   .cl-btn {
-    font-family: inherit; font-size: 13px; font-weight: 600; color: #fff;
-    background: linear-gradient(135deg, #254a8f, #1a3160); border: none; border-radius: 10px; padding: 12px;
+    font-family: inherit; font-size: 13px; font-weight: 600; color: #0f0f10;
+    background: #5b9cf6; border: none; border-radius: 10px; padding: 12px;
     cursor: pointer; transition: transform 0.15s, box-shadow 0.2s;
-    box-shadow: 0 8px 24px rgba(26,49,96,0.45), inset 0 1px 0 rgba(255,255,255,0.08);
+    box-shadow: 0 8px 24px rgba(91,156,246,0.18);
     margin-top: 0.25rem;
   }
-  .cl-btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 12px 32px rgba(37,74,143,0.55), inset 0 1px 0 rgba(255,255,255,0.1); }
+  .cl-btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 12px 32px rgba(91,156,246,0.26); }
   .cl-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-  .cl-footer-link { font-size: 12px; color: #6b7485; text-align: center; margin-top: 1.5rem; }
+  .cl-footer-link { font-size: 12px; color: #8a8a8f; text-align: center; margin-top: 1.5rem; }
   .cl-footer-link a { color: #5b9cf6; text-decoration: none; }
   .cl-footer-link a:hover { text-decoration: underline; }
 `;
