@@ -89,7 +89,7 @@ import { statementCopy } from '../lib/statementCopy.ts';
 import { matchKeys } from '../lib/matchKeys.ts';
 import { buyerError } from '../lib/buyerError.ts';
 import { revealDocumentNumber } from '../lib/reveal.ts';
-import { secondFactorError } from './auth.ts';
+import { secondFactorError, mfaSetupRequiredError } from './auth.ts';
 import { notifySubmission, notify } from '../lib/notifications.ts';
 import { findPriorApprovals } from '../lib/duplicates.ts';
 
@@ -536,7 +536,7 @@ export const submissionResolvers = {
       });
       if (!outcome.ok) {
         throw outcome.reason === 'no-credential'
-          ? new Error('This account has no way to confirm the request.')
+          ? mfaSetupRequiredError()
           : secondFactorError(outcome.reason);
       }
       return { submissionId: id, documentNumber: outcome.documentNumber };

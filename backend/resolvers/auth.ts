@@ -42,6 +42,13 @@ export function secondFactorError(reason: 'missing' | 'invalid'): GraphQLError {
       });
 }
 
+/** The account has no second factor, and the action needs one. */
+export function mfaSetupRequiredError(): GraphQLError {
+  return new GraphQLError('Set up two-factor authentication to open document numbers.', {
+    extensions: { code: 'MFA_SETUP_REQUIRED' },
+  });
+}
+
 // Compared against when the username is unknown, so a missing account costs the
 // same time as a wrong password and cannot be told apart by timing.
 const DUMMY_HASH = '$2b$12$K8pQZ1sTBFQ9DfP6y0kZsuQ0tHfZ0Uu7uN3sT2mN5nGZ8vKcX2h5S';

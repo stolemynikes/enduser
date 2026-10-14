@@ -19,17 +19,16 @@ export type RevealOutcome =
   | { ok: false; reason: 'missing' | 'invalid' | 'no-credential' };
 
 /**
- * Checks whatever second credential the account has, for one sensitive read.
+ * Checks the account's second factor, for one sensitive read.
  *
- * A second factor when there is one; the password when there is not. The
- * password is weaker — it is the thing a phishing proxy already captured — but
- * refusing the reveal outright to every account without MFA would make the
- * dashboard unusable before anyone has enrolled, and a deliberate, recorded
- * step is still worth more than an open field.
+ * A second factor is required: without one the reveal is refused and the
+ * account is told to set one up. The password used to be accepted in its
+ * place, but it is exactly what a phishing proxy has already captured, so it
+ * proved nothing a stolen session did not.
  */
 async function checkCredential(
   kind: 'companyUser' | 'admin', accountId: string, credential: string,
-): Promise<{ ok: true } | { ok: false; reason: 'missing' | 'invalid' }> {
+): Promise<{ ok: true } | { ok: false; reason: 'missing' | 'invalid' | 'no-credential' }> {
   const account = kind === 'admin'
     ? await prisma.admin.findUnique({
         where: { id: accountId },
@@ -41,16 +40,9 @@ async function checkCredential(
       });
   if (!account) return { ok: false, reason: 'invalid' };
 
-  if (mfaEnabled(account)) {
-    const second = await checkSecondFactor(kind, account, credential);
-    return second.ok ? { ok: true } : { ok: false, reason: second.reason };
-  }
-
-  if (!credential) return { ok: false, reason: 'missing' };
-  const hash = 'password' in account ? account.password : account.passwordHash;
-  return (await bcrypt.compare(credential, hash))
-    ? { ok: true }
-    : { ok: false, reason: 'invalid' };
+  if (!mfaEnabled(account)) return { ok: false, reason: 'no-credential' };
+  const second = await checkSecondFactor(kind, account, credential);
+  return second.ok ? { ok: true } : { ok: false, reason: second.reason };
 }
 
 /**

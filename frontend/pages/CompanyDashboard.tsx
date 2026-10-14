@@ -28,6 +28,7 @@ import {
 import { StatementWithTranslation } from '../src/components/StatementTranslation.tsx';
 import { Select, type SelectOption } from '../src/components/Select.tsx';
 import { DatePicker } from '../src/components/DatePicker.tsx';
+import { useAppTheme } from '../src/lib/useAppTheme.ts';
 
 const PAGE_SIZE = 100;
 
@@ -206,11 +207,7 @@ export default function CompanyDashboard() {
     (localStorage.getItem('company-tab') as Tab) ?? 'submissions'
   );
   useEffect(() => { localStorage.setItem('company-tab', tab); }, [tab]);
-  const [theme, setTheme] = useState<'dark' | 'light'>(() =>
-    (localStorage.getItem('theme-company') as 'dark' | 'light') ?? 'dark'
-  );
-  useEffect(() => { localStorage.setItem('theme-company', theme); }, [theme]);
-  const toggleTheme = () => setTheme(t => t === 'dark' ? 'light' : 'dark');
+  const [theme, toggleTheme] = useAppTheme();
   const [filter, setFilter] = useState<Filter>(canManage ? 'PENDING_REVIEW' : 'APPROVED');
   const [search, setSearch] = useState('');
   const [dateFrom, setDateFrom] = useState('');
@@ -886,13 +883,7 @@ export default function CompanyDashboard() {
                     </svg>
                     <span className="cd-sb-label">Team</span>
                   </button>
-                  <button className={`cd-sb-item${tab === 'account' ? ' cd-sb-active' : ''}`} onClick={() => setTab('account')}>
-                    <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8">
-                      <circle cx="10" cy="7" r="3" />
-                      <path d="M4 17c0-2.8 2.7-5 6-5s6 2.2 6 5" strokeLinecap="round" />
-                    </svg>
-                    <span className="cd-sb-label">Account</span>
-                  </button>
+
                   <button className={`cd-sb-item${tab === 'form' ? ' cd-sb-active' : ''}`} onClick={() => setTab('form')}>
                     <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8">
                       <path d="M4 6h12M4 10h12M4 14h12" strokeLinecap="round" />
@@ -904,6 +895,14 @@ export default function CompanyDashboard() {
                   </button>
                 </>
               )}
+              {/* Everyone's own sign-in security lives here, so every role gets it. */}
+              <button className={`cd-sb-item${tab === 'account' ? ' cd-sb-active' : ''}`} onClick={() => setTab('account')}>
+                    <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8">
+                      <circle cx="10" cy="7" r="3" />
+                      <path d="M4 17c0-2.8 2.7-5 6-5s6 2.2 6 5" strokeLinecap="round" />
+                    </svg>
+                    <span className="cd-sb-label">Account</span>
+                  </button>
               {companySlug && (
                 <a className="cd-sb-item cd-sb-link" href={`/${companySlug}`} target="_blank" rel="noreferrer">
                   <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8">
@@ -1244,12 +1243,12 @@ export default function CompanyDashboard() {
             </div>
           )}
 
-          {tab === 'account' && isOwner && (
+          {tab === 'account' && (
             <div className="cd-formcfg cd-account">
               <div className="cd-formcfg-header">
                 <div>
                   <h2 className="cd-members-title">Account</h2>
-                  <p className="cd-formcfg-sub">Your sign-in details and what happens to this company's data.</p>
+                  <p className="cd-formcfg-sub">{isOwner ? "Your sign-in details and what happens to this company's data." : 'Your sign-in details and how you confirm it is you.'}</p>
                 </div>
               </div>
 
@@ -1280,7 +1279,7 @@ export default function CompanyDashboard() {
                 onChanged={() => void refetchAccount()}
               />
 
-              <RevealLog onOpenSubmission={openSubmissionById} />
+              {isOwner && <RevealLog onOpenSubmission={openSubmissionById} />}
 
               {myCompanies.length > 1 && (
                 <div className="cd-embed">
@@ -1302,6 +1301,7 @@ export default function CompanyDashboard() {
                 </div>
               )}
 
+              {isOwner && (
               <div className="cd-danger">
                 <div className="cd-formcfg-info">
                   <span className="cd-formcfg-label">Close this account</span>
@@ -1330,6 +1330,7 @@ export default function CompanyDashboard() {
                   </div>
                 )}
               </div>
+              )}
             </div>
           )}
 
@@ -1444,6 +1445,8 @@ export default function CompanyDashboard() {
                         submissionId={selected.id}
                         canReveal={canManage}
                         mfaEnabled={account?.mfaEnabled ?? false}
+                        support={supportMode}
+                        onSetUpMfa={() => { setSelected(null); setTab('account'); }}
                       />
                       {verified ? (<>
                         <Detail label="Verification" value={<IdVerificationBadge status={selected.idVerificationStatus} />} />
@@ -1746,7 +1749,10 @@ const styles = `
     --cd-accent: #f04e5e; --cd-green: #3ecf8e; --cd-amber: #f5a623; --cd-blue: #5b9cf6;
     --cd-r: 12px; --cd-r-sm: 8px; --cd-r-pill: 100px;
   }
-  html, body { background: var(--cd-bg); }
+  /* The dashboard scrolls inside its own main area. The page around it must
+     not scroll at all, or Windows shows a second scrollbar and a dark strip
+     at the bottom once the list is long. */
+  html, body { background: var(--cd-bg); height: 100%; overflow: hidden; }
   .cd-wrap { font-family: 'Inter', system-ui, sans-serif; height: 100vh; height: 100dvh; overflow: hidden; background: var(--cd-bg); color: var(--cd-text); font-size: 13px; display: flex; flex-direction: row; }
 
   /* Full viewport height; the main pane scrolls on its own */

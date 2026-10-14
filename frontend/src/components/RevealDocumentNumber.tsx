@@ -20,7 +20,14 @@ import { useEffect, useRef, useState } from 'react';
 import { gql } from '@apollo/client';
 import { useMutation } from '@apollo/client/react';
 import { TotpInput } from './TotpInput.tsx';
+import { CombinedGraphQLErrors } from '@apollo/client';
 import { mfaSignal } from '../lib/mfaError.ts';
+
+/** The server refuses document numbers to an account with no second factor. */
+function needsMfaSetup(err: unknown): boolean {
+  return CombinedGraphQLErrors.is(err)
+    && err.errors.some(e => (e.extensions as { code?: string } | undefined)?.code === 'MFA_SETUP_REQUIRED');
+}
 
 const REVEAL = gql`
   mutation RevealDocumentNumber($id: ID!, $credential: String!) {
@@ -38,13 +45,23 @@ export function RevealDocumentNumber({
   submissionId,
   canReveal,
   mfaEnabled,
+  support = false,
+  onSetUpMfa,
 }: {
   submissionId: string;
   /** Owner and Employee+ only; a plain Employee is not offered the control. */
   canReveal: boolean;
-  /** Decides whether the prompt asks for a code or a password. */
+  /** Without a second factor the number cannot be opened; the box says how to get one. */
   mfaEnabled: boolean;
+  /** Platform support acting as the owner: the code asked for is the admin's own. */
+  support?: boolean;
+  /** Takes the person to where two-factor is set up. */
+  onSetUpMfa?: () => void;
 }) {
+  // In a support session the admin's own factor is checked, and the page does
+  // not know whether the admin has one; the server says so if not.
+  const hasFactor = support || mfaEnabled;
+  const [setupNeeded, setSetupNeeded] = useState(false);
   const [asking, setAsking] = useState(false);
   const [credential, setCredential] = useState('');
   const [value, setValue] = useState<string | null>(null);
@@ -89,12 +106,16 @@ export function RevealDocumentNumber({
       setAsking(false);
       setCredential('');
     } catch (err: any) {
+      if (needsMfaSetup(err)) {
+        setAsking(false);
+        setSetupNeeded(true);
+        setCredential('');
+        return;
+      }
       const signal = mfaSignal(err);
       setError(
-        signal === 'invalid' ? 'That code is not valid. Try the next one your app shows.'
-        : signal === 'required' ? 'Enter the code from your authenticator app.'
-        : mfaEnabled ? 'That code is not valid.'
-        : 'That password is not correct.',
+        signal === 'required' ? 'Enter the code from your authenticator app.'
+        : 'That code is not valid. Try the next one your app shows.',
       );
       setCredential('');
       inputRef.current?.focus();
@@ -126,7 +147,7 @@ export function RevealDocumentNumber({
       <span className="rv-label">Identity document number</span>
 
       {value != null ? (
-        <div className="rv-shown">
+        <div className="rv-shown rv-enter">
           <code className="rv-value" aria-live="polite">{value}</code>
           <div className="rv-timer">
             <div className="rv-timer-track" aria-hidden="true">
@@ -140,26 +161,33 @@ export function RevealDocumentNumber({
             <button className="rv-link" onClick={hideNow}>Hide now</button>
           </div>
         </div>
+      ) : (!hasFactor || setupNeeded) ? (
+        <div className="rv-setup rv-enter" role="status">
+          <span className="rv-setup-icon" aria-hidden="true"><ShieldIcon /></span>
+          <div className="rv-setup-text">
+            <b>Two-factor authentication is needed</b>
+            <span>
+              {support
+                ? 'Document numbers open with a code from an authenticator app. Set up two-factor on your admin account first.'
+                : 'Document numbers open with a code from your authenticator app, so a stolen password alone cannot read them. It takes about a minute.'}
+            </span>
+            {!support && onSetUpMfa && (
+              <button className="rv-btn rv-btn--primary" onClick={onSetUpMfa}>Set up two-factor</button>
+            )}
+          </div>
+        </div>
       ) : asking ? (
-        <form className="rv-form" onSubmit={submit}>
+        <form className="rv-form rv-enter" onSubmit={submit}>
           <p className="rv-why">
-            {mfaEnabled
-              ? 'Enter the code from your authenticator app. This look-up is recorded.'
-              : 'Enter your password. This look-up is recorded. Turn on two-factor authentication to use a code instead.'}
+            {support
+              ? 'Enter the code from your own authenticator app (your admin account). This look-up is recorded.'
+              : 'Enter the code from your authenticator app. This look-up is recorded.'}
           </p>
-          {mfaEnabled ? (
-            <TotpInput
-              ref={inputRef} id={`rv-code-${submissionId}`} className="rv-input"
-              value={credential} onChange={setCredential} disabled={loading}
-            />
-          ) : (
-            <input
-              ref={inputRef} id={`rv-pw-${submissionId}`} className="rv-input"
-              type="password" autoComplete="current-password" value={credential}
-              onChange={e => setCredential(e.target.value)} disabled={loading} required
-            />
-          )}
-          {error && <p className="rv-error" role="alert">{error}</p>}
+          <TotpInput
+            ref={inputRef} id={`rv-code-${submissionId}`} className="rv-input"
+            value={credential} onChange={setCredential} disabled={loading}
+          />
+          {error && <p className="rv-error rv-shake" role="alert" key={error + credential.length}>{error}</p>}
           <div className="rv-actions">
             <button
               className="rv-btn" type="button" disabled={loading}
@@ -173,7 +201,7 @@ export function RevealDocumentNumber({
           </div>
         </form>
       ) : (
-        <div className="rv-closed">
+        <div className="rv-closed rv-enter">
           <span className="rv-masked" aria-hidden="true">•••• •••• ••</span>
           <button ref={triggerRef} className="rv-btn" onClick={() => { setAsking(true); setError(''); }}>
             <LockIcon />
@@ -185,6 +213,16 @@ export function RevealDocumentNumber({
         </div>
       )}
     </div>
+  );
+}
+
+function ShieldIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M12 3l7 3v5c0 4.5-3 8.3-7 10-4-1.7-7-5.5-7-10V6l7-3z" />
+      <path d="M9 12l2 2 4-4" />
+    </svg>
   );
 }
 
@@ -241,6 +279,27 @@ const styles = `
   }
 
   .rv-form { display: flex; flex-direction: column; gap: 8px; max-width: 320px; }
+
+  /* Each state eases in rather than snapping: the prompt, the number, and the
+     closed field again once it hides. The number itself comes into focus. */
+  .rv-enter { animation: rv-in 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+  @keyframes rv-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+  .rv-shown .rv-value { animation: rv-focus 420ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+  @keyframes rv-focus { from { filter: blur(6px); opacity: 0.2; letter-spacing: 0.3em; } to { filter: none; opacity: 1; letter-spacing: 0.1em; } }
+  .rv-shake { animation: rv-shake 280ms ease-in-out; }
+  @keyframes rv-shake { 0%, 100% { transform: none; } 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }
+
+  .rv-setup {
+    display: flex; gap: 10px; align-items: flex-start; max-width: 360px;
+    padding: 12px; border-radius: var(--cd-r-sm);
+    background: rgba(91,156,246,0.08); border: 1px solid rgba(91,156,246,0.25);
+  }
+  .rv-setup-icon { color: var(--cd-blue); flex: none; margin-top: 1px; }
+  .rv-setup-text { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; font-size: 12px; line-height: 1.5; color: var(--cd-text-mid); }
+  .rv-setup-text b { color: var(--cd-text); font-size: 12.5px; }
+  @media (prefers-reduced-motion: reduce) {
+    .rv-enter, .rv-shown .rv-value, .rv-shake { animation: none; }
+  }
   .rv-why { margin: 0; font-size: 11.5px; line-height: 1.55; color: var(--cd-text-mid); }
   .rv-input {
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;

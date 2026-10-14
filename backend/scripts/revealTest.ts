@@ -115,24 +115,17 @@ const REVEAL = `mutation($id:ID!,$c:String!){
       || !!override.errors?.length,
     JSON.stringify(override.errors ?? override.data));
 
-  console.log('— The reveal needs a credential —');
+  console.log('— Without a second factor, the number stays closed —');
   const noCred = await gql(REVEAL, { id: submission.id, c: '' }, ownerToken);
   check('an empty credential is refused', !!noCred.errors?.length, JSON.stringify(noCred.data));
-  const wrongCred = await gql(REVEAL, { id: submission.id, c: 'not-my-password' }, ownerToken);
-  check('a wrong password is refused', !!wrongCred.errors?.length, JSON.stringify(wrongCred.data));
-  check('and nothing was recorded for the failed attempts',
-    (await prisma.revealLog.count({ where: { submissionId: submission.id } })) === 0);
-
-  console.log('— With the password, while there is no second factor —');
   const byPassword = await gql(REVEAL, { id: submission.id, c: PASSWORD }, ownerToken);
-  check('the owner gets the number',
-    byPassword.data?.revealDocumentNumber?.documentNumber === NUMBER,
-    JSON.stringify(byPassword.errors ?? byPassword.data));
-  const logged = await prisma.revealLog.findMany({ where: { submissionId: submission.id } });
-  check('the access is recorded once', logged.length === 1, String(logged.length));
-  check('the record names who looked', logged[0]?.userName === 'Olivia Owner', logged[0]?.userName);
-  check('the record names the session', !!logged[0]?.sessionId);
-  check('and does not mark it as support access', logged[0]?.adminId === null);
+  check('the password is not accepted in place of a second factor', !!byPassword.errors?.length,
+    JSON.stringify(byPassword.data));
+  check('the refusal asks for two-factor to be set up',
+    byPassword.errors?.[0]?.extensions?.code === 'MFA_SETUP_REQUIRED',
+    JSON.stringify(byPassword.errors?.[0]?.extensions));
+  check('and nothing was recorded for the refused attempts',
+    (await prisma.revealLog.count({ where: { submissionId: submission.id } })) === 0);
 
   console.log('— Roles and tenants —');
   const byEmployee = await gql(REVEAL, { id: submission.id, c: PASSWORD }, empToken);
@@ -144,9 +137,9 @@ const REVEAL = `mutation($id:ID!,$c:String!){
   const anon = await gql(REVEAL, { id: submission.id, c: PASSWORD });
   check('an unauthenticated caller cannot reveal it', !!anon.errors?.length);
   check('none of those three were recorded as a reveal',
-    (await prisma.revealLog.count({ where: { submissionId: submission.id } })) === 1);
+    (await prisma.revealLog.count({ where: { submissionId: submission.id } })) === 0);
 
-  console.log('— Once a second factor exists, the password stops working —');
+  console.log('— With a second factor —');
   await startEnrolment('companyUser', owner.id, owner.email);
   const stored = await prisma.companyUser.findUnique({
     where: { id: owner.id }, select: { totpSecret: true },
@@ -157,7 +150,7 @@ const REVEAL = `mutation($id:ID!,$c:String!){
   const freshToken = signCompanyToken({ companyUserId: owner.id, companyId: company.id, role: 'OWNER' });
 
   const stillPassword = await gql(REVEAL, { id: submission.id, c: PASSWORD }, freshToken);
-  check('the password is no longer accepted', !!stillPassword.errors?.length,
+  check('the password is still not accepted', !!stillPassword.errors?.length,
     JSON.stringify(stillPassword.data));
   await prisma.companyUser.update({ where: { id: owner.id }, data: { totpLastCounter: null } });
   const byCode = await gql(REVEAL, { id: submission.id, c: totp(secret) }, freshToken);
@@ -171,10 +164,10 @@ const REVEAL = `mutation($id:ID!,$c:String!){
   const log = await gql('{ revealLog(limit:10){ submissionId userName bySupport at } revealsToday }',
     undefined, freshToken);
   const entries = log.data?.revealLog ?? [];
-  check('the owner can read the log', entries.length === 2, `${entries.length}: ${JSON.stringify(log.errors)}`);
-  check('it is newest first',
-    entries.length === 2 && new Date(entries[0].at).getTime() >= new Date(entries[1].at).getTime());
-  check('the day count agrees', log.data?.revealsToday === 2, String(log.data?.revealsToday));
+  check('the owner can read the log', entries.length === 1, `${entries.length}: ${JSON.stringify(log.errors)}`);
+  check('the entry names who looked', entries[0]?.userName === 'Olivia Owner', entries[0]?.userName);
+  check('and is not marked as support access', entries[0]?.bySupport === false);
+  check('the day count agrees', log.data?.revealsToday === 1, String(log.data?.revealsToday));
   const empLog = await gql('{ revealLog(limit:10){ id } }', undefined, empToken);
   check('an Employee cannot read the log', !!empLog.errors?.length);
   const otherLog = await gql('{ revealLog(limit:10){ submissionId } }', undefined, outToken);
@@ -201,7 +194,7 @@ const REVEAL = `mutation($id:ID!,$c:String!){
     data: { at: new Date(Date.now() - 19 * 30 * 24 * 60 * 60 * 1000) },
   });
   const pruned = await pruneRevealLog(18);
-  check('rows past eighteen months are dropped', pruned >= 2, String(pruned));
+  check('rows past eighteen months are dropped', pruned >= 1, String(pruned));
   check('and the log is empty afterwards',
     (await prisma.revealLog.count({ where: { companyId: company.id } })) === 0);
 

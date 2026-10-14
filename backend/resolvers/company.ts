@@ -30,7 +30,7 @@ import {
   MFA_SELECT, checkSecondFactor, confirmEnrolment, disableMfa, issueRecoveryCodes,
   mfaEnabled, recoveryCodesLeft, startEnrolment,
 } from '../lib/mfa.ts';
-import { secondFactorError } from './auth.ts';
+import { secondFactorError, mfaSetupRequiredError } from './auth.ts';
 import { GraphQLError } from 'graphql';
 import { revealDocumentNumber, revealHistory, revealsToday } from '../lib/reveal.ts';
 import {
@@ -999,12 +999,15 @@ export const companyResolvers = {
         userName: m.user.name,
         sessionId: ctx.sessionId,
         adminId: ctx.support ? ctx.adminId : null,
+        // In a support session it is the admin's own factor that counts, not
+        // the owner's: the admin is the one asking.
+        asAdmin: !!ctx.support,
         credential,
       });
       if (!outcome.ok) {
-        throw outcome.reason === 'invalid' || outcome.reason === 'missing'
-          ? secondFactorError(outcome.reason)
-          : new Error('This account has no way to confirm the request.');
+        throw outcome.reason === 'no-credential'
+          ? mfaSetupRequiredError()
+          : secondFactorError(outcome.reason);
       }
       return { submissionId: id, documentNumber: outcome.documentNumber };
     },
