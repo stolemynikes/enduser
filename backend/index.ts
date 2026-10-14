@@ -118,6 +118,8 @@ const resolvers = {
       s.substanceCheckedAt instanceof Date ? s.substanceCheckedAt.toISOString() : s.substanceCheckedAt ?? null,
     idDocumentExpiry: (s: { idDocumentExpiry?: Date | string | null }) =>
       s.idDocumentExpiry instanceof Date ? s.idDocumentExpiry.toISOString() : s.idDocumentExpiry ?? null,
+    idDataCollectedAt: (s: { idDataCollectedAt?: Date | string | null }) =>
+      s.idDataCollectedAt instanceof Date ? s.idDataCollectedAt.toISOString() : s.idDataCollectedAt ?? null,
     reviewedAt: (s: { reviewedAt?: Date | string | null }) =>
       s.reviewedAt instanceof Date ? s.reviewedAt.toISOString() : s.reviewedAt ?? null,
     /**

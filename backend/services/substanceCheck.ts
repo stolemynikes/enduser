@@ -17,7 +17,7 @@
 //
 // This replaced an LLM-backed check. The old version paraphrased the regulation
 // from search results; this one quotes it.
-import { findByCas, findByCid, identifyName, normalizeCas, type NameMatch, type PrecursorEntry } from '../lib/precursors.ts';
+import { findByCas, findByCid, identifyName, normalizeCas, splitList, type NameMatch, type PrecursorEntry } from '../lib/precursors.ts';
 import { PubChemUnavailable, resolveCompound, type Compound } from './pubchem.ts';
 import { WikidataUnavailable, matchDeclaredName, namesForCas } from './wikidata.ts';
 import { screenStatement } from './statementScreen.ts';
@@ -55,15 +55,6 @@ function describeNameMatch(m: NameMatch): string {
       ? `the name ${m.entry.name} has in ${names.length} language versions of ${REG}`
       : `the ${which} name for ${m.entry.name} in ${REG}`
     : `a ${which} name for ${m.entry.name} (per Wikidata)`;
-}
-
-/** Splits a free-text list field into trimmed items. */
-function splitList(raw: string): string[] {
-  return raw
-    .split(/[,;\n\r/]+/)
-    .map(s => s.trim())
-    .filter(Boolean)
-    .slice(0, MAX_ITEMS);
 }
 
 /**
@@ -163,12 +154,25 @@ export async function checkSubstanceUse(
       buyerType: 'INDIVIDUAL' | 'COMPANY';
     }
 ): Promise<SubstanceCheckResult> {
-  const names = splitList(substances ?? '');
-  const casList = splitList(casNumbers ?? '');
+  const allNames = splitList(substances);
+  const allCas = splitList(casNumbers);
+  // Each item can mean a PubChem and a Wikidata lookup, so the check stops at
+  // MAX_ITEMS. What lies beyond is never looked at, and an unchecked item must
+  // not read as a clean one: it flags the submission for a person to check.
+  const names = allNames.slice(0, MAX_ITEMS);
+  const casList = allCas.slice(0, MAX_ITEMS);
 
   const problems: string[] = [];   // drive FLAGGED
   const findings: string[] = [];   // context for the reviewer
   let restricted = false;
+
+  if (allNames.length > MAX_ITEMS || allCas.length > MAX_ITEMS) {
+    const total = Math.max(allNames.length, allCas.length);
+    problems.push(
+      `${total} substances were declared; only the first ${MAX_ITEMS} were checked. `
+      + 'Check the rest by hand before approving.',
+    );
+  }
 
   // No CAS number: the seller hides the field, or left it optional and the
   // buyer skipped it. This used to end the check — and a check that never ran
@@ -210,10 +214,12 @@ export async function checkSubstanceUse(
     // Pair names to CAS numbers by position only when the counts line up. A
     // mismatched count means we cannot tell which name belongs to which number,
     // so each is checked independently instead of guessing.
-    const paired = names.length === casList.length && names.length > 0;
+    // Compared on the full lists: cutting both at MAX_ITEMS would make 11
+    // names against 12 numbers look like a clean ten-to-ten pairing.
+    const paired = allNames.length === allCas.length && names.length > 0;
     if (!paired && names.length > 0 && casList.length > 0) {
       findings.push(
-        `${names.length} substance name(s) were declared against ${casList.length} CAS number(s), `
+        `${allNames.length} substance name(s) were declared against ${allCas.length} CAS number(s), `
         + 'so they could not be matched up one-to-one — each was checked separately.',
       );
     }

@@ -23,7 +23,7 @@ const GET_SUBMISSIONS = gql`
       id email orderNumber firstName lastName companyName vatNumber buyerType
       street zipCode place country substances casNumbers concentration statement statementLang statementTranslation
       viesStatus viesName viesAddress viesAddressMatch status adminNote createdAt isTest
-      idDocumentName idDocumentType idMrzValid idLikelySynthetic idDocumentExpiry
+      idDocumentName idDocumentType idDataCollectedAt idMrzValid idLikelySynthetic idDocumentExpiry
       idVerificationStatus idLivenessPassed idFaceMatch idVerificationWarnings idVerificationCheckedAt idVerificationPurged
       substanceCheckStatus substanceCheckNote substanceCheckedAt
       reviewedByName reviewedAt

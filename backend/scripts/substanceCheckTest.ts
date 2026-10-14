@@ -167,6 +167,17 @@ const cases: { label: string; args: Parameters<typeof checkSubstanceUse>[0]; exp
     expect: 'OK',
   },
   {
+    // Only the first ten items are looked up. An eleventh — here an Annex I
+    // precursor — must not vanish into a clean result.
+    label: 'more than ten substances → FLAGGED, saying the rest went unchecked',
+    args: {
+      substances: [...Array(10).fill('Toluene'), 'Sulphuric acid'].join(', '),
+      casNumbers: [...Array(10).fill('108-88-3'), '7664-93-9'].join(', '),
+      statement: OK_USE, buyerType: 'COMPANY',
+    },
+    expect: 'FLAGGED', mustSay: 'only the first 10 were checked',
+  },
+  {
     label: 'a clean screen is not reported as an endorsement',
     args: { substances: 'Toluene', casNumbers: '108-88-3', statement: OK_USE, buyerType: 'COMPANY' },
     expect: 'OK', mustSay: 'not an assessment that the use is legitimate',

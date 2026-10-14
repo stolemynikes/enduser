@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useRef, useState } from 'react';
+import { Z } from '../lib/zLayers.ts';
 
 type ToastVariant = 'success' | 'error' | 'info';
 type Toast = { id: number; message: string; variant: ToastVariant };
@@ -57,7 +58,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
 
 const styles = `
   .toast-stack {
-    position: fixed; bottom: 20px; right: 20px; z-index: 60 /* Z.TOAST */;
+    position: fixed; bottom: 20px; right: 20px; z-index: ${Z.TOAST};
     display: flex; flex-direction: column; gap: 10px;
     max-width: min(360px, calc(100vw - 40px));
     pointer-events: none;

@@ -85,6 +85,18 @@ const ANNEX_II: PrecursorEntry[] = [
 export const PRECURSORS: PrecursorEntry[] = [...ANNEX_I, ...ANNEX_II];
 
 /**
+ * Splits a free-text list field (substances, CAS numbers) into trimmed items.
+ * The substance check and the duplicate fingerprint both use this, so what is
+ * screened and what is matched as "the same order" are read the same way.
+ */
+export function splitList(raw: string | null | undefined): string[] {
+  return String(raw ?? '')
+    .split(/[,;\n\r/]+/)
+    .map(s => s.trim())
+    .filter(Boolean);
+}
+
+/**
  * Normalise a CAS RN for comparison. Buyers type these with stray spaces and
  * various dash characters; everything else is rejected so a free-text blob is
  * never treated as a registry number.

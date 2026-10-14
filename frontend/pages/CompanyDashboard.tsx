@@ -29,6 +29,7 @@ import { StatementWithTranslation } from '../src/components/StatementTranslation
 import { Select, type SelectOption } from '../src/components/Select.tsx';
 import { DatePicker } from '../src/components/DatePicker.tsx';
 import { useAppTheme } from '../src/lib/useAppTheme.ts';
+import { Z } from '../src/lib/zLayers.ts';
 
 const PAGE_SIZE = 100;
 
@@ -38,7 +39,7 @@ const SUBMISSION_FIELDS = `
       id email orderNumber firstName lastName companyName vatNumber buyerType
       street zipCode place country substances casNumbers concentration statement statementLang statementTranslation
       viesStatus viesName viesAddress viesAddressMatch status adminNote createdAt isTest
-      idDocumentName idDocumentType idMrzValid idLikelySynthetic idDocumentExpiry
+      idDocumentName idDocumentType idDataCollectedAt idMrzValid idLikelySynthetic idDocumentExpiry
       idVerificationStatus idLivenessPassed idFaceMatch idVerificationWarnings idVerificationCheckedAt idVerificationPurged
       substanceCheckStatus substanceCheckNote substanceCheckedAt
       reviewedByName reviewedAt
@@ -1722,7 +1723,7 @@ function Detail({ label, value }: { label: string; value: React.ReactNode }) {
 const supportStyles = `
   .cd-support-banner {
     position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
-    z-index: 50; /* Z.PINNED — above a modal on purpose */
+    z-index: ${Z.PINNED}; /* above a modal on purpose */
     display: flex; align-items: center; gap: 14px;
     padding: 9px 10px 9px 16px;
     background: rgba(245, 166, 35, 0.12);
@@ -1768,7 +1769,7 @@ const styles = `
     background: rgba(15,15,16,0.95);
     border-right: 1px solid var(--cd-border);
     display: flex; flex-direction: column;
-    height: 100%; overflow-y: auto; z-index: 20; /* Z.CHROME */
+    height: 100%; overflow-y: auto; z-index: ${Z.CHROME};
   }
   .cd-sb-top { flex: 1; display: flex; flex-direction: column; padding: 1.25rem 0.75rem 0; }
   .cd-sb-bottom { padding: 0.75rem; border-top: 1px solid var(--cd-border); display: flex; flex-direction: column; gap: 2px; }
@@ -1999,7 +2000,7 @@ const styles = `
   .cd-btn-lg { padding: 10px 24px; font-size: 12px; }
 
   /* MODAL */
-  .cd-modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 40; /* Z.MODAL */ display: flex; align-items: center; justify-content: center; padding: 1.5rem; backdrop-filter: blur(6px); animation: fadeIn 0.15s ease; }
+  .cd-modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: ${Z.MODAL}; display: flex; align-items: center; justify-content: center; padding: 1.5rem; backdrop-filter: blur(6px); animation: fadeIn 0.15s ease; }
   @keyframes fadeIn { from { opacity: 0 } to { opacity: 1 } }
   .cd-modal { font-family: 'Inter', system-ui, sans-serif; font-size: 13px; color: #f0f2f8; background: linear-gradient(160deg, #1a1a1c, #141415); border: 1px solid var(--cd-border2); border-radius: 16px; width: 100%; max-width: 620px; max-height: 88vh; overflow-y: auto; box-shadow: 0 24px 64px rgba(0,0,0,0.6); animation: slideUp 0.2s ease; }
   .cd-modal--sm { max-width: 420px; }

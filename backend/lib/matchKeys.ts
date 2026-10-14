@@ -22,7 +22,7 @@
 // could have linked one buyer across sellers without decrypting anything. That
 // is a capability the feature did not need and no longer grants.
 import crypto from 'node:crypto';
-import { normalizeCas } from './precursors.ts';
+import { normalizeCas, splitList } from './precursors.ts';
 
 /**
  * Key material is separated per purpose *and* per tenant, so a code cannot be
@@ -49,14 +49,6 @@ export function documentKey(scope: string, documentNumber: string | null | undef
 export function vatKey(scope: string, vatNumber: string | null | undefined): string | null {
   const clean = String(vatNumber ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '');
   return clean.length >= 6 ? fingerprint('vat', scope, clean) : null;
-}
-
-/** Splits a free-text list field the way the substance check does. */
-function splitList(raw: string | null | undefined): string[] {
-  return String(raw ?? '')
-    .split(/[,;\n\r/]+/)
-    .map(s => s.trim())
-    .filter(Boolean);
 }
 
 /**

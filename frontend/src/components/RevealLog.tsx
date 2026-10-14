@@ -13,6 +13,7 @@
 //   - the table scrolls inside its own container so the page never does
 import { gql } from '@apollo/client';
 import { useQuery } from '@apollo/client/react';
+import { Z } from '../lib/zLayers.ts';
 
 const REVEAL_LOG = gql`
   query RevealLog { revealLog(limit: 50) { id submissionId userName bySupport at } }
@@ -121,7 +122,7 @@ const styles = `
   .rl-scroll { overflow-x: auto; max-height: 340px; overflow-y: auto; }
   .rl-table { width: 100%; border-collapse: collapse; font-size: 12px; }
   .rl-table th {
-    position: sticky; top: 0; z-index: 10; /* Z.STICKY */
+    position: sticky; top: 0; z-index: ${Z.STICKY};
     text-align: left; font-size: 10px; font-weight: 600; letter-spacing: 0.08em;
     text-transform: uppercase; color: var(--cd-text-dim);
     background: var(--cd-surface2); padding: 9px 18px;

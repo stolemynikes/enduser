@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useRef, useState } from 'react';
 import { useModalDismiss } from '../lib/useModalDismiss.ts';
+import { Z } from '../lib/zLayers.ts';
 
 type ConfirmOptions = {
   title?: string;
@@ -76,7 +77,7 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
 
 const styles = `
   .confirm-bg {
-    position: fixed; inset: 0; z-index: 70 /* Z.CONFIRM */;
+    position: fixed; inset: 0; z-index: ${Z.CONFIRM};
     background: rgba(0,0,0,0.55); backdrop-filter: blur(2px);
     display: flex; align-items: center; justify-content: center; padding: 20px;
     animation: confirm-fade 0.15s ease;

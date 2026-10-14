@@ -10,7 +10,6 @@ export type GateSubmission = {
   viesStatus: 'VALID' | 'INVALID' | 'ERROR' | 'NOT_CHECKED';
   viesAddressMatch: 'NOT_CHECKED' | 'UNAVAILABLE' | 'MATCH' | 'PARTIAL' | 'MISMATCH';
   idDataCollectedAt?: string | null;
-  idDocumentNumber?: string | null;
   idMrzValid?: boolean | null;
   idLikelySynthetic?: boolean | null;
   idDocumentExpiry?: string | null;
@@ -30,10 +29,11 @@ export const CATEGORY_LABEL: Record<OverrideCategory, string> = {
   SUBSTANCE: 'Substance',
 };
 
-// The dashboards don't all fetch idDataCollectedAt; fall back to "an ID number is
-// present" as the signal that identity verification applies to this submission.
+// Same signal as the backend gate: identity applies when the form collected it.
+// The document number is no use here — the API never returns it — so a query
+// that leaves out idDataCollectedAt silently turns the identity check off.
 function idCollected(s: GateSubmission): boolean {
-  return !!s.idDataCollectedAt || !!s.idDocumentNumber;
+  return !!s.idDataCollectedAt;
 }
 
 export function isExpired(expiry?: string | null, now: Date = new Date()): boolean {
