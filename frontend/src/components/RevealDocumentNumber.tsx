@@ -20,15 +20,9 @@ import { useEffect, useRef, useState } from 'react';
 import { gql } from '@apollo/client';
 import { useMutation } from '@apollo/client/react';
 import { TotpInput } from './TotpInput.tsx';
-import { CombinedGraphQLErrors } from '@apollo/client';
-import { mfaSignal } from '../lib/mfaError.ts';
+import { needsMfaSetup, secondFactorMessage } from '../lib/mfaError.ts';
 
 /** The server refuses document numbers to an account with no second factor. */
-function needsMfaSetup(err: unknown): boolean {
-  return CombinedGraphQLErrors.is(err)
-    && err.errors.some(e => (e.extensions as { code?: string } | undefined)?.code === 'MFA_SETUP_REQUIRED');
-}
-
 const REVEAL = gql`
   mutation RevealDocumentNumber($id: ID!, $credential: String!) {
     revealDocumentNumber(id: $id, credential: $credential) {
@@ -110,11 +104,7 @@ export function RevealDocumentNumber({
         setCredential('');
         return;
       }
-      const signal = mfaSignal(err);
-      setError(
-        signal === 'required' ? 'Enter the code from your authenticator app.'
-        : 'That code is not valid. Try the next one your app shows.',
-      );
+      setError(secondFactorMessage(err));
       setCredential('');
       inputRef.current?.focus();
     }

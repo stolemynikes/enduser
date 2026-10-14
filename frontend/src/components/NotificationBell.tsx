@@ -11,6 +11,7 @@ import { useEffect, useState } from 'react';
 import { gql } from '@apollo/client';
 import { useMutation, useQuery } from '@apollo/client/react';
 import { useConfirm } from './ConfirmDialog.tsx';
+import { useToast } from './Toast.tsx';
 import { Select } from './Select.tsx';
 import { DatePicker } from './DatePicker.tsx';
 
@@ -337,6 +338,7 @@ export function ActivityFeed({ onOpenSubmission, showTeam = false }: {
   showTeam?: boolean;
 }) {
   const confirm = useConfirm();
+  const toast = useToast();
   const { data, loading } = useQuery<any>(NOTIFICATIONS, { fetchPolicy: 'cache-and-network' });
   const refetchQueries = ['Notifications', 'UnreadNotificationCount'];
   const [markRead] = useMutation<any>(MARK_READ, { refetchQueries, awaitRefetchQueries: true });
@@ -354,9 +356,15 @@ export function ActivityFeed({ onOpenSubmission, showTeam = false }: {
     await new Promise(r => setTimeout(r, 180));
   };
 
+  // A failed request leaves the list as it was, which on its own looks like
+  // the click did nothing; say so instead.
+  const failed = (what: string) => () => toast.error(`Could not ${what}. Check your connection and try again.`);
+
   const markAll = async () => {
     setBusy('read');
-    try { await markRead({ variables: { ids: null } }); } finally { setBusy(''); }
+    try { await markRead({ variables: { ids: null } }); }
+    catch { failed('mark everything as read')(); }
+    finally { setBusy(''); }
   };
 
   const clearAll = async () => {
@@ -370,6 +378,8 @@ export function ActivityFeed({ onOpenSubmission, showTeam = false }: {
     try {
       await fadeOut(items.map(n => n.id));
       await clear({ variables: { ids: null } });
+    } catch {
+      failed('clear your activity')();
     } finally {
       setBusy('');
       setLeaving(new Set());
@@ -378,11 +388,15 @@ export function ActivityFeed({ onOpenSubmission, showTeam = false }: {
 
   const clearOne = async (n: Notification) => {
     await fadeOut([n.id]);
-    try { await clear({ variables: { ids: [n.id] } }); } finally { setLeaving(new Set()); }
+    try { await clear({ variables: { ids: [n.id] } }); }
+    catch { failed('clear that item')(); }
+    finally { setLeaving(new Set()); }
   };
 
   const openRow = async (n: Notification) => {
-    if (!n.read) void markRead({ variables: { ids: [n.id] } });
+    // Not awaited: the statement opens either way, and an unread dot that
+    // survives a failed request is harmless.
+    if (!n.read) markRead({ variables: { ids: [n.id] } }).catch(() => {});
     if (n.submissionId && onOpenSubmission) onOpenSubmission(n.submissionId);
   };
 

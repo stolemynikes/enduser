@@ -36,3 +36,26 @@ export function mfaSignal(error: unknown): MfaSignal {
   }
   return null;
 }
+
+/**
+ * True when an action needs a second factor and the account has none set up —
+ * the document-number reveal answers this way. Shown as a pointer to the
+ * Account tab, not as a wrong code.
+ */
+export function needsMfaSetup(error: unknown): boolean {
+  return CombinedGraphQLErrors.is(error)
+    && error.errors.some(e => (e.extensions as { code?: string } | undefined)?.code === 'MFA_SETUP_REQUIRED');
+}
+
+/**
+ * The sentence to show when a code-protected action fails. Only a failure the
+ * server reports as a bad code is called one: a dropped connection or a
+ * refused request is not the code's fault, and saying it is makes people burn
+ * a fresh code on a problem the code cannot fix.
+ */
+export function secondFactorMessage(error: unknown): string {
+  const signal = mfaSignal(error);
+  if (signal === 'required') return 'Enter the code from your authenticator app.';
+  if (signal === 'invalid') return 'That code is not valid. Try the next one your app shows.';
+  return 'The document number could not be shown. Check your connection and try again.';
+}

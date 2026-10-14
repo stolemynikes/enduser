@@ -689,10 +689,6 @@ export default function CompanyDashboard() {
 
   const submissions: Submission[] = subData?.companySubmissions ?? [];
 
-  // Opening a notification jumps to the submission it is about. That row may
-  // not be in the page currently loaded — a filter is on, or it sits further
-  // down the queue — so the id is parked and claimed once the list holds it.
-  const [pendingOpenId, setPendingOpenId] = useState<string | null>(null);
   // Opens a statement on top of whatever tab is showing — used from Activity,
   // so reading a decision does not throw you out of the page you were on.
   const [loadOne] = useLazyQuery<any>(GET_ONE_SUBMISSION, { fetchPolicy: 'network-only' });
@@ -705,19 +701,15 @@ export default function CompanyDashboard() {
       toast.error('That statement is no longer available.');
     }
   };
+  // Opening a notification, a reveal or a prior approval jumps to that
+  // submission. It is fetched on its own rather than looked for in the list:
+  // the row may sit beyond the pages loaded, behind a filter, or on the other
+  // side of test mode, and waiting for the list to hold it waited forever.
   const openSubmissionById = (id: string) => {
     setTab('submissions');
     setFilter('ALL');
-    setPendingOpenId(id);
+    void openSubmissionInPlace(id);
   };
-  // Claimed during render (React's "adjust state when inputs change" pattern):
-  // the update applies before paint, without an extra effect pass.
-  const pendingRow = pendingOpenId ? submissions.find(r => r.id === pendingOpenId) : undefined;
-  if (pendingRow) {
-    setSelected(pendingRow);
-    setModalMode('view');
-    setPendingOpenId(null);
-  }
   const members: Member[] = memberData?.companyMembers ?? [];
 
   const availableFilters: Filter[] = canManage ? ['ALL', 'PENDING_REVIEW', 'APPROVED', 'DENIED'] : ['APPROVED', 'DENIED'];

@@ -13,6 +13,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { gql } from '@apollo/client';
 import { useMutation } from '@apollo/client/react';
+import { needsMfaSetup, secondFactorMessage } from '../lib/mfaError.ts';
 
 const REVEAL = gql`
   mutation RevealSubmissionDocumentNumber($id: ID!, $credential: String!) {
@@ -61,7 +62,10 @@ export function AdminRevealDocument({ submissionId }: { submissionId: string }) 
       setAsking(false);
       setCredential('');
     } catch (err: any) {
-      setError(err?.message ?? 'That could not be verified.');
+      // The server's own message is masked in production, so it is never shown.
+      setError(needsMfaSetup(err)
+        ? 'Set up two-factor authentication in the Account tab first, then try again.'
+        : secondFactorMessage(err));
       setCredential('');
       inputRef.current?.focus();
     }

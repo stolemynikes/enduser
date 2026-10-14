@@ -65,9 +65,11 @@
 		X-Robots-Tag "noindex, nofollow, noarchive, nosnippet, noimageindex"
 
 		# Session tokens live in localStorage, so an injected script could read
-		# them. Scripts are restricted to this origin; nothing may frame the app
-		# except the embed route below.
-		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; frame-src https://verify.didit.me; form-action 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'"
+		# them. Scripts are restricted to this origin, plus Cloudflare's anti-robot
+		# check (Turnstile), which loads a script and a frame from
+		# challenges.cloudflare.com — without it every form waits for a token
+		# that never comes. Nothing may frame the app except the embed route below.
+		Content-Security-Policy "default-src 'self'; script-src 'self' https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; frame-src https://verify.didit.me https://challenges.cloudflare.com; form-action 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'"
 
 		X-Frame-Options "DENY"
 		X-Content-Type-Options "nosniff"
@@ -85,7 +87,7 @@
 	# including that scripts still come only from here.
 	@embed path /embed/*
 	header @embed {
-		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; frame-src https://verify.didit.me; form-action 'self'; base-uri 'none'; object-src 'none'; frame-ancestors https:"
+		Content-Security-Policy "default-src 'self'; script-src 'self' https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; frame-src https://verify.didit.me https://challenges.cloudflare.com; form-action 'self'; base-uri 'none'; object-src 'none'; frame-ancestors https:"
 		# Deleted, not blanked. An empty value emits an empty header, and a
 		# browser meeting X-Frame-Options with nothing after it may still refuse
 		# the frame — which would break the one route that exists to be framed.

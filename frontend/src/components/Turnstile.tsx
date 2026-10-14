@@ -22,7 +22,13 @@ function loadScript(): Promise<void> {
     script.src = SCRIPT_SRC;
     script.async = true;
     script.onload = () => resolve();
-    script.onerror = () => reject(new Error('turnstile script failed to load'));
+    script.onerror = () => {
+      // Forget the failure, so the next form that needs the check tries again
+      // instead of inheriting one blip for the rest of the session.
+      script.remove();
+      scriptPromise = null;
+      reject(new Error('turnstile script failed to load'));
+    };
     document.head.appendChild(script);
   });
   return scriptPromise;
