@@ -344,18 +344,13 @@ export function IdentityScene() {
   );
 }
 
-/** Checks: each row is read; one raises a flag with its reason. */
-export function ChecksScene() {
+/** The checklist rows. Drawn twice: once on the clipboard and once, enlarged,
+ *  inside the magnifier — a real second copy rather than an SVG <use>, because
+ *  a <use> clone does not pick up the page's scoped styles (it rendered black)
+ *  or run the rows' own animations. */
+function ChecksRows() {
   return (
-    <svg className="lp-art" viewBox="0 0 520 360" role="img" aria-label="A clipboard lists four checks: substance, VAT number, intended use and age. A magnifying glass reads each row; three get a green tick and intended use gets an amber flag with its reason. A reviewer points at the flag.">
-      <path className="f-blob" d="M60 200 C40 110 120 40 250 44 C380 48 488 96 494 200 C500 300 400 344 260 340 C120 336 76 290 60 200Z"/>
-      <ellipse cx="300" cy="338" rx="170" ry="7" className="f-shadow"/>
-
-      <rect x="150" y="40" width="262" height="290" rx="16" className="f-s2 s-line"/>
-      <rect x="236" y="28" width="90" height="26" rx="8" className="f-mid"/>
-      <circle cx="281" cy="34" r="4" className="f-s2"/>
-
-      <g id="lp-c-rows">
+    <g>
       <g transform="translate(186 105)"><circle r="17" className="f-soft"/><path className="icon s-acc" d="M-4 -9 h8 M-2.5 -9 v6 l-6.5 10 a2 2 0 0 0 1.7 3 h14.6 a2 2 0 0 0 1.7 -3 l-6.5 -10 v-6"/></g>
       <text x="214" y="101" className="t-row">Substance</text><text x="214" y="117" className="t-sub">Annex I &amp; II, 2019/1148</text>
       <g transform="translate(186 165)"><circle r="17" className="f-soft"/><EuRing cx={0} cy={0} r={9} dot={1.7} /></g>
@@ -367,7 +362,23 @@ export function ChecksScene() {
       <g transform="translate(186 285)"><circle r="17" className="f-soft"/><text x="0" y="4" textAnchor="middle" className="t-acc" style={{ fontSize: "11px", fontWeight: 800 }}>18+</text></g>
       <text x="214" y="281" className="t-row">Age</text><text x="214" y="297" className="t-sub">From the ID document</text>
       <rect x="170" y="134" width="222" height="1.5" className="f-line"/><rect x="170" y="194" width="222" height="1.5" className="f-line"/><rect x="170" y="254" width="222" height="1.5" className="f-line"/>
-      </g>
+
+    </g>
+  );
+}
+
+/** Checks: each row is read; one raises a flag with its reason. */
+export function ChecksScene() {
+  return (
+    <svg className="lp-art" viewBox="0 0 520 360" role="img" aria-label="A clipboard lists four checks: substance, VAT number, intended use and age. A magnifying glass reads each row; three get a green tick and intended use gets an amber flag with its reason. A reviewer points at the flag.">
+      <path className="f-blob" d="M60 200 C40 110 120 40 250 44 C380 48 488 96 494 200 C500 300 400 344 260 340 C120 336 76 290 60 200Z"/>
+      <ellipse cx="300" cy="338" rx="170" ry="7" className="f-shadow"/>
+
+      <rect x="150" y="40" width="262" height="290" rx="16" className="f-s2 s-line"/>
+      <rect x="236" y="28" width="90" height="26" rx="8" className="f-mid"/>
+      <circle cx="281" cy="34" r="4" className="f-s2"/>
+
+      <ChecksRows />
 
       <g transform="translate(378 105)"><g className="pop c-ck1"><circle r="13" className="f-green"/><path className="glyph" d="M-5.5 0l3.8 3.8 7-7.6"/></g></g>
       <g transform="translate(378 165)"><g className="pop c-ck2"><circle r="13" className="f-green"/><path className="glyph" d="M-5.5 0l3.8 3.8 7-7.6"/></g></g>
@@ -386,7 +397,7 @@ export function ChecksScene() {
         {/* the glass shows the rows enlarged: undo the lens's own movement, scale, then draw the rows */}
         <g clipPath="url(#lp-c-lens)">
           <circle r="16" className="f-s2"/>
-          <g className="c-scan-inv"><g className="c-mag-inv"><use href="#lp-c-rows" transform="translate(-262 -108)"/></g></g>
+          <g className="c-scan-inv"><g className="c-mag-inv"><g transform="translate(-262 -108)"><ChecksRows /></g></g></g>
         </g>
         <circle r="18" fill="var(--paper)" fillOpacity="0.08"/>
         <circle r="18" fill="none" stroke="var(--accent-deep)" strokeWidth="6"/>
