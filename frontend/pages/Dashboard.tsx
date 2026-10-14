@@ -9,7 +9,7 @@ import { AdminRevealDocument } from '../src/components/AdminRevealDocument.tsx';
 import { formatDate, relativeTime } from '../src/lib/format.ts';
 import { useDocumentTitle } from '../src/lib/useDocumentTitle.ts';
 import { useModalDismiss } from '../src/lib/useModalDismiss.ts';
-import { approvable, blockingCategories, categoryFailing, isExpired, isPending, CATEGORY_LABEL } from '../src/lib/approvalGate.ts';
+import { approvable, blockingCategories, categoryFailing, isExpired, isPending, pendingMessage, CATEGORY_LABEL } from '../src/lib/approvalGate.ts';
 import { Mark } from '../src/components/Mark.tsx';
 import { DatePicker } from '../src/components/DatePicker.tsx';
 import { StatementWithTranslation } from '../src/components/StatementTranslation.tsx';
@@ -805,7 +805,7 @@ export default function Dashboard() {
                     {!canApprove && (
                       <p className="db-gate-hint">
                         {pending
-                          ? 'Substance check is still running — approval is locked until it finishes.'
+                          ? pendingMessage(selected)
                           : `Resolve or override to approve: ${blocking.map(c => CATEGORY_LABEL[c]).join(', ')}.`}
                       </p>
                     )}

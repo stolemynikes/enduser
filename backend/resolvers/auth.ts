@@ -2,7 +2,7 @@ import { prisma } from '../lib/prisma.ts';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import { GraphQLError } from 'graphql';
-import { LOCKED_MESSAGE, lockedFor, recordFailure, recordSuccess } from '../lib/loginGuard.ts';
+import { DUMMY_HASH, LOCKED_MESSAGE, checkSecondFactorLimited, lockedFor, recordFailure, recordSuccess } from '../lib/loginGuard.ts';
 import { verifyHumanOrThrow } from '../services/turnstile.ts';
 import {
   MFA_SELECT, checkSecondFactor, confirmEnrolment, disableMfa, issueRecoveryCodes,
@@ -49,9 +49,6 @@ export function mfaSetupRequiredError(): GraphQLError {
   });
 }
 
-// Compared against when the username is unknown, so a missing account costs the
-// same time as a wrong password and cannot be told apart by timing.
-const DUMMY_HASH = '$2b$12$K8pQZ1sTBFQ9DfP6y0kZsuQ0tHfZ0Uu7uN3sT2mN5nGZ8vKcX2h5S';
 
 export const authResolvers = {
   Mutation: {
@@ -152,7 +149,7 @@ export const authResolvers = {
       if (!admin) throw new Error('Unauthorized');
       if (!mfaEnabled(admin)) return true;
       if (!(await bcrypt.compare(password, admin.password))) throw new Error('That password is not correct.');
-      const second = await checkSecondFactor('admin', admin, code);
+      const second = await checkSecondFactorLimited('admin', admin, code);
       if (!second.ok) throw secondFactorError(second.reason);
       await disableMfa('admin', adminId);
       console.warn(`[mfa] admin ${adminId} disabled two-factor authentication`);
@@ -245,7 +242,7 @@ export const authResolvers = {
       const adminId = requireAdminId(ctx);
       const admin = await prisma.admin.findUnique({ where: { id: adminId } });
       if (!admin || !mfaEnabled(admin)) throw new Error('Two-factor authentication is not on.');
-      const second = await checkSecondFactor('admin', admin, code);
+      const second = await checkSecondFactorLimited('admin', admin, code);
       if (!second.ok) throw secondFactorError(second.reason);
       return { recoveryCodes: await issueRecoveryCodes('admin', adminId) };
     },

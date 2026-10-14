@@ -10,12 +10,9 @@ import { REGISTRATION_OPEN, formOpen } from '../lib/access.ts';
 import { consumeToken, issueToken } from '../lib/authTokens.ts';
 import { hashToken, randomToken } from '../lib/tokens.ts';
 import { mailBudgetAllows } from '../lib/mailBudget.ts';
-import { LOCKED_MESSAGE, lockedFor, recordFailure, recordSuccess } from '../lib/loginGuard.ts';
+import { DUMMY_HASH, LOCKED_MESSAGE, checkSecondFactorLimited, lockedFor, recordFailure, recordSuccess } from '../lib/loginGuard.ts';
 import { verifyHumanOrThrow } from '../services/turnstile.ts';
 
-// Compared against when the address is unknown, so a missing account costs the
-// same time as a wrong password.
-const DUMMY_HASH = '$2b$12$K8pQZ1sTBFQ9DfP6y0kZsuQ0tHfZ0Uu7uN3sT2mN5nGZ8vKcX2h5S';
 import { statementCopy } from '../lib/statementCopy.ts';
 import { resolveConfig, type FormConfig } from '../lib/formConfig.ts';
 import { runSubstanceCheck } from './submission.ts';
@@ -963,7 +960,7 @@ export const companyResolvers = {
       if (!(await bcrypt.compare(password, user.passwordHash))) {
         throw new Error('That password is not correct.');
       }
-      const second = await checkSecondFactor('companyUser', user, code);
+      const second = await checkSecondFactorLimited('companyUser', user, code);
       if (!second.ok) throw secondFactorError(second.reason);
       await disableMfa('companyUser', companyUserId);
       return true;
@@ -974,7 +971,7 @@ export const companyResolvers = {
       const { companyUserId } = requireCompany(ctx);
       const user = await prisma.companyUser.findUnique({ where: { id: companyUserId } });
       if (!user || !mfaEnabled(user)) throw new Error('Two-factor authentication is not on.');
-      const second = await checkSecondFactor('companyUser', user, code);
+      const second = await checkSecondFactorLimited('companyUser', user, code);
       if (!second.ok) throw secondFactorError(second.reason);
       return { recoveryCodes: await issueRecoveryCodes('companyUser', companyUserId) };
     },

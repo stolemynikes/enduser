@@ -8,7 +8,9 @@
 // The lock is short and self-clearing: long enough to make guessing useless,
 // short enough that locking a victim out is a nuisance rather than a denial of
 // service against them.
+import { GraphQLError } from 'graphql';
 import { prisma } from './prisma.ts';
+import { checkSecondFactor, type MfaAccount, type SecondFactorResult } from './mfa.ts';
 
 const MAX_FAILURES = 8;
 const LOCK_MINUTES = 15;
@@ -40,5 +42,35 @@ export async function recordSuccess(model: 'companyUser' | 'admin', id: string):
   });
 }
 
+/**
+ * Compared against when the account is unknown, so a missing account costs the
+ * same bcrypt work as a wrong password and the two cannot be told apart by
+ * timing. One copy, because a sign-in path that forgot it would be the oracle.
+ */
+export const DUMMY_HASH = '$2b$12$K8pQZ1sTBFQ9DfP6y0kZsuQ0tHfZ0Uu7uN3sT2mN5nGZ8vKcX2h5S';
+
 export const LOCKED_MESSAGE = (minutes: number) =>
   `Too many failed attempts. Try again in ${minutes} minute${minutes === 1 ? '' : 's'}.`;
+
+/**
+ * The second factor, checked outside sign-in — revealing a document number,
+ * turning two-factor off, issuing new recovery codes — under the same
+ * per-account limit as sign-in.
+ *
+ * These are reached with a session already in hand, which is exactly what a
+ * stolen one is. Six digits is a small space: without a count, a stolen
+ * session could keep guessing until a code matched, limited only by the
+ * per-IP budget, which an attack spread over many addresses never meets.
+ */
+export async function checkSecondFactorLimited(
+  model: 'companyUser' | 'admin', account: MfaAccount & Account, code: string | null | undefined,
+): Promise<SecondFactorResult> {
+  const minutes = lockedFor(account);
+  if (minutes > 0) {
+    throw new GraphQLError(LOCKED_MESSAGE(minutes), { extensions: { code: 'ACCOUNT_LOCKED' } });
+  }
+  const result = await checkSecondFactor(model, account, code);
+  if (!result.ok && result.reason === 'invalid') await recordFailure(model, account);
+  else if (result.ok && account.failedLogins > 0) await recordSuccess(model, account.id);
+  return result;
+}

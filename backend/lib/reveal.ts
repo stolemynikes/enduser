@@ -12,7 +12,8 @@
 // in the wrong hands cannot, and that whoever did look can be named afterwards.
 import bcrypt from 'bcrypt';
 import { prisma } from './prisma.ts';
-import { MFA_SELECT, checkSecondFactor, mfaEnabled } from './mfa.ts';
+import { MFA_SELECT, mfaEnabled } from './mfa.ts';
+import { checkSecondFactorLimited } from './loginGuard.ts';
 
 export type RevealOutcome =
   | { ok: true; documentNumber: string | null }
@@ -32,16 +33,16 @@ async function checkCredential(
   const account = kind === 'admin'
     ? await prisma.admin.findUnique({
         where: { id: accountId },
-        select: { id: true, password: true, ...MFA_SELECT },
+        select: { id: true, failedLogins: true, lockedUntil: true, ...MFA_SELECT },
       })
     : await prisma.companyUser.findUnique({
         where: { id: accountId },
-        select: { id: true, passwordHash: true, ...MFA_SELECT },
+        select: { id: true, failedLogins: true, lockedUntil: true, ...MFA_SELECT },
       });
   if (!account) return { ok: false, reason: 'invalid' };
 
   if (!mfaEnabled(account)) return { ok: false, reason: 'no-credential' };
-  const second = await checkSecondFactor(kind, account, credential);
+  const second = await checkSecondFactorLimited(kind, account, credential);
   return second.ok ? { ok: true } : { ok: false, reason: second.reason };
 }
 

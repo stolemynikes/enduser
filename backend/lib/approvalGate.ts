@@ -41,6 +41,9 @@ function viesFailing(s: GateSubmission): boolean {
 function identityFailing(s: GateSubmission, now: Date): boolean {
   if (!s.idDataCollectedAt) return false; // ID not collected for this form
   if (s.idDocumentExpiry && new Date(s.idDocumentExpiry).getTime() < now.getTime()) return true;
+  // Still with Didit's reviewers: not failed, not passed. Handled as pending
+  // below, so it cannot be overridden into an approval before the answer.
+  if (identityInProgress(s)) return false;
 
   if (s.idVerificationStatus !== 'NOT_CHECKED') {
     if (s.idVerificationStatus !== 'APPROVED') return true;
@@ -55,6 +58,13 @@ function identityFailing(s: GateSubmission, now: Date): boolean {
   if (s.idMrzValid !== true) return true;
   if (s.idLikelySynthetic === true) return true;
   return false;
+}
+
+// Didit hands some checks to a human reviewer and answers later through the
+// webhook. Until it does, the identity has not been established either way.
+function identityInProgress(s: GateSubmission): boolean {
+  return !!s.idDataCollectedAt
+    && (s.idVerificationStatus === 'IN_REVIEW' || s.idVerificationStatus === 'PENDING');
 }
 
 // Substance: OK / NOT_CHECKED are green; FLAGGED / ERROR are overridable;
@@ -74,13 +84,20 @@ export function failingCategories(s: GateSubmission, now: Date = new Date()): Ov
 
 export type GateResult = {
   blocking: OverrideCategory[]; // failing AND not overridden
-  pending: boolean; // substance still running — cannot approve or override
+  /**
+   * A check that has not finished — the substance check still running, or the
+   * identity still with Didit's reviewers. Blocks approval and cannot be
+   * overridden: an override is a decision about a result, and there is none yet.
+   */
+  pending: 'SUBSTANCE' | 'IDENTITY' | null;
   approvable: boolean;
 };
 
 export function evaluateGate(s: GateSubmission, now: Date = new Date()): GateResult {
   const overridden = new Set(s.overrides.map(o => o.category));
   const blocking = failingCategories(s, now).filter(c => !overridden.has(c));
-  const pending = s.substanceCheckStatus === 'PENDING';
+  const pending = s.substanceCheckStatus === 'PENDING' ? 'SUBSTANCE'
+    : identityInProgress(s) ? 'IDENTITY'
+    : null;
   return { blocking, pending, approvable: blocking.length === 0 && !pending };
 }

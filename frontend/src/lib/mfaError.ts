@@ -57,5 +57,10 @@ export function secondFactorMessage(error: unknown): string {
   const signal = mfaSignal(error);
   if (signal === 'required') return 'Enter the code from your authenticator app.';
   if (signal === 'invalid') return 'That code is not valid. Try the next one your app shows.';
+  // Too many wrong codes: the server's own sentence says how long to wait.
+  if (CombinedGraphQLErrors.is(error)) {
+    const locked = error.errors.find(e => (e.extensions as { code?: string } | undefined)?.code === 'ACCOUNT_LOCKED');
+    if (locked) return locked.message;
+  }
   return 'The document number could not be shown. Check your connection and try again.';
 }

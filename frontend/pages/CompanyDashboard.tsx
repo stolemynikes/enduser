@@ -7,7 +7,7 @@ import { useConfirm } from '../src/components/ConfirmDialog.tsx';
 import { formatDate, relativeTime } from '../src/lib/format.ts';
 import { useDocumentTitle } from '../src/lib/useDocumentTitle.ts';
 import { useModalDismiss } from '../src/lib/useModalDismiss.ts';
-import { approvable, blockingCategories, categoryFailing, isExpired, isPending, CATEGORY_LABEL } from '../src/lib/approvalGate.ts';
+import { approvable, blockingCategories, categoryFailing, isExpired, isPending, pendingMessage, CATEGORY_LABEL } from '../src/lib/approvalGate.ts';
 import SetupWizard from './SetupWizard';
 import { Mark } from '../src/components/Mark.tsx';
 import { ActivityNavItem, ActivityFeed } from '../src/components/NotificationBell.tsx';
@@ -1524,7 +1524,7 @@ export default function CompanyDashboard() {
                   {canManage && selected.status === 'PENDING_REVIEW' && !approvable(selected) && (
                     <p className="cd-gate-hint">
                       {isPending(selected)
-                        ? 'Substance check is still running — approval is locked until it finishes.'
+                        ? pendingMessage(selected)
                         : `Resolve or override to approve: ${blockingCategories(selected).map(c => CATEGORY_LABEL[c]).join(', ')}.`}
                     </p>
                   )}

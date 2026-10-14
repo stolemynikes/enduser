@@ -34,7 +34,7 @@ import {
   shouldRefresh,
 } from './services/diditSessionStore.ts';
 import { WEBHOOK_CONFIGURED, claimEvent, pruneEvents, verifyWebhook } from './services/diditWebhook.ts';
-import { purgeDeletedCompanies, DELETION_GRACE_DAYS, RETENTION_MONTHS } from './lib/retention.ts';
+import { purgeDeletedCompanies, pruneSupportAccess, DELETION_GRACE_DAYS, RETENTION_MONTHS } from './lib/retention.ts';
 import { accessStatus } from './lib/access.ts';
 import { pruneAuthTokens } from './lib/authTokens.ts';
 import { pruneMailBudget } from './lib/mailBudget.ts';
@@ -447,6 +447,8 @@ cron.schedule('0 2 * * *', async () => {
   // submissions that were deleted months ago is data kept for nothing.
   const revealRows = await pruneRevealLog(RETENTION_MONTHS);
   if (revealRows > 0) console.log(`Retention: deleted ${revealRows} reveal-log row(s)`);
+  const supportRows = await pruneSupportAccess(RETENTION_MONTHS);
+  if (supportRows > 0) console.log(`Retention: deleted ${supportRows} support-access row(s)`);
 
   const sessions = await pruneSessions();
   const events = await pruneEvents();

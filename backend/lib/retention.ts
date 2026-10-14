@@ -12,6 +12,11 @@ export const DELETION_GRACE_DAYS = 30;
  * Purges companies whose 30-day grace period has run out: submissions cascade,
  * memberships and invites cascade, and the accounts of members who belong to no
  * other company go with them. Returns how many companies were purged.
+ *
+ * The reveal log and the support-access log hold the company's id as a plain
+ * column, with no relation for a cascade to follow, so they are deleted here by
+ * hand. They describe a tenant that no longer exists and that nobody can sign
+ * in to read them for.
  */
 export async function purgeDeletedCompanies(): Promise<number> {
   const cutoff = new Date(Date.now() - DELETION_GRACE_DAYS * 24 * 60 * 60 * 1000);
@@ -23,6 +28,8 @@ export async function purgeDeletedCompanies(): Promise<number> {
   for (const company of due) {
     const userIds = company.members.map(m => m.userId);
     await prisma.submission.deleteMany({ where: { companyId: company.id } });
+    await prisma.revealLog.deleteMany({ where: { companyId: company.id } });
+    await prisma.supportAccess.deleteMany({ where: { companyId: company.id } });
     await prisma.company.delete({ where: { id: company.id } });
     // A member who was only ever part of this company has no account left to
     // sign in to, so the account goes too. Anyone with another membership stays.
@@ -32,4 +39,16 @@ export async function purgeDeletedCompanies(): Promise<number> {
     }
   }
   return due.length;
+}
+
+/**
+ * Drops support-access rows past the retention ceiling, like the reveal log:
+ * long enough for a tenant to ask who opened their account and when, and no
+ * longer than the submissions that access could have shown.
+ */
+export async function pruneSupportAccess(months: number): Promise<number> {
+  const cutoff = new Date();
+  cutoff.setMonth(cutoff.getMonth() - months);
+  const { count } = await prisma.supportAccess.deleteMany({ where: { createdAt: { lt: cutoff } } });
+  return count;
 }

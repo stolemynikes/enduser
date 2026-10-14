@@ -16,7 +16,8 @@ export async function assertApprovable(id: string): Promise<void> {
   const sub = await withOverrides(id);
   if (!sub) throw new Error('Submission not found.');
   const gate = evaluateGate(sub as unknown as GateSubmission);
-  if (gate.pending) throw new Error('Substance check is still running — wait for it to finish before approving.');
+  if (gate.pending === 'SUBSTANCE') throw new Error('Substance check is still running — wait for it to finish before approving.');
+  if (gate.pending === 'IDENTITY') throw new Error('The identity check is still being reviewed by Didit — wait for its answer before approving.');
   if (gate.blocking.length > 0) {
     const names = gate.blocking.map(c => LABEL[c]).join(', ');
     throw new Error(`Cannot approve: the ${names} check has not passed or been overridden.`);

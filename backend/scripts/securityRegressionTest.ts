@@ -84,6 +84,20 @@ async function gql(query: string, variables?: object, token?: string) {
   const widePublic = `{ ${Array.from({ length: 400 }, (_, i) => `f${i}: formInfo(slug:"sec-${run}"){ companyName }`).join('\n')} }`;
   const ampPublic = await gql(widePublic);
   check('400 aliased public lookups are refused', !!ampPublic.errors?.length, ampPublic.errors?.[0]?.message);
+  // The cost rule used to count Field nodes as written, so a fragment hid
+  // mutations from the one-per-request cap and was charged once however often
+  // it was spread.
+  const fragMut = await gql(`mutation { ...Batch }
+    fragment Batch on Mutation { a: requestPasswordReset(email: "a@test.local") b: requestPasswordReset(email: "b@test.local") }`);
+  check('two mutations inside a fragment are refused',
+    !!fragMut.errors?.some(e => /at most 1 mutation/.test(e.message)), fragMut.errors?.[0]?.message);
+  const fragWide = await gql(`{ ${Array.from({ length: 40 }, (_, i) => `f${i}: formInfo(slug:"sec-${run}") { ...Info }`).join('\n')} }
+    fragment Info on PublicFormInfo { ${Array.from({ length: 10 }, (_, i) => `c${i}: companyName`).join(' ')} }`);
+  check('a fragment spread 40 times is charged 40 times',
+    !!fragWide.errors?.some(e => /too large/.test(e.message)), fragWide.errors?.[0]?.message);
+  const team = await gql('{ a: teamDecisions(limit: 20) { total } b: teamDecisions(limit: 20) { total } }', undefined, freshOwner);
+  check('two aliased teamDecisions are refused (each reads its full cap)',
+    !!team.errors?.some(e => /too many rows/.test(e.message)), team.errors?.[0]?.message);
 
   console.log('— Finding 6 · invite tokens —');
   const invites: string[] = [];

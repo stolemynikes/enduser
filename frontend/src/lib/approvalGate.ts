@@ -50,9 +50,17 @@ export function viesFailing(s: GateSubmission): boolean {
   return !(statusOk && addressOk);
 }
 
+// Still with Didit's reviewers: neither passed nor failed. Blocks approval as
+// pending, like the backend, and cannot be overridden.
+export function identityInProgress(s: GateSubmission): boolean {
+  return idCollected(s)
+    && (s.idVerificationStatus === 'IN_REVIEW' || s.idVerificationStatus === 'PENDING');
+}
+
 export function identityFailing(s: GateSubmission, now: Date = new Date()): boolean {
   if (!idCollected(s)) return false;
   if (isExpired(s.idDocumentExpiry, now)) return true;
+  if (identityInProgress(s)) return false;
 
   // Rows verified through Didit carry a verification status; older rows from
   // the in-house OCR pipeline carry the MRZ booleans instead.
@@ -91,7 +99,14 @@ export function blockingCategories(s: GateSubmission, now: Date = new Date()): O
 }
 
 export function isPending(s: GateSubmission): boolean {
-  return s.substanceCheckStatus === 'PENDING';
+  return pendingMessage(s) != null;
+}
+
+/** Why approval is locked while a check finishes, or null when none is running. */
+export function pendingMessage(s: GateSubmission): string | null {
+  if (s.substanceCheckStatus === 'PENDING') return 'Substance check is still running — approval is locked until it finishes.';
+  if (identityInProgress(s)) return 'The identity check is still being reviewed by Didit — approval is locked until it answers.';
+  return null;
 }
 
 export function approvable(s: GateSubmission, now: Date = new Date()): boolean {
