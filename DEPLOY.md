@@ -58,6 +58,11 @@ the database, and write down where.
 | `NODE_ENV` | `production` | Hardening also triggers on a non-loopback `FRONTEND_URL`, so this is belt rather than braces — set it anyway |
 | `FRONTEND_URL` | the real origin | Drives CORS, email links, the Didit callback, and the passkey relying party |
 | `RP_ID` | the bare hostname | Only needed if it differs from `FRONTEND_URL`'s host |
+
+Passkeys are bound to the host in `FRONTEND_URL` (here `eustatement.com`; the
+`www.` form is accepted too). A passkey enrolled while testing on another
+address — a tunnel, a Tailscale name — does not carry over and has to be added
+again once the site runs on its real domain.
 | `TRUST_PROXY_HOPS` | count your proxies | Too high and `X-Forwarded-For` is forgeable, so every IP-keyed limit is evaded; too low and every client looks like the proxy and shares one bucket. Behind Cloudflare alone it is 1 |
 | `SMTP_*` | real credentials | **No mail has ever been delivered.** Every decision, invitation and reset currently fails into a `.catch` |
 | `TURNSTILE_SECRET` / `TURNSTILE_SITE_KEY` | from Cloudflare | Without them the anti-robot check is inert and the public form is free to script |

@@ -52,7 +52,9 @@ function expectedOrigins(): string[] {
     // Vite's dev server and the ports it falls back to.
     return ['http://localhost:5173', 'http://localhost:5174', 'http://localhost:3000'];
   }
-  return [`https://${host}`];
+  // The bare domain and its www form both carry credentials for the same
+  // relying party; the browser reports whichever address the page was on.
+  return host.startsWith('www.') ? [`https://${host}`] : [`https://${host}`, `https://www.${host}`];
 }
 
 // --- The challenge ticket ----------------------------------------------------

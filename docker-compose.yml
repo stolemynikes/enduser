@@ -160,7 +160,7 @@ services:
       # A bare hostname makes Caddy fetch a certificate for it. Use
       # `:80` instead while testing, or on a host where something else
       # terminates TLS.
-      SITE_ADDRESS: ${SITE_ADDRESS:?e.g. eustatement.nl, or :80 to test without TLS}
+      SITE_ADDRESS: ${SITE_ADDRESS:?e.g. eustatement.com, or :80 to test without TLS}
       ACME_EMAIL: ${ACME_EMAIL:-}
     ports:
       - '80:80'
