@@ -771,8 +771,13 @@ export default function Dashboard() {
                 )}
                 <div className="db-detail-grid" style={{ marginBottom: 0 }}>
                   <Detail label="Status" value={<>{<StatusBadge status={selected.status} />}{selected.isTest && <span className="db-badge db-badge-amber" style={{ marginLeft: 8 }}>TEST</span>}</>} />
-                  {selected.reviewedByName && (
-                    <Detail label="Reviewed by" value={<span title={selected.reviewedAt ? formatDate(selected.reviewedAt) : undefined}>{selected.reviewedByName}</span>} />
+                  {(selected.status === 'APPROVED' || selected.status === 'DENIED') && (
+                    <Detail
+                      label={selected.status === 'APPROVED' ? 'Approved by' : 'Denied by'}
+                      value={selected.reviewedByName
+                        ? <>{selected.reviewedByName}{selected.reviewedAt && <span style={{ color: 'var(--text-dim)' }}> · {formatDate(selected.reviewedAt)}</span>}</>
+                        : <span style={{ color: 'var(--text-dim)' }}>Not recorded — decided before reviewers were tracked</span>}
+                    />
                   )}
                 </div>
 

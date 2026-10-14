@@ -7,7 +7,7 @@
 //
 // Clearing is per person: the server hides a cleared notice for whoever cleared
 // it, and the rest of the team still sees it.
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { gql } from '@apollo/client';
 import { useMutation, useQuery } from '@apollo/client/react';
 import { useConfirm } from './ConfirmDialog.tsx';
@@ -28,10 +28,19 @@ const MARK_READ = gql`
 `;
 
 const TEAM_DECISIONS = gql`
-  query TeamDecisions {
-    teamDecisions(limit: 100) { submissionId buyerName orderNumber decision reviewerName decidedAt reason overrides }
+  query TeamDecisions($search: String, $reviewerId: ID, $decision: SubmissionStatus, $from: String, $to: String, $offset: Int, $limit: Int) {
+    teamDecisions(search: $search, reviewerId: $reviewerId, decision: $decision, from: $from, to: $to, offset: $offset, limit: $limit) {
+      total
+      items { submissionId reviewerId buyerName orderNumber decision reviewerName decidedAt reason overrides }
+    }
   }
 `;
+
+const TEAM_MEMBERS = gql`
+  query DecisionMembers { companyMembers { id userId name } }
+`;
+
+const PAGE_SIZE = 20;
 
 const CLEAR = gql`
   mutation ClearNotifications($ids: [ID!]) { clearNotifications(ids: $ids) }
@@ -162,20 +171,49 @@ function initials(name: string | null): string {
  * before reviewers were recorded say so instead of guessing a name.
  */
 function TeamDecisions({ onOpenSubmission }: { onOpenSubmission?: (id: string) => void }) {
-  const { data, loading } = useQuery<any>(TEAM_DECISIONS, { fetchPolicy: 'cache-and-network' });
   const [decision, setDecision] = useState<'ALL' | 'APPROVED' | 'DENIED'>('ALL');
   const [member, setMember] = useState('ALL');
+  const [searchInput, setSearchInput] = useState('');
+  const [search, setSearch] = useState('');
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
+  const [page, setPage] = useState(0);
   const [now] = useState(Date.now);
-  const all: TeamDecision[] = data?.teamDecisions ?? [];
-  const names = [...new Set(all.map(d => d.reviewerName).filter((n): n is string => !!n))].sort();
-  const rows = all.filter(d =>
-    (decision === 'ALL' || d.decision === decision)
-    && (member === 'ALL' || (member === '—' ? !d.reviewerName : d.reviewerName === member)));
+
+  // Typing settles for a moment before it becomes a query.
+  useEffect(() => {
+    const t = setTimeout(() => { setSearch(searchInput.trim()); setPage(0); }, 300);
+    return () => clearTimeout(t);
+  }, [searchInput]);
+
+  const { data: memberData } = useQuery<any>(TEAM_MEMBERS);
+  const { data, loading, previousData } = useQuery<any>(TEAM_DECISIONS, {
+    variables: {
+      search: search || null,
+      reviewerId: member === 'ALL' ? null : member,
+      decision: decision === 'ALL' ? null : decision,
+      from: from || null, to: to || null,
+      offset: page * PAGE_SIZE, limit: PAGE_SIZE,
+    },
+    fetchPolicy: 'cache-and-network',
+  });
+  // Keep the last page on screen while the next one loads, so paging does not flash.
+  const result = data?.teamDecisions ?? previousData?.teamDecisions;
+  const rows: TeamDecision[] = result?.items ?? [];
+  const total: number = result?.total ?? 0;
+  const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const filtering = !!(search || member !== 'ALL' || decision !== 'ALL' || from || to);
+
   const memberOptions = [
     { value: 'ALL', label: 'Everyone' },
-    ...names.map(n => ({ value: n, label: n })),
-    ...(all.some(d => !d.reviewerName) ? [{ value: '—', label: 'Not recorded' }] : []),
+    ...((memberData?.companyMembers ?? []) as { userId: string; name: string }[])
+      .map(m => ({ value: m.userId, label: m.name }))
+      .sort((a, b) => a.label.localeCompare(b.label)),
+    { value: 'NONE', label: 'Not recorded' },
   ];
+  const reset = () => {
+    setDecision('ALL'); setMember('ALL'); setSearchInput(''); setSearch(''); setFrom(''); setTo(''); setPage(0);
+  };
 
   return (
     <section className="nb-col" aria-labelledby="nb-team-h">
@@ -185,21 +223,39 @@ function TeamDecisions({ onOpenSubmission }: { onOpenSubmission?: (id: string) =
           <p className="nb-page-sub">Who approved or denied which statement. Only you, as owner, see this.</p>
         </div>
       </div>
-      <div className="nb-filters">
-        {(['ALL', 'APPROVED', 'DENIED'] as const).map(d => (
-          <button key={d} className={`nb-chip${decision === d ? ' nb-chip-on' : ''}`} onClick={() => setDecision(d)}
-            aria-pressed={decision === d}>
-            {d === 'ALL' ? 'All' : d === 'APPROVED' ? 'Approved' : 'Denied'}
-          </button>
-        ))}
-        {memberOptions.length > 2 && (
+
+      <div className="nb-tools">
+        <label className="nb-search">
+          <svg width="15" height="15" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+            <circle cx="8.5" cy="8.5" r="5.5" /><path d="M13.5 13.5l3 3" strokeLinecap="round" />
+          </svg>
+          <input type="search" placeholder="Search buyer name, email or order number" value={searchInput}
+            onChange={e => setSearchInput(e.target.value)} aria-label="Search decisions" />
+        </label>
+        <div className="nb-filters">
+          {(['ALL', 'APPROVED', 'DENIED'] as const).map(d => (
+            <button key={d} className={`nb-chip${decision === d ? ' nb-chip-on' : ''}`} aria-pressed={decision === d}
+              onClick={() => { setDecision(d); setPage(0); }}>
+              {d === 'ALL' ? 'All' : d === 'APPROVED' ? 'Approved' : 'Denied'}
+            </button>
+          ))}
           <span className="nb-filter-member">
-            <Select value={member} options={memberOptions} onChange={setMember} label="Team member" />
+            <Select value={member} options={memberOptions} onChange={v => { setMember(v); setPage(0); }} label="Team member" />
           </span>
-        )}
+        </div>
+        <div className="nb-dates">
+          <span className="nb-dates-label">Decided</span>
+          <input type="date" value={from} max={to || undefined} aria-label="From date"
+            onChange={e => { setFrom(e.target.value); setPage(0); }} />
+          <span aria-hidden="true">–</span>
+          <input type="date" value={to} min={from || undefined} aria-label="To date"
+            onChange={e => { setTo(e.target.value); setPage(0); }} />
+          {filtering && <button className="nb-chip" onClick={reset}>Clear filters</button>}
+          <span className="nb-total" aria-live="polite">{loading && !result ? '' : `${total} decision${total === 1 ? '' : 's'}`}</span>
+        </div>
       </div>
 
-      {loading && all.length === 0 && (
+      {loading && !result && (
         <div className="nb-card" aria-busy="true" aria-label="Loading decisions">
           {[0, 1, 2, 3].map(i => (
             <div key={i} className="nb-skel-row">
@@ -213,21 +269,19 @@ function TeamDecisions({ onOpenSubmission }: { onOpenSubmission?: (id: string) =
         </div>
       )}
 
-      {!loading && rows.length === 0 && (
+      {result && rows.length === 0 && (
         <div className="nb-card nb-empty">
-          <b>{all.length === 0 ? 'No decisions yet' : 'Nothing matches'}</b>
-          <span>{all.length === 0
-            ? 'Approvals and denials by your team will be listed here.'
-            : 'Try another filter.'}</span>
+          <b>{filtering ? 'Nothing matches' : 'No decisions yet'}</b>
+          <span>{filtering ? 'Try another search or filter.' : 'Approvals and denials by your team will be listed here.'}</span>
         </div>
       )}
 
       {rows.length > 0 && (
-        <div className="nb-card">
+        <div className={`nb-card${loading ? ' nb-card-loading' : ''}`} key={`${page}-${search}-${member}-${decision}-${from}-${to}`}>
           {rows.map((d, i) => {
             const approved = d.decision === 'APPROVED';
             return (
-              <button key={d.submissionId} className="nb-dec" style={{ animationDelay: `${Math.min(i, 10) * 30}ms` }}
+              <button key={d.submissionId} className="nb-dec" style={{ animationDelay: `${Math.min(i, 10) * 25}ms` }}
                 onClick={() => onOpenSubmission?.(d.submissionId)}
                 aria-label={`${d.reviewerName ?? 'Someone'} ${approved ? 'approved' : 'denied'} ${d.buyerName} — open the statement`}>
                 <span className={`nb-avatar${d.reviewerName ? '' : ' nb-avatar-unknown'}`} aria-hidden="true">
@@ -260,6 +314,17 @@ function TeamDecisions({ onOpenSubmission }: { onOpenSubmission?: (id: string) =
             );
           })}
         </div>
+      )}
+
+      {total > PAGE_SIZE && (
+        <nav className="nb-pager" aria-label="Decision pages">
+          <button className="nb-chip" disabled={page === 0} onClick={() => setPage(p => p - 1)}>‹ Newer</button>
+          <span>
+            {page * PAGE_SIZE + 1}–{Math.min(total, (page + 1) * PAGE_SIZE)} of {total}
+            <span className="nb-pager-page"> · page {page + 1} of {pages}</span>
+          </span>
+          <button className="nb-chip" disabled={page + 1 >= pages} onClick={() => setPage(p => p + 1)}>Older ›</button>
+        </nav>
       )}
     </section>
   );
@@ -452,7 +517,26 @@ const pageStyles = `
   .nb-col { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
   .nb-col-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; min-height: 42px; }
   .nb-col-title { margin: 0; font-size: 15px; font-weight: 700; color: var(--cd-text); }
-  .nb-filters { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: -6px; }
+  .nb-tools { display: flex; flex-direction: column; gap: 10px; margin-top: -6px; }
+  .nb-search {
+    display: flex; align-items: center; gap: 8px; padding: 0 12px; min-height: 40px;
+    background: var(--cd-surface); border: 1px solid var(--cd-border2); border-radius: var(--cd-r-sm);
+    color: var(--cd-text-dim); transition: border-color 150ms;
+  }
+  .nb-search:focus-within { border-color: rgba(91,156,246,0.55); }
+  .nb-search input { flex: 1; min-width: 0; background: none; border: none; outline: none; font: inherit; font-size: 13px; color: var(--cd-text); }
+  .nb-filters { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .nb-dates { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; font-size: 12px; color: var(--cd-text-dim); }
+  .nb-dates-label { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; }
+  .nb-dates input {
+    font: inherit; font-size: 12px; color: var(--cd-text); color-scheme: dark;
+    background: var(--cd-surface); border: 1px solid var(--cd-border2); border-radius: var(--cd-r-sm); padding: 6px 8px;
+  }
+  .nb-total { margin-left: auto; font-variant-numeric: tabular-nums; }
+  .nb-chip:disabled { opacity: 0.45; cursor: default; }
+  .nb-card-loading { opacity: 0.6; transition: opacity 150ms; }
+  .nb-pager { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 12px; color: var(--cd-text-mid); font-variant-numeric: tabular-nums; }
+  .nb-pager-page { color: var(--cd-text-dim); }
   .nb-filter-member { margin-left: auto; }
   .nb-chip {
     font-family: inherit; font-size: 12px; font-weight: 600; color: var(--cd-text-mid);

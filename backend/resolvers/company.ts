@@ -280,26 +280,64 @@ export const companyResolvers = {
      * (a reopened statement drops out until it is decided again). Test
      * submissions stay out. reviewerName is null where it was never recorded.
      */
-    teamDecisions: async (_: unknown, { limit }: { limit?: number }, ctx: Ctx) => {
+    teamDecisions: async (
+      _: unknown,
+      { search, reviewerId, decision, from, to, offset, limit }:
+        { search?: string; reviewerId?: string; decision?: string; from?: string; to?: string; offset?: number; limit?: number },
+      ctx: Ctx,
+    ) => {
       const { companyId } = requireOwner(ctx);
+      // Names and emails are encrypted at rest, so they cannot be matched in
+      // SQL: the decided statements are read (decrypted) and filtered here.
+      // Capped, which is far beyond what one seller decides in the 18 months
+      // a statement is kept.
       const rows = await tenantSubmissions(companyId).findMany({
-        // Decisions from before reviewers were recorded have no reviewedAt;
-        // they still show, last, dated by their last change.
-        where: { status: { in: ['APPROVED', 'DENIED'] }, isTest: false },
+        where: {
+          status: decision === 'APPROVED' || decision === 'DENIED' ? decision : { in: ['APPROVED', 'DENIED'] },
+          isTest: false,
+          ...(reviewerId === 'NONE' ? { reviewedById: null } : reviewerId ? { reviewedById: reviewerId } : {}),
+        },
         orderBy: [{ reviewedAt: { sort: 'desc', nulls: 'last' } }, { updatedAt: 'desc' }],
-        take: Math.min(Math.max(limit ?? 50, 1), 100),
+        take: 5000,
         include: { _count: { select: { overrides: true } } },
       });
-      return rows.map((s: any) => ({
-        submissionId: s.id,
-        buyerName: [s.firstName, s.lastName].filter(Boolean).join(' ') || s.email || 'Unknown buyer',
-        orderNumber: s.orderNumber || null,
-        decision: s.status,
-        reviewerName: s.reviewedByName,
-        decidedAt: (s.reviewedAt ?? s.updatedAt).toISOString(),
-        reason: s.status === 'DENIED' ? s.adminNote : null,
-        overrides: s._count?.overrides ?? 0,
-      }));
+      const day = (d?: string) => (d && /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : null);
+      const fromDay = day(from), toDay = day(to);
+      const needle = (search ?? '').trim().toLowerCase().slice(0, 100);
+      const all = rows
+        .map((s: any) => ({
+          submissionId: s.id,
+          reviewerId: s.reviewedById,
+          buyerName: [s.firstName, s.lastName].filter(Boolean).join(' ') || s.email || 'Unknown buyer',
+          email: s.email ?? '',
+          orderNumber: s.orderNumber || null,
+          decision: s.status,
+          reviewerName: s.reviewedByName,
+          decidedAt: (s.reviewedAt ?? s.updatedAt).toISOString(),
+          reason: s.status === 'DENIED' ? s.adminNote : null,
+          overrides: s._count?.overrides ?? 0,
+        }))
+        .filter(d => {
+          const date = d.decidedAt.slice(0, 10);
+          if (fromDay && date < fromDay) return false;
+          if (toDay && date > toDay) return false;
+          if (!needle) return true;
+          return [d.buyerName, d.email, d.orderNumber ?? ''].some(v => v.toLowerCase().includes(needle));
+        });
+      const start = Math.max(offset ?? 0, 0);
+      const size = Math.min(Math.max(limit ?? 20, 1), 100);
+      return {
+        total: all.length,
+        items: all.slice(start, start + size).map(({ email: _email, ...d }) => d),
+      };
+    },
+
+    companySubmission: async (_: unknown, { id }: { id: string }, ctx: Ctx) => {
+      const { companyId } = requireCompany(ctx);
+      const rows = await tenantSubmissions(companyId).findMany({
+        where: { id }, include: { overrides: true }, take: 1,
+      });
+      return stripSensitiveAll(rows)[0] ?? null;
     },
 
     /** Just the number behind the dot — cheap enough to poll. */

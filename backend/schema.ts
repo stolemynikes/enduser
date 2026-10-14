@@ -379,8 +379,15 @@ export const typeDefs = `#graphql
     SUPPORT_ACCESS
   }
 
+  type TeamDecisionPage {
+    """How many decisions match, across all pages."""
+    total: Int!
+    items: [TeamDecision!]!
+  }
+
   type TeamDecision {
     submissionId: ID!
+    reviewerId: ID
     buyerName: String!
     orderNumber: String
     decision: SubmissionStatus!
@@ -516,8 +523,15 @@ export const typeDefs = `#graphql
     ): [Submission!]!
     companySubmissionCounts(includeTest: Boolean = false): SubmissionCounts!
     notifications(limit: Int = 30): [Notification!]!
-    """Owners only: the latest approve and deny decisions in this company, and who made them."""
-    teamDecisions(limit: Int = 50): [TeamDecision!]!
+    """
+    Owners only: approve and deny decisions in this company and who made them,
+    newest first. search matches the buyer's name, email or order number;
+    reviewerId "NONE" picks decisions with no recorded reviewer; from and to
+    are dates (YYYY-MM-DD), inclusive.
+    """
+    teamDecisions(search: String, reviewerId: ID, decision: SubmissionStatus, from: String, to: String, offset: Int = 0, limit: Int = 20): TeamDecisionPage!
+    """One statement by id, with the same access rules as the list."""
+    companySubmission(id: ID!): Submission
     unreadNotificationCount: Int!
     """Earlier approvals in this company that look like the same request."""
     priorApprovals(id: ID!): PriorApprovals!

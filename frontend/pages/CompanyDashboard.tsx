@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { gql } from '@apollo/client';
-import { useQuery, useMutation } from '@apollo/client/react';
+import { useQuery, useMutation, useLazyQuery } from '@apollo/client/react';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from '../src/components/Toast.tsx';
 import { useConfirm } from '../src/components/ConfirmDialog.tsx';
@@ -30,9 +30,9 @@ import { Select, type SelectOption } from '../src/components/Select.tsx';
 
 const PAGE_SIZE = 100;
 
-const GET_SUBMISSIONS = gql`
-  query CompanySubmissions($status: SubmissionStatus, $includeTest: Boolean, $limit: Int, $offset: Int) {
-    companySubmissions(status: $status, includeTest: $includeTest, limit: $limit, offset: $offset) {
+// Every field the queue and the detail view read, shared by the list query and
+// the single-statement query that opens one from Activity.
+const SUBMISSION_FIELDS = `
       id email orderNumber firstName lastName companyName vatNumber buyerType
       street zipCode place country substances casNumbers concentration statement statementLang statementTranslation
       viesStatus viesName viesAddress viesAddressMatch status adminNote createdAt isTest
@@ -41,6 +41,18 @@ const GET_SUBMISSIONS = gql`
       substanceCheckStatus substanceCheckNote substanceCheckedAt
       reviewedByName reviewedAt
       overrides { category reason createdByName createdAt }
+`;
+
+const GET_ONE_SUBMISSION = gql`
+  query CompanySubmission($id: ID!) {
+    companySubmission(id: $id) { ${SUBMISSION_FIELDS} }
+  }
+`;
+
+const GET_SUBMISSIONS = gql`
+  query CompanySubmissions($status: SubmissionStatus, $includeTest: Boolean, $limit: Int, $offset: Int) {
+    companySubmissions(status: $status, includeTest: $includeTest, limit: $limit, offset: $offset) {
+      ${SUBMISSION_FIELDS}
     }
   }
 `;
@@ -319,10 +331,12 @@ export default function CompanyDashboard() {
   };
 
   const [approve, { loading: approving }] = useMutation<any>(APPROVE, {
+    refetchQueries: ['TeamDecisions'],
     onCompleted: () => { refetch(); setSelected(null); toast.success('Submission approved'); },
     onError: e => toast.error(e.message),
   });
   const [deny, { loading: denying }] = useMutation<any>(DENY, {
+    refetchQueries: ['TeamDecisions'],
     onCompleted: () => { refetch(); setSelected(null); setDenyReason(''); toast.success('Submission denied'); },
     onError: e => toast.error(e.message),
   });
@@ -671,6 +685,18 @@ export default function CompanyDashboard() {
   // not be in the page currently loaded — a filter is on, or it sits further
   // down the queue — so the id is parked and claimed once the list holds it.
   const [pendingOpenId, setPendingOpenId] = useState<string | null>(null);
+  // Opens a statement on top of whatever tab is showing — used from Activity,
+  // so reading a decision does not throw you out of the page you were on.
+  const [loadOne] = useLazyQuery<any>(GET_ONE_SUBMISSION, { fetchPolicy: 'network-only' });
+  const openSubmissionInPlace = async (id: string) => {
+    const { data } = await loadOne({ variables: { id } });
+    if (data?.companySubmission) {
+      setSelected(data.companySubmission);
+      setModalMode('view');
+    } else {
+      toast.error('That statement is no longer available.');
+    }
+  };
   const openSubmissionById = (id: string) => {
     setTab('submissions');
     setFilter('ALL');
@@ -952,7 +978,7 @@ export default function CompanyDashboard() {
             </div>
           )}
           <div key={tab} className="cd-tab-pane">
-          {tab === 'activity' && <ActivityFeed onOpenSubmission={openSubmissionById} showTeam={isOwner} />}
+          {tab === 'activity' && <ActivityFeed onOpenSubmission={id => void openSubmissionInPlace(id)} showTeam={isOwner} />}
           {tab === 'submissions' && (
             <>
               {!isOwner && formConfigured === false && (
@@ -1475,8 +1501,13 @@ export default function CompanyDashboard() {
                   )}
                   <div className="cd-detail-grid" style={{ marginBottom: 0 }}>
                     <Detail label="Status" value={<StatusBadge status={selected.status} />} />
-                    {selected.reviewedByName && (
-                      <Detail label="Reviewed by" value={<span title={selected.reviewedAt ? formatDate(selected.reviewedAt) : undefined}>{selected.reviewedByName}</span>} />
+                    {(selected.status === 'APPROVED' || selected.status === 'DENIED') && (
+                      <Detail
+                        label={selected.status === 'APPROVED' ? 'Approved by' : 'Denied by'}
+                        value={selected.reviewedByName
+                          ? <>{selected.reviewedByName}{selected.reviewedAt && <span style={{ color: 'var(--cd-text-dim)' }}> · {formatDate(selected.reviewedAt)}</span>}</>
+                          : <span style={{ color: 'var(--cd-text-dim)' }}>Not recorded — decided before reviewers were tracked</span>}
+                      />
                     )}
                   </div>
                   {canManage && selected.status === 'PENDING_REVIEW' && !approvable(selected) && (
