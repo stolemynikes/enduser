@@ -13,3 +13,16 @@ a {
   text-decoration: inherit;
   color: inherit;
 }
+
+/* Scrollbars in the app's own colours: a thin rounded thumb on a clear track,
+   on every scrolling area (Firefox reads the first two lines, Chromium and
+   Safari the ::-webkit rules). */
+* { scrollbar-width: thin; scrollbar-color: rgba(163,163,166,0.35) transparent; }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: rgba(163,163,166,0.28); border-radius: 999px;
+  border: 3px solid transparent; background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover { background: rgba(163,163,166,0.5); background-clip: padding-box; border: 3px solid transparent; }
+::-webkit-scrollbar-corner { background: transparent; }

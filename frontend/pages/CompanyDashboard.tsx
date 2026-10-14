@@ -10,7 +10,7 @@ import { useModalDismiss } from '../src/lib/useModalDismiss.ts';
 import { approvable, blockingCategories, categoryFailing, isExpired, isPending, CATEGORY_LABEL } from '../src/lib/approvalGate.ts';
 import SetupWizard from './SetupWizard';
 import { Mark } from '../src/components/Mark.tsx';
-import { NotificationBell } from '../src/components/NotificationBell.tsx';
+import { ActivityNavItem, ActivityFeed } from '../src/components/NotificationBell.tsx';
 import { PriorApprovals } from '../src/components/PriorApprovals.tsx';
 import { MfaSettings } from '../src/components/MfaSettings.tsx';
 import { RevealDocumentNumber } from '../src/components/RevealDocumentNumber.tsx';
@@ -26,6 +26,7 @@ import {
   draftFromConfig,
 } from '../src/lib/formConfigShared';
 import { StatementWithTranslation } from '../src/components/StatementTranslation.tsx';
+import { Select, type SelectOption } from '../src/components/Select.tsx';
 
 const PAGE_SIZE = 100;
 
@@ -132,6 +133,13 @@ type CompanyRole = 'OWNER' | 'EMPLOYEE_PLUS' | 'EMPLOYEE';
 const roleLabels: Record<CompanyRole, string> = {
   OWNER: 'Owner', EMPLOYEE_PLUS: 'Employee+', EMPLOYEE: 'Employee',
 };
+
+// What each role may do, shown in the role menus so the choice is informed.
+const ROLE_OPTIONS: SelectOption<CompanyRole>[] = [
+  { value: 'OWNER', label: 'Owner', description: 'Everything, including form settings, the team and closing the account.' },
+  { value: 'EMPLOYEE_PLUS', label: 'Employee+', description: 'Approves and denies statements, overrides a failed check with a reason.' },
+  { value: 'EMPLOYEE', label: 'Employee', description: 'Reads statements and their check results.' },
+];
 const docTypeLabels: Record<IdDocumentType, string> = {
   PASSPORT: 'Passport', ID_CARD: 'Identity Card',
 };
@@ -158,7 +166,7 @@ type SubstanceCheckStatus = 'NOT_CHECKED' | 'PENDING' | 'OK' | 'FLAGGED' | 'ERRO
 type IdVerificationStatus = 'NOT_CHECKED' | 'PENDING' | 'IN_REVIEW' | 'APPROVED' | 'DECLINED' | 'EXPIRED' | 'ERROR';
 type ViesAddressMatch = 'NOT_CHECKED' | 'UNAVAILABLE' | 'MATCH' | 'PARTIAL' | 'MISMATCH';
 type Member = { id: string; userId: string; email: string; name: string; role: CompanyRole; joinedAt: string };
-type Tab = 'submissions' | 'members' | 'form' | 'account';
+type Tab = 'submissions' | 'activity' | 'members' | 'form' | 'account';
 type Filter = 'ALL' | 'PENDING_REVIEW' | 'APPROVED' | 'DENIED';
 
 export default function CompanyDashboard() {
@@ -197,6 +205,9 @@ export default function CompanyDashboard() {
   const [visibleCount, setVisibleCount] = useState(50);
   const sentinelRef = useRef<HTMLTableRowElement | null>(null);
   const [selected, setSelected] = useState<Submission | null>(null);
+  // The list's own refresh, kept apart from Apollo's loading flag so the table
+  // stays on screen while it reloads instead of flashing to a placeholder.
+  const [refreshing, setRefreshing] = useState(false);
   const [modalMode, setModalMode] = useState<'view' | 'deny'>('view');
   const [denyReason, setDenyReason] = useState('');
   const [overrideCat, setOverrideCat] = useState<OverrideCategory | null>(null);
@@ -230,6 +241,10 @@ export default function CompanyDashboard() {
     variables: { includeTest: testMode },
   });
   const counts = countData?.companySubmissionCounts;
+  const refreshList = async () => {
+    setRefreshing(true);
+    try { await Promise.all([refetch(), refetchCounts()]); } finally { setRefreshing(false); }
+  };
   const [pageExhausted, setPageExhausted] = useState(false);
   const loadingMore = useRef(false);
   const { data: memberData, refetch: refetchMembers } = useQuery<any>(GET_MEMBERS, { skip: !isOwner });
@@ -824,7 +839,7 @@ export default function CompanyDashboard() {
                 </svg>
                 <span className="cd-sb-label">Submissions</span>
               </button>
-              <NotificationBell onOpenSubmission={openSubmissionById} />
+              <ActivityNavItem active={tab === 'activity'} onOpen={() => setTab('activity')} />
               {isOwner && (
                 <>
                   <button className={`cd-sb-item${tab === 'members' ? ' cd-sb-active' : ''}`}
@@ -936,6 +951,8 @@ export default function CompanyDashboard() {
               )}
             </div>
           )}
+          <div key={tab} className="cd-tab-pane">
+          {tab === 'activity' && <ActivityFeed onOpenSubmission={openSubmissionById} />}
           {tab === 'submissions' && (
             <>
               {!isOwner && formConfigured === false && (
@@ -957,11 +974,13 @@ export default function CompanyDashboard() {
                     {testMode ? 'Viewing test data' : `Test data (${counts?.tests ?? 0})`}
                   </button>
                 )}
-                <button className="cd-refresh" onClick={() => { refetch(); refetchCounts(); }} title="Refresh" aria-label="Refresh submissions">
+                <button className={`cd-refresh${refreshing ? ' cd-refreshing' : ''}`} disabled={refreshing}
+                  onClick={() => void refreshList()} title="Load the newest statements">
                   <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" width="14" aria-hidden="true">
                     <path d="M4 4.5A7.5 7.5 0 0117 10m-1 5.5A7.5 7.5 0 013 10" strokeLinecap="round"/>
                     <path d="M16 6V4l2 2-2 2V6zM4 14v2l-2-2 2-2v2z" fill="currentColor" stroke="none"/>
                   </svg>
+                  <span>{refreshing ? 'Refreshing…' : 'Refresh list'}</span>
                 </button>
               </div>
               <div className="cd-search-wrap">
@@ -985,9 +1004,21 @@ export default function CompanyDashboard() {
               </div>
               {(q || dateActive) && <div className="cd-result-count">{filtered.length} result{filtered.length === 1 ? '' : 's'}</div>}
 
-              {loading && <div className="cd-state">Loading…</div>}
-              {!loading && filtered.length === 0 && <div className="cd-state">No submissions here.</div>}
-              {!loading && filtered.length > 0 && (
+              {loading && !refreshing && (
+                <div className="cd-skel-table" aria-busy="true" aria-label="Loading submissions">
+                  {[0, 1, 2, 3, 4, 5].map(i => (
+                    <div key={i} className="cd-skel-row">
+                      <span className="cd-skel" style={{ width: '12%' }} />
+                      <span className="cd-skel" style={{ width: '22%' }} />
+                      <span className="cd-skel" style={{ width: '18%' }} />
+                      <span className="cd-skel" style={{ width: '10%' }} />
+                      <span className="cd-skel" style={{ width: '9%', marginLeft: 'auto' }} />
+                    </div>
+                  ))}
+                </div>
+              )}
+              {(!loading || refreshing) && filtered.length === 0 && <div className="cd-state">No submissions here.</div>}
+              {(!loading || refreshing) && filtered.length > 0 && (
                 <div className="cd-table-wrap">
                   <table className="cd-table">
                     <thead>
@@ -1180,7 +1211,7 @@ export default function CompanyDashboard() {
           )}
 
           {tab === 'account' && isOwner && (
-            <div className="cd-formcfg">
+            <div className="cd-formcfg cd-account">
               <div className="cd-formcfg-header">
                 <div>
                   <h2 className="cd-members-title">Account</h2>
@@ -1284,12 +1315,8 @@ export default function CompanyDashboard() {
                       <span className="cd-member-email">{m.email}</span>
                     </div>
                     <div className="cd-member-actions">
-                      <select className="cd-role-select" value={m.role} aria-label={`Role for ${m.name || m.email}`}
-                        onChange={e => handleChangeRole(m, e.target.value)}>
-                        <option value="OWNER">Owner</option>
-                        <option value="EMPLOYEE_PLUS">Employee+</option>
-                        <option value="EMPLOYEE">Employee</option>
-                      </select>
+                      <Select value={m.role as CompanyRole} options={ROLE_OPTIONS}
+                        label={`Role for ${m.name || m.email}`} onChange={r => handleChangeRole(m, r)} />
                       <button className="cd-remove-btn" onClick={() => handleRemoveMember(m)}>
                         Remove
                       </button>
@@ -1299,6 +1326,7 @@ export default function CompanyDashboard() {
               </div>
             </div>
           )}
+          </div>
         </main>
 
         {/* Submission modal */}
@@ -1526,12 +1554,7 @@ export default function CompanyDashboard() {
                     </div>
                     <div className="cd-invite-field">
                       <label className="cd-detail-label" htmlFor="invite-role">Role</label>
-                      <select id="invite-role" className="cd-deny-textarea" style={{ minHeight: 0, padding: '10px 14px' }}
-                        value={inviteRole} onChange={e => setInviteRole(e.target.value as CompanyRole)}>
-                        <option value="OWNER">Owner</option>
-                        <option value="EMPLOYEE_PLUS">Employee+</option>
-                        <option value="EMPLOYEE">Employee</option>
-                      </select>
+                      <Select id="invite-role" block value={inviteRole} options={ROLE_OPTIONS} onChange={setInviteRole} />
                     </div>
                     {inviteError && <div style={{ color: '#f04e5e', fontSize: 12 }}>{inviteError}</div>}
                     <button className="cd-btn-approve cd-btn-lg" type="submit" disabled={inviting}>
@@ -1750,6 +1773,34 @@ const styles = `
     border-radius: var(--cd-r-sm); padding: 8px 11px; cursor: pointer; color: var(--cd-text-dim); display: flex; align-items: center; transition: all 0.2s;
   }
   .cd-refresh:hover { border-color: var(--cd-border2); color: var(--cd-text-mid); }
+  .cd-refresh { gap: 7px; font-family: inherit; font-size: 12px; font-weight: 600; }
+  .cd-refresh:disabled { cursor: default; }
+  .cd-refreshing svg { animation: cd-spin 0.8s linear infinite; }
+  @keyframes cd-spin { to { transform: rotate(360deg); } }
+
+  /* Motion: each tab fades up into place, rows arrive in a short cascade, and
+     buttons give under the press. All of it stops for reduced motion. */
+  .cd-tab-pane { animation: cd-pane-in 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+  @keyframes cd-pane-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+  .cd-table tbody tr { animation: cd-pane-in 240ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+  .cd-table tbody tr:nth-child(2) { animation-delay: 25ms; } .cd-table tbody tr:nth-child(3) { animation-delay: 50ms; }
+  .cd-table tbody tr:nth-child(4) { animation-delay: 75ms; } .cd-table tbody tr:nth-child(5) { animation-delay: 100ms; }
+  .cd-table tbody tr:nth-child(6) { animation-delay: 125ms; } .cd-table tbody tr:nth-child(n+7) { animation-delay: 150ms; }
+  .cd-main button, .cd-sidebar button { transition-property: background, color, border-color, box-shadow, opacity, transform; transition-duration: 150ms; }
+  .cd-main button:active:not(:disabled), .cd-sidebar button:active:not(:disabled) { transform: scale(0.97); }
+  .cd-skel-table { background: var(--cd-surface); border: 1px solid var(--cd-border); border-radius: var(--cd-r); overflow: hidden; }
+  .cd-skel-row { display: flex; align-items: center; gap: 24px; padding: 18px 18px; border-bottom: 1px solid var(--cd-border); }
+  .cd-skel-row:last-child { border-bottom: none; }
+  .cd-skel {
+    display: block; height: 10px; border-radius: 5px;
+    background: linear-gradient(90deg, var(--cd-surface2) 25%, var(--cd-surface3, #2a2a2d) 50%, var(--cd-surface2) 75%);
+    background-size: 200% 100%; animation: cd-shimmer 1.2s ease-in-out infinite;
+  }
+  @keyframes cd-shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+  @media (prefers-reduced-motion: reduce) {
+    .cd-tab-pane, .cd-table tbody tr, .cd-skel, .cd-refreshing svg { animation: none; }
+    .cd-main button:active:not(:disabled), .cd-sidebar button:active:not(:disabled) { transform: none; }
+  }
   .cd-state { text-align: center; padding: 3.5rem; font-size: 13px; color: var(--cd-text-dim); background: var(--cd-surface); border: 1px solid var(--cd-border); border-radius: var(--cd-r); }
   .cd-search-wrap { position: relative; display: flex; align-items: center; margin-bottom: 1rem; }
   .cd-result-count { font-size: 12px; color: var(--cd-text-dim); margin: -0.5rem 0 1rem 2px; }
@@ -1940,13 +1991,16 @@ const styles = `
   .cd-deny-textarea:focus { border-color: var(--cd-blue); box-shadow: 0 0 0 3px rgba(91,156,246,0.15); }
 
   /* MEMBERS */
-  .cd-members { background: var(--cd-surface); border: 1px solid var(--cd-border); border-radius: var(--cd-r); overflow: hidden; }
+  /* Not overflow: hidden — the role menu has to open past the card's edge. */
+  .cd-members { background: var(--cd-surface); border: 1px solid var(--cd-border); border-radius: var(--cd-r); }
   .cd-members-header { display: flex; align-items: center; justify-content: space-between; padding: 1.25rem 1.5rem; border-bottom: 1px solid var(--cd-border); }
   .cd-members-title { font-size: 14px; font-weight: 600; color: var(--cd-text); }
   .cd-invite-btn { font-family: inherit; font-size: 12px; font-weight: 600; color: var(--cd-green); background: rgba(62,207,142,0.1); border: 1px solid rgba(62,207,142,0.25); border-radius: var(--cd-r-pill); padding: 7px 16px; cursor: pointer; transition: all 0.2s; }
   .cd-invite-btn:hover { background: rgba(62,207,142,0.2); border-color: rgba(62,207,142,0.4); }
   .cd-members-list { display: flex; flex-direction: column; }
   .cd-formcfg { width: 100%; }
+  .cd-account { display: flex; flex-direction: column; gap: 16px; }
+  .cd-account > * { margin-top: 0; margin-bottom: 0; }
   .cd-formcfg-link { color: var(--cd-blue); text-decoration: none; }
   .cd-formcfg-link:hover { text-decoration: underline; }
   .cd-formcfg-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; margin-bottom: 1.25rem; }
@@ -2020,7 +2074,8 @@ const styles = `
     .cd-filter-btn { padding: 9px 14px; }
     .cd-actions { flex-direction: column; gap: 0.4rem; }
     .cd-btn-approve, .cd-btn-deny, .cd-btn-view, .cd-btn-delete { padding: 9px 16px; }
-    .cd-refresh { width: 38px; height: 38px; }
+    .cd-refresh { height: 38px; padding: 0 11px; }
+    .cd-refresh span { display: none; }
     .cd-formcfg-row { flex-direction: column; align-items: flex-start; gap: 0.75rem; }
     .cd-formcfg-header { flex-direction: column; }
     .cd-formcfg-terms-head { flex-direction: column; align-items: flex-start; gap: 0.75rem; }
@@ -2031,7 +2086,6 @@ const styles = `
   .cd-member-name { font-weight: 500; color: var(--cd-text); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .cd-member-email { font-size: 11px; color: var(--cd-text-dim); }
   .cd-member-actions { display: flex; align-items: center; gap: 0.5rem; flex-shrink: 0; }
-  .cd-role-select { font-family: inherit; font-size: 12px; color: var(--cd-text-mid); background: var(--cd-surface2); border: 1px solid var(--cd-border2); border-radius: var(--cd-r-pill); padding: 5px 12px; cursor: pointer; outline: none; }
   .cd-remove-btn { font-family: inherit; font-size: 11px; font-weight: 500; color: var(--cd-text-dim); background: transparent; border: 1px solid var(--cd-border); border-radius: var(--cd-r-pill); padding: 5px 12px; cursor: pointer; transition: all 0.2s; }
   .cd-remove-btn:hover { color: var(--cd-accent); border-color: rgba(240,78,94,0.3); background: rgba(240,78,94,0.07); }
   .cd-invite-field { display: flex; flex-direction: column; gap: 6px; }

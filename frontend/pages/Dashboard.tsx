@@ -191,6 +191,13 @@ export default function Dashboard() {
   const toggleTheme = () => setTheme(t => t === 'dark' ? 'light' : 'dark');
 
   const { data, loading, error, refetch } = useQuery<any>(GET_SUBMISSIONS);
+  // The list's own refresh, kept apart from Apollo's loading flag so the table
+  // stays on screen while it reloads.
+  const [refreshing, setRefreshing] = useState(false);
+  const refreshList = async () => {
+    setRefreshing(true);
+    try { await refetch(); } finally { setRefreshing(false); }
+  };
   const [approve, { loading: approving }] = useMutation<any>(APPROVE, {
     onCompleted: () => { refetch(); setSelected(null); toast.success('Submission approved'); },
     onError: e => toast.error(e.message),
@@ -458,6 +465,7 @@ export default function Dashboard() {
         </nav>
 
         <main className="db-main">
+          <div key={tab} className="db-tab-pane">
           {tab === 'submissions' && (<>
           <div className="db-filters">
             {([['ALL', 'All', counts.all], ['PENDING_REVIEW', 'Pending Review', counts.pending],
@@ -467,11 +475,13 @@ export default function Dashboard() {
                 {label} <span className="db-filter-count">{count}</span>
               </button>
             ))}
-            <button className="db-refresh" onClick={() => refetch()} title="Refresh" aria-label="Refresh submissions">
+            <button className={`db-refresh${refreshing ? ' db-refreshing' : ''}`} disabled={refreshing}
+              onClick={() => void refreshList()} title="Load the newest statements">
               <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" width="14" aria-hidden="true">
                 <path d="M4 4.5A7.5 7.5 0 0117 10m-1 5.5A7.5 7.5 0 013 10" strokeLinecap="round"/>
                 <path d="M16 6V4l2 2-2 2V6zM4 14v2l-2-2 2-2v2z" fill="currentColor" stroke="none"/>
               </svg>
+              <span>{refreshing ? 'Refreshing…' : 'Refresh list'}</span>
             </button>
           </div>
 
@@ -503,10 +513,22 @@ export default function Dashboard() {
           </div>
           {(q || dateActive) && <div className="db-result-count">{filtered.length} result{filtered.length === 1 ? '' : 's'}</div>}
 
-          {loading && <div className="db-state">Loading submissions…</div>}
+          {loading && !refreshing && (
+            <div className="db-skel-table" aria-busy="true" aria-label="Loading submissions">
+              {[0, 1, 2, 3, 4, 5].map(i => (
+                <div key={i} className="db-skel-row">
+                  <span className="db-skel" style={{ width: '10%' }} />
+                  <span className="db-skel" style={{ width: '16%' }} />
+                  <span className="db-skel" style={{ width: '22%' }} />
+                  <span className="db-skel" style={{ width: '12%' }} />
+                  <span className="db-skel" style={{ width: '8%', marginLeft: 'auto' }} />
+                </div>
+              ))}
+            </div>
+          )}
           {error && <div className="db-state db-state-err">Failed to load: {error.message}</div>}
 
-          {!loading && !error && (
+          {(!loading || refreshing) && !error && (
             filtered.length === 0
               ? <div className="db-state">No submissions in this category.</div>
               : <div className="db-table-wrap">
@@ -592,6 +614,7 @@ export default function Dashboard() {
           )}
 
           {tab === 'test' && <TestToolsTab toast={toast} onSubmissionCreated={() => refetch()} />}
+          </div>
         </main>
 
       {selected && (
@@ -1549,6 +1572,34 @@ const dashStyles = `
     transition: all 0.2s var(--ease); display: flex; align-items: center;
   }
   .db-refresh:hover { border-color: var(--border2); color: var(--text-mid); background: var(--surface2); }
+  .db-refresh { gap: 7px; font-family: inherit; font-size: 12px; font-weight: 600; }
+  .db-refresh:disabled { cursor: default; }
+  .db-refreshing svg { animation: db-spin 0.8s linear infinite; }
+  @keyframes db-spin { to { transform: rotate(360deg); } }
+
+  /* Motion: each tab fades up into place, rows arrive in a short cascade, and
+     buttons give under the press. All of it stops for reduced motion. */
+  .db-tab-pane { animation: db-pane-in 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+  @keyframes db-pane-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+  .db-table tbody tr { animation: db-pane-in 240ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+  .db-table tbody tr:nth-child(2) { animation-delay: 25ms; } .db-table tbody tr:nth-child(3) { animation-delay: 50ms; }
+  .db-table tbody tr:nth-child(4) { animation-delay: 75ms; } .db-table tbody tr:nth-child(5) { animation-delay: 100ms; }
+  .db-table tbody tr:nth-child(6) { animation-delay: 125ms; } .db-table tbody tr:nth-child(n+7) { animation-delay: 150ms; }
+  .db-main button, .db-sidebar button { transition-property: background, color, border-color, box-shadow, opacity, transform; transition-duration: 150ms; }
+  .db-main button:active:not(:disabled), .db-sidebar button:active:not(:disabled) { transform: scale(0.97); }
+  .db-skel-table { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); overflow: hidden; }
+  .db-skel-row { display: flex; align-items: center; gap: 24px; padding: 18px; border-bottom: 1px solid var(--border); }
+  .db-skel-row:last-child { border-bottom: none; }
+  .db-skel {
+    display: block; height: 10px; border-radius: 5px;
+    background: linear-gradient(90deg, var(--surface2) 25%, var(--surface3, #2a2a2d) 50%, var(--surface2) 75%);
+    background-size: 200% 100%; animation: db-shimmer 1.2s ease-in-out infinite;
+  }
+  @keyframes db-shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+  @media (prefers-reduced-motion: reduce) {
+    .db-tab-pane, .db-table tbody tr, .db-skel, .db-refreshing svg { animation: none; }
+    .db-main button:active:not(:disabled), .db-sidebar button:active:not(:disabled) { transform: none; }
+  }
 
   /* STATE */
   .db-state {
@@ -1818,7 +1869,8 @@ const dashStyles = `
     .db-company { font-size: 12px; }
     .db-actions { flex-direction: column; gap: 0.4rem; }
     .db-btn-approve, .db-btn-deny, .db-btn-view, .db-btn-cancel { padding: 9px 16px; }
-    .db-refresh { width: 38px; height: 38px; }
+    .db-refresh { height: 38px; padding: 0 11px; }
+    .db-refresh span { display: none; }
     .db-detail-grid { grid-template-columns: 1fr; gap: 1rem; }
     .db-modal { border-radius: 12px; max-height: 92vh; }
     .db-modal-header { padding: 1.25rem; }
