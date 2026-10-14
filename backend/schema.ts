@@ -570,6 +570,8 @@ export const typeDefs = `#graphql
     finishRevealWithPasskey(id: ID!, ticket: String!, responseJson: String!): RevealedDocument!
     """Marks the given notifications read, or every one of them when no ids are given."""
     markNotificationsRead(ids: [ID!]): Int!
+    """Clears the given notifications from your own activity, or all of them when no ids are given. The rest of the team still sees them."""
+    clearNotifications(ids: [ID!]): Int!
     """
     Step one of enrolling a passkey. The browser turns the options into a
     credential; finishPasskeyRegistration stores it.

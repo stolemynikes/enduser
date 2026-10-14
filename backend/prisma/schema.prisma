@@ -471,6 +471,10 @@ model Notification {
   /// Where the bell takes you — a submission id, or null for nothing to open.
   submissionId String?
   readAt    DateTime?
+  /// Company users who cleared this from their own activity list. Clearing is
+  /// per person: a shared notice disappears for the one who cleared it, not
+  /// for the rest of the team.
+  dismissedBy String[]       @default([])
   createdAt DateTime         @default(now())
 
   // The panel reads "newest first, unread first" for one tenant.

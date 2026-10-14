@@ -258,7 +258,11 @@ export const companyResolvers = {
     notifications: async (_: unknown, { limit }: { limit?: number }, ctx: Ctx) => {
       const { companyId, companyUserId } = requireCompany(ctx);
       const rows = await prisma.notification.findMany({
-        where: { companyId, OR: [{ userId: null }, { userId: companyUserId }] },
+        where: {
+          companyId,
+          OR: [{ userId: null }, { userId: companyUserId }],
+          NOT: { dismissedBy: { has: companyUserId } },
+        },
         orderBy: { createdAt: 'desc' },
         take: Math.min(Math.max(limit ?? 30, 1), 100),
       });
@@ -274,7 +278,11 @@ export const companyResolvers = {
     unreadNotificationCount: async (_: unknown, __: unknown, ctx: Ctx) => {
       const { companyId, companyUserId } = requireCompany(ctx);
       return prisma.notification.count({
-        where: { companyId, readAt: null, OR: [{ userId: null }, { userId: companyUserId }] },
+        where: {
+          companyId, readAt: null,
+          OR: [{ userId: null }, { userId: companyUserId }],
+          NOT: { dismissedBy: { has: companyUserId } },
+        },
       });
     },
 
@@ -947,6 +955,22 @@ export const companyResolvers = {
           ...(ids && ids.length > 0 ? { id: { in: ids.slice(0, 200) } } : {}),
         },
         data: { readAt: new Date() },
+      });
+      return count;
+    },
+
+    clearNotifications: async (_: unknown, { ids }: { ids?: string[] }, ctx: Ctx) => {
+      const { companyId, companyUserId } = requireCompany(ctx);
+      // Hidden for this person only, scoped like markNotificationsRead so an id
+      // from another company's stream clears nothing.
+      const { count } = await prisma.notification.updateMany({
+        where: {
+          companyId,
+          OR: [{ userId: null }, { userId: companyUserId }],
+          NOT: { dismissedBy: { has: companyUserId } },
+          ...(ids && ids.length > 0 ? { id: { in: ids.slice(0, 200) } } : {}),
+        },
+        data: { dismissedBy: { push: companyUserId } },
       });
       return count;
     },

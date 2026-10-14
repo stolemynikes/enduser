@@ -1,17 +1,20 @@
-// The dashboard's bell: unread count, fold-out panel, one line per event.
+// Activity: what happened in this company, newest first.
 //
-// It sits in the sidebar next to the other destinations and keeps its label,
-// because an icon on its own is the kind of control people never find. The dot
-// is never the only signal — the count is written out, and each row carries an
-// icon and a word for its severity, so the panel still reads for anyone who
-// cannot separate the red from the grey.
-import { useCallback, useEffect, useRef, useState } from 'react';
+// Two parts. ActivityNavItem is the sidebar entry, with the unread count written
+// out next to the dot so the colour is never the only signal. ActivityFeed is
+// the page itself: every notice with an icon and a word for its severity,
+// grouped by day, with "Mark all read", "Clear all" and a clear button per row.
+//
+// Clearing is per person: the server hides a cleared notice for whoever cleared
+// it, and the rest of the team still sees it.
+import { useState } from 'react';
 import { gql } from '@apollo/client';
 import { useMutation, useQuery } from '@apollo/client/react';
+import { useConfirm } from './ConfirmDialog.tsx';
 
 const NOTIFICATIONS = gql`
   query Notifications {
-    notifications(limit: 30) { id kind title body submissionId read createdAt }
+    notifications(limit: 100) { id kind title body submissionId read createdAt }
   }
 `;
 
@@ -21,6 +24,10 @@ const UNREAD_COUNT = gql`
 
 const MARK_READ = gql`
   mutation MarkNotificationsRead($ids: [ID!]) { markNotificationsRead(ids: $ids) }
+`;
+
+const CLEAR = gql`
+  mutation ClearNotifications($ids: [ID!]) { clearNotifications(ids: $ids) }
 `;
 
 type Notification = {
@@ -48,7 +55,7 @@ const SEVERITY: Record<string, { tone: 'danger' | 'warn' | 'info'; word: string 
 
 function Icon({ kind }: { kind: string }) {
   const common = {
-    width: 15, height: 15, viewBox: '0 0 20 20', fill: 'none',
+    width: 16, height: 16, viewBox: '0 0 20 20', fill: 'none',
     stroke: 'currentColor', strokeWidth: 1.8,
     strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const,
     'aria-hidden': true,
@@ -75,186 +82,219 @@ function Icon({ kind }: { kind: string }) {
   }
 }
 
-/** "4m", "3h", "2d" — the panel is scanned, not read, so the stamp stays short. */
-function ago(iso: string): string {
-  const seconds = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 1000));
+/** "4m ago", "3h ago" — scanned, not read, so the stamp stays short. */
+function ago(iso: string, now: number): string {
+  const seconds = Math.max(0, Math.round((now - new Date(iso).getTime()) / 1000));
   if (seconds < 60) return 'just now';
   const minutes = Math.round(seconds / 60);
   if (minutes < 60) return `${minutes}m ago`;
   const hours = Math.round(minutes / 60);
   if (hours < 24) return `${hours}h ago`;
-  const days = Math.round(hours / 24);
-  if (days < 7) return `${days}d ago`;
-  return new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+  return new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
 }
 
-export function NotificationBell({ onOpenSubmission }: { onOpenSubmission?: (id: string) => void }) {
-  const [open, setOpen] = useState(false);
-  const panelRef = useRef<HTMLDivElement>(null);
-  const buttonRef = useRef<HTMLButtonElement>(null);
-  /**
-   * Where to put the panel, in viewport coordinates.
-   *
-   * It cannot be positioned against the trigger, which is the obvious way to
-   * do this: the sidebar sets `overflow-y: auto`, and CSS has no way to scroll
-   * one axis while letting the other overflow — the browser promotes the whole
-   * box to `auto`. An absolutely positioned panel hanging off the right edge
-   * was therefore clipped to nothing. It rendered, it was simply invisible,
-   * which is the worst kind of broken because the button still toggled.
-   *
-   * So the panel is fixed to the viewport and told where to go by measuring the
-   * trigger when it opens.
-   */
-  const [at, setAt] = useState<{ top: number; left: number } | null>(null);
+/** "Today", "Yesterday", or the date — the heading over each day's group. */
+function dayLabel(iso: string, now: number): string {
+  const d = new Date(iso);
+  const start = new Date(now); start.setHours(0, 0, 0, 0);
+  const diffDays = Math.round((start.getTime() - new Date(d).setHours(0, 0, 0, 0)) / 86_400_000);
+  if (diffDays <= 0) return 'Today';
+  if (diffDays === 1) return 'Yesterday';
+  return d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
+}
 
-  // The count is polled; the list is only fetched when the panel is opened, so
-  // a dashboard left open overnight costs one small query a minute.
-  const { data: countData, refetch: refetchCount } =
-    useQuery<any>(UNREAD_COUNT, { pollInterval: 60_000, fetchPolicy: 'cache-and-network' });
-  const { data, loading, refetch } = useQuery<any>(NOTIFICATIONS, { skip: !open, fetchPolicy: 'cache-and-network' });
-  const [markRead] = useMutation<any>(MARK_READ);
+/** The sidebar entry: opens the Activity page, with the unread count beside it. */
+export function ActivityNavItem({ active, onOpen }: { active: boolean; onOpen: () => void }) {
+  // The count is polled, so a dashboard left open overnight costs one small
+  // query a minute.
+  const { data } = useQuery<any>(UNREAD_COUNT, { pollInterval: 60_000, fetchPolicy: 'cache-and-network' });
+  const unread: number = data?.unreadNotificationCount ?? 0;
+  return (
+    <>
+    <style>{navStyles}</style>
+    <button
+      className={`cd-sb-item${active ? ' cd-sb-active' : ''}`}
+      onClick={onOpen}
+      aria-current={active ? 'page' : undefined}
+      aria-label={unread > 0 ? `Activity, ${unread} unread` : 'Activity'}
+    >
+      <span className="nb-icon-wrap">
+        <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor"
+          strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M10 3a4.5 4.5 0 00-4.5 4.5c0 2.6-.6 4.1-1.2 5A.7.7 0 005 13.6h10a.7.7 0 00.6-1.1c-.5-.9-1.1-2.4-1.1-5A4.5 4.5 0 0010 3z" />
+          <path d="M8.2 16a1.9 1.9 0 003.6 0" />
+        </svg>
+        {unread > 0 && <span className="nb-dot" aria-hidden="true" />}
+      </span>
+      <span className="cd-sb-label">Activity</span>
+      {unread > 0 && <span className="nb-count" aria-hidden="true">{unread > 99 ? '99+' : unread}</span>}
+    </button>
+    </>
+  );
+}
 
-  const unread: number = countData?.unreadNotificationCount ?? 0;
-  const items: Notification[] = data?.notifications ?? [];
+/** The Activity page. */
+export function ActivityFeed({ onOpenSubmission }: { onOpenSubmission?: (id: string) => void }) {
+  const confirm = useConfirm();
+  const { data, loading } = useQuery<any>(NOTIFICATIONS, { fetchPolicy: 'cache-and-network' });
+  const refetchQueries = ['Notifications', 'UnreadNotificationCount'];
+  const [markRead] = useMutation<any>(MARK_READ, { refetchQueries, awaitRefetchQueries: true });
+  const [clear] = useMutation<any>(CLEAR, { refetchQueries, awaitRefetchQueries: true });
+  // Rows on their way out, so they can fade before the list closes the gap.
+  const [leaving, setLeaving] = useState<Set<string>>(new Set());
+  const [busy, setBusy] = useState<'' | 'read' | 'clear'>('');
+  const [now] = useState(Date.now);
 
-  const close = useCallback(() => setOpen(false), []);
+  const items: Notification[] = (data?.notifications ?? []);
+  const unread = items.filter(n => !n.read).length;
 
-  // Measured on open, and again if the window changes shape underneath it.
-  useEffect(() => {
-    if (!open) return;
-    const place = () => {
-      const r = buttonRef.current?.getBoundingClientRect();
-      if (!r) return;
-      const PANEL = 364;
-      const MAX_HEIGHT = Math.min(520, window.innerHeight * 0.7);
-      setAt({
-        // Clamped so a bell near the bottom of a short window does not push the
-        // panel off the screen.
-        top: Math.max(12, Math.min(r.top - 4, window.innerHeight - MAX_HEIGHT - 12)),
-        left: Math.min(r.right + 10, window.innerWidth - PANEL - 12),
-      });
-    };
-    place();
-    window.addEventListener('resize', place);
-    return () => window.removeEventListener('resize', place);
-  }, [open]);
-
-  // A popover, not a modal: Escape and a click elsewhere dismiss it, the page
-  // keeps scrolling, and focus returns to the bell so the keyboard path is not
-  // a dead end.
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') { e.stopPropagation(); close(); buttonRef.current?.focus(); }
-    };
-    const onPointer = (e: MouseEvent) => {
-      const target = e.target as Node;
-      if (!panelRef.current?.contains(target) && !buttonRef.current?.contains(target)) close();
-    };
-    document.addEventListener('keydown', onKey);
-    document.addEventListener('mousedown', onPointer);
-    panelRef.current?.focus();
-    return () => {
-      document.removeEventListener('keydown', onKey);
-      document.removeEventListener('mousedown', onPointer);
-    };
-  }, [open, close]);
+  const fadeOut = async (ids: string[]) => {
+    setLeaving(new Set(ids));
+    await new Promise(r => setTimeout(r, 180));
+  };
 
   const markAll = async () => {
-    await markRead({ variables: { ids: null } });
-    await Promise.all([refetch(), refetchCount()]);
+    setBusy('read');
+    try { await markRead({ variables: { ids: null } }); } finally { setBusy(''); }
+  };
+
+  const clearAll = async () => {
+    const ok = await confirm({
+      title: 'Clear all activity?',
+      message: 'This empties your own activity list. Your team keeps theirs, and nothing about the statements themselves changes.',
+      confirmLabel: 'Clear all',
+    });
+    if (!ok) return;
+    setBusy('clear');
+    try {
+      await fadeOut(items.map(n => n.id));
+      await clear({ variables: { ids: null } });
+    } finally {
+      setBusy('');
+      setLeaving(new Set());
+    }
+  };
+
+  const clearOne = async (n: Notification) => {
+    await fadeOut([n.id]);
+    try { await clear({ variables: { ids: [n.id] } }); } finally { setLeaving(new Set()); }
   };
 
   const openRow = async (n: Notification) => {
-    if (!n.read) {
-      await markRead({ variables: { ids: [n.id] } });
-      await Promise.all([refetch(), refetchCount()]);
-    }
-    if (n.submissionId && onOpenSubmission) {
-      onOpenSubmission(n.submissionId);
-      close();
-    }
+    if (!n.read) void markRead({ variables: { ids: [n.id] } });
+    if (n.submissionId && onOpenSubmission) onOpenSubmission(n.submissionId);
   };
 
+  // Grouped by day, keeping the server's newest-first order.
+  const groups: { label: string; items: Notification[] }[] = [];
+  for (const n of items) {
+    const label = dayLabel(n.createdAt, now);
+    const last = groups[groups.length - 1];
+    if (last?.label === label) last.items.push(n);
+    else groups.push({ label, items: [n] });
+  }
+
   return (
-    <div className="nb-root">
-      <style>{styles}</style>
-      <button
-        ref={buttonRef}
-        className={`cd-sb-item nb-trigger${open ? ' cd-sb-active' : ''}`}
-        onClick={() => { setOpen(o => !o); if (!open) void refetch(); }}
-        aria-expanded={open}
-        aria-haspopup="dialog"
-        aria-label={unread > 0 ? `Activity, ${unread} unread` : 'Activity, nothing unread'}
-      >
-        <span className="nb-icon-wrap">
-          <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor"
-            strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <div className="nb-page">
+      <style>{pageStyles}</style>
+      <div className="nb-page-head">
+        <div>
+          <h2 className="cd-members-title">Activity</h2>
+          <p className="nb-page-sub">
+            New statements, failed checks, expiring documents and changes to your team.
+            {unread > 0 && <> <b>{unread} unread.</b></>}
+          </p>
+        </div>
+        <div className="nb-page-actions">
+          {unread > 0 && (
+            <button className="nb-action" onClick={() => void markAll()} disabled={busy !== ''}>
+              {busy === 'read' ? 'Marking…' : 'Mark all read'}
+            </button>
+          )}
+          {items.length > 0 && (
+            <button className="nb-action nb-action-quiet" onClick={() => void clearAll()} disabled={busy !== ''}>
+              {busy === 'clear' ? 'Clearing…' : 'Clear all'}
+            </button>
+          )}
+        </div>
+      </div>
+
+      {loading && items.length === 0 && (
+        <div className="nb-card" aria-busy="true" aria-label="Loading activity">
+          {[0, 1, 2, 3].map(i => (
+            <div key={i} className="nb-skel-row">
+              <span className="nb-skel nb-skel-icon" />
+              <span className="nb-skel-lines">
+                <span className="nb-skel" style={{ width: `${55 - i * 7}%` }} />
+                <span className="nb-skel" style={{ width: `${80 - i * 9}%` }} />
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {!loading && items.length === 0 && (
+        <div className="nb-card nb-empty">
+          <svg width="28" height="28" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5"
+            strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <path d="M10 3a4.5 4.5 0 00-4.5 4.5c0 2.6-.6 4.1-1.2 5A.7.7 0 005 13.6h10a.7.7 0 00.6-1.1c-.5-.9-1.1-2.4-1.1-5A4.5 4.5 0 0010 3z" />
             <path d="M8.2 16a1.9 1.9 0 003.6 0" />
           </svg>
-          {unread > 0 && <span className="nb-dot" aria-hidden="true" />}
-        </span>
-        <span className="cd-sb-label">Activity</span>
-        {unread > 0 && <span className="nb-count">{unread > 99 ? '99+' : unread}</span>}
-      </button>
+          <b>You&rsquo;re all caught up</b>
+          <span>New statements, failed checks and expiring documents will appear here.</span>
+        </div>
+      )}
 
-      {open && (
-        <div
-          className="nb-panel" role="dialog" aria-label="Activity"
-          ref={panelRef} tabIndex={-1}
-          style={at ? { top: at.top, left: at.left } : { visibility: 'hidden' }}
-        >
-          <div className="nb-head">
-            <h2 className="nb-title">Activity</h2>
-            {unread > 0 && (
-              <button className="nb-markall" onClick={markAll}>Mark all read</button>
-            )}
-          </div>
-
-          <div className="nb-list">
-            {loading && items.length === 0 && <p className="nb-empty">Loading…</p>}
-            {!loading && items.length === 0 && (
-              <p className="nb-empty">
-                Nothing yet. New statements, failed checks and expiring documents appear here.
-              </p>
-            )}
-            {items.map(n => {
+      {groups.map(g => (
+        <section key={g.label} className="nb-group" aria-label={g.label}>
+          <h3 className="nb-day">{g.label}</h3>
+          <div className="nb-card">
+            {g.items.map((n, i) => {
               const sev = SEVERITY[n.kind] ?? { tone: 'info' as const, word: 'Update' };
               const clickable = !!(n.submissionId && onOpenSubmission);
               return (
-                <button
+                <div
                   key={n.id}
-                  className={`nb-item nb-${sev.tone}${n.read ? ' nb-read' : ''}${clickable ? '' : ' nb-static'}`}
-                  onClick={() => void openRow(n)}
+                  className={`nb-row nb-${sev.tone}${n.read ? ' nb-read' : ''}${leaving.has(n.id) ? ' nb-leaving' : ''}`}
+                  style={{ animationDelay: `${Math.min(i, 10) * 30}ms` }}
                 >
-                  <span className="nb-item-icon"><Icon kind={n.kind} /></span>
-                  <span className="nb-item-text">
-                    <span className="nb-item-title">{n.title}</span>
-                    {n.body && <span className="nb-item-body">{n.body}</span>}
-                    <span className="nb-item-meta">
-                      <span className="nb-item-sev">{sev.word}</span>
-                      <span className="nb-item-sep">·</span>
-                      <time dateTime={n.createdAt}>{ago(n.createdAt)}</time>
-                      {!n.read && <span className="nb-unread-word">· unread</span>}
+                  <button className="nb-row-main" onClick={() => void openRow(n)} disabled={!clickable && n.read}
+                    aria-label={clickable ? `${n.title} — open the statement` : n.title}>
+                    <span className="nb-row-icon"><Icon kind={n.kind} /></span>
+                    <span className="nb-row-text">
+                      <span className="nb-row-title">{n.title}</span>
+                      {n.body && <span className="nb-row-body">{n.body}</span>}
+                      <span className="nb-row-meta">
+                        <span className="nb-row-sev">{sev.word}</span>
+                        <span aria-hidden="true">·</span>
+                        <time dateTime={n.createdAt}>{ago(n.createdAt, now)}</time>
+                        {!n.read && <span className="nb-unread-word">· unread</span>}
+                      </span>
                     </span>
-                  </span>
-                </button>
+                    {clickable && (
+                      <svg className="nb-row-go" width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                        <path d="M9 6l6 6-6 6" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    )}
+                  </button>
+                  <button className="nb-row-clear" onClick={() => void clearOne(n)} aria-label={`Clear “${n.title}”`} title="Clear">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                      <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
+                    </svg>
+                  </button>
+                </div>
               );
             })}
           </div>
-        </div>
-      )}
+        </section>
+      ))}
     </div>
   );
 }
 
-const styles = `
-  .nb-root { position: relative; }
-  .nb-trigger { width: 100%; }
+const navStyles = `
   .nb-icon-wrap { position: relative; display: inline-flex; flex: 0 0 auto; }
-  /* The dot is a cue, never the message: the count sits beside it and each row
-     spells its severity out in words. */
+  /* The dot is a cue, never the message: the count sits beside it. */
   .nb-dot {
     position: absolute; top: -1px; right: -1px; width: 7px; height: 7px;
     border-radius: 50%; background: var(--cd-accent);
@@ -265,89 +305,95 @@ const styles = `
     background: var(--cd-accent); color: #fff; border-radius: var(--cd-r-pill);
     padding: 1px 6px; min-width: 18px; text-align: center;
   }
+`;
 
-  .nb-panel {
-    /* Fixed, not absolute: the sidebar scrolls, which clips anything absolutely
-       positioned outside its box. Coordinates come from the component. */
-    position: fixed; z-index: 30; /* Z.POPOVER */
-    width: 364px; max-height: min(520px, 70vh); display: flex; flex-direction: column;
-    background: var(--cd-surface); border: 1px solid var(--cd-border2);
-    border-radius: var(--cd-r); overflow: hidden;
-    box-shadow: 0 18px 48px rgba(0,0,0,0.42);
-    animation: nb-in 160ms cubic-bezier(0.2, 0.8, 0.2, 1);
+const pageStyles = `
+  .nb-page { display: flex; flex-direction: column; gap: 18px; max-width: 860px; }
+  .nb-page-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+  .nb-page-sub { margin: 4px 0 0; font-size: 12.5px; color: var(--cd-text-dim); }
+  .nb-page-sub b { color: var(--cd-blue); font-weight: 600; }
+  .nb-page-actions { display: flex; gap: 8px; }
+  .nb-action {
+    font-family: inherit; font-size: 12.5px; font-weight: 600; color: var(--cd-blue);
+    background: rgba(91,156,246,0.1); border: 1px solid rgba(91,156,246,0.25);
+    border-radius: var(--cd-r-pill); padding: 7px 14px; cursor: pointer;
+    transition: background 150ms ease-out, transform 120ms ease-out, opacity 150ms;
   }
-  .nb-panel:focus { outline: none; }
-  @keyframes nb-in {
-    from { opacity: 0; transform: translateX(-6px) scale(0.985); }
-    to   { opacity: 1; transform: none; }
-  }
+  .nb-action:hover:not(:disabled) { background: rgba(91,156,246,0.18); }
+  .nb-action:active:not(:disabled) { transform: scale(0.97); }
+  .nb-action:disabled { opacity: 0.55; cursor: default; }
+  .nb-action-quiet { color: var(--cd-text-mid); background: var(--cd-surface); border-color: var(--cd-border2); }
+  .nb-action-quiet:hover:not(:disabled) { background: var(--cd-surface2); color: var(--cd-text); }
 
-  .nb-head {
-    display: flex; align-items: center; justify-content: space-between;
-    padding: 12px 14px; border-bottom: 1px solid var(--cd-border); flex: 0 0 auto;
-  }
-  .nb-title { margin: 0; font-size: 12px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--cd-text-mid); }
-  .nb-markall {
-    font-family: inherit; font-size: 11px; font-weight: 600; color: var(--cd-blue);
-    background: none; border: none; padding: 3px 6px; border-radius: var(--cd-r-sm); cursor: pointer;
-  }
-  .nb-markall:hover { background: var(--cd-surface2); }
+  .nb-group { display: flex; flex-direction: column; gap: 8px; }
+  .nb-day { margin: 0; font-size: 11px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--cd-text-dim); }
+  .nb-card { background: var(--cd-surface); border: 1px solid var(--cd-border); border-radius: var(--cd-r); overflow: hidden; }
 
-  .nb-list { overflow-y: auto; flex: 1 1 auto; }
-  .nb-empty { margin: 0; padding: 28px 18px; font-size: 12px; line-height: 1.6; color: var(--cd-text-dim); text-align: center; }
-
-  .nb-item {
-    width: 100%; display: flex; gap: 10px; align-items: flex-start; text-align: left;
-    font-family: inherit; background: none; border: none;
-    border-bottom: 1px solid var(--cd-border);
-    /* 44px minimum touch height comes from the padding plus two lines of text. */
-    padding: 11px 14px 11px 11px; cursor: pointer;
+  .nb-row {
+    display: flex; align-items: stretch; border-bottom: 1px solid var(--cd-border);
     border-left: 3px solid transparent;
-    transition: background 160ms ease-out, border-color 160ms ease-out;
+    animation: nb-row-in 240ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+    transition: opacity 180ms ease-in, transform 180ms ease-in, background 150ms ease-out;
   }
-  .nb-item:last-child { border-bottom: none; }
-  .nb-item:hover { background: var(--cd-surface2); }
-  .nb-item:focus-visible { outline: 2px solid var(--cd-blue); outline-offset: -2px; }
-  .nb-static { cursor: default; }
+  .nb-row:last-child { border-bottom: none; }
+  .nb-row:hover { background: var(--cd-surface2); }
+  .nb-leaving { opacity: 0; transform: translateX(12px); }
+  @keyframes nb-row-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
 
-  .nb-item-icon { flex: 0 0 auto; margin-top: 1px; }
-  .nb-danger .nb-item-icon { color: var(--cd-accent); }
-  .nb-warn   .nb-item-icon { color: var(--cd-amber); }
-  .nb-info   .nb-item-icon { color: var(--cd-blue); }
-
-  /* Unread carries the rail; read keeps the icon colour but drops the emphasis,
-     so the two states differ by more than brightness alone. */
+  .nb-row-main {
+    flex: 1; min-width: 0; display: flex; gap: 12px; align-items: flex-start; text-align: left;
+    font-family: inherit; background: none; border: none; padding: 13px 8px 13px 13px; cursor: pointer; color: inherit;
+  }
+  .nb-row-main:disabled { cursor: default; }
+  .nb-row-main:focus-visible, .nb-row-clear:focus-visible { outline: 2px solid var(--cd-blue); outline-offset: -2px; }
+  .nb-row-icon { flex: 0 0 auto; margin-top: 1px; }
+  .nb-danger .nb-row-icon { color: var(--cd-accent); }
+  .nb-warn .nb-row-icon { color: var(--cd-amber); }
+  .nb-info .nb-row-icon { color: var(--cd-blue); }
+  /* Unread carries the rail; read drops the emphasis, so the states differ by
+     more than brightness alone. */
   .nb-danger:not(.nb-read) { border-left-color: var(--cd-accent); }
-  .nb-warn:not(.nb-read)   { border-left-color: var(--cd-amber); }
-  .nb-info:not(.nb-read)   { border-left-color: var(--cd-blue); }
+  .nb-warn:not(.nb-read) { border-left-color: var(--cd-amber); }
+  .nb-info:not(.nb-read) { border-left-color: var(--cd-blue); }
 
-  .nb-item-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-  .nb-item-title { font-size: 12.5px; font-weight: 600; color: var(--cd-text); line-height: 1.4; }
-  .nb-read .nb-item-title { font-weight: 500; color: var(--cd-text-mid); }
-  .nb-item-body { font-size: 11.5px; line-height: 1.5; color: var(--cd-text-mid); }
-  .nb-read .nb-item-body { color: var(--cd-text-dim); }
-  .nb-item-meta { font-size: 10px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--cd-text-dim); display: flex; gap: 4px; flex-wrap: wrap; }
-  .nb-danger .nb-item-sev { color: var(--cd-accent); }
-  .nb-warn .nb-item-sev { color: var(--cd-amber); }
-  .nb-read .nb-item-sev { color: var(--cd-text-dim); }
+  .nb-row-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; }
+  .nb-row-title { font-size: 13px; font-weight: 600; color: var(--cd-text); line-height: 1.4; }
+  .nb-read .nb-row-title { font-weight: 500; color: var(--cd-text-mid); }
+  .nb-row-body { font-size: 12.5px; line-height: 1.5; color: var(--cd-text-mid); }
+  .nb-read .nb-row-body { color: var(--cd-text-dim); }
+  .nb-row-meta { font-size: 10.5px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--cd-text-dim); display: flex; gap: 5px; flex-wrap: wrap; margin-top: 2px; }
+  .nb-danger .nb-row-sev { color: var(--cd-accent); }
+  .nb-warn .nb-row-sev { color: var(--cd-amber); }
+  .nb-read .nb-row-sev { color: var(--cd-text-dim); }
   .nb-unread-word { color: var(--cd-blue); }
+  .nb-row-go { flex: 0 0 auto; align-self: center; color: var(--cd-text-dim); transition: transform 150ms ease-out, color 150ms; }
+  .nb-row:hover .nb-row-go { transform: translateX(2px); color: var(--cd-text-mid); }
 
-  @media (max-width: 860px) {
-    /* The sidebar collapses to icons on narrow screens, so the panel becomes a
-       sheet along the bottom instead of hanging off a 60px rail. The !important
-       is there to beat the inline coordinates, which are the right answer on a
-       wide screen and the wrong one here. */
-    .nb-panel {
-      top: auto !important; left: 12px !important; right: 12px;
-      /* The home indicator on a modern phone sits where a 12px offset would
-         put the last row, so the inset is added rather than assumed to be 0. */
-      bottom: calc(12px + env(safe-area-inset-bottom, 0px));
-      width: auto; max-height: 60vh;
-    }
+  .nb-row-clear {
+    flex: 0 0 auto; width: 44px; display: flex; align-items: center; justify-content: center;
+    background: none; border: none; border-left: 1px solid transparent; color: var(--cd-text-dim); cursor: pointer;
+    opacity: 0.55; transition: opacity 150ms, color 150ms, background 150ms;
   }
+  .nb-row:hover .nb-row-clear, .nb-row-clear:focus-visible { opacity: 1; }
+  .nb-row-clear:hover { color: var(--cd-accent); background: rgba(240,78,94,0.07); }
+
+  .nb-empty { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 40px 20px; text-align: center; color: var(--cd-text-dim); font-size: 12.5px; }
+  .nb-empty svg { color: var(--cd-text-dim); margin-bottom: 4px; }
+  .nb-empty b { color: var(--cd-text); font-size: 14px; }
+
+  .nb-skel-row { display: flex; gap: 12px; padding: 15px 14px; border-bottom: 1px solid var(--cd-border); }
+  .nb-skel-row:last-child { border-bottom: none; }
+  .nb-skel-lines { flex: 1; display: flex; flex-direction: column; gap: 8px; }
+  .nb-skel {
+    display: block; height: 10px; border-radius: 5px;
+    background: linear-gradient(90deg, var(--cd-surface2) 25%, var(--cd-surface3, #2a2a2d) 50%, var(--cd-surface2) 75%);
+    background-size: 200% 100%; animation: nb-shimmer 1.2s ease-in-out infinite;
+  }
+  .nb-skel-icon { width: 16px; height: 16px; border-radius: 50%; flex: none; }
+  @keyframes nb-shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
 
   @media (prefers-reduced-motion: reduce) {
-    .nb-panel { animation: none; }
-    .nb-item { transition: none; }
+    .nb-row, .nb-skel { animation: none; }
+    .nb-row, .nb-row-go, .nb-action { transition: none; }
   }
 `;
