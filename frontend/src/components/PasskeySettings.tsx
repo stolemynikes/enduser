@@ -20,20 +20,30 @@ import { useMutation, useQuery } from '@apollo/client/react';
 import { startRegistration } from '@simplewebauthn/browser';
 import { useConfirm } from './ConfirmDialog.tsx';
 
-const MY_PASSKEYS = gql`
-  query MyPasskeys { myPasskeys { id name createdAt lastUsedAt } }
-`;
-const START = gql`
-  mutation StartPasskeyRegistration { startPasskeyRegistration { optionsJson ticket } }
-`;
-const FINISH = gql`
-  mutation FinishPasskeyRegistration($ticket: String!, $responseJson: String!, $name: String!) {
-    finishPasskeyRegistration(ticket: $ticket, responseJson: $responseJson, name: $name) { id name }
-  }
-`;
-const REMOVE = gql`
-  mutation RemovePasskey($id: ID!) { removePasskey(id: $id) }
-`;
+// The same steps for a company user and for a platform admin; only the
+// operation names differ.
+const OPS = {
+  company: {
+    LIST: gql`query MyPasskeys { myPasskeys { id name createdAt lastUsedAt } }`,
+    START: gql`mutation StartPasskeyRegistration { startPasskeyRegistration { optionsJson ticket } }`,
+    FINISH: gql`
+      mutation FinishPasskeyRegistration($ticket: String!, $responseJson: String!, $name: String!) {
+        finishPasskeyRegistration(ticket: $ticket, responseJson: $responseJson, name: $name) { id name }
+      }`,
+    REMOVE: gql`mutation RemovePasskey($id: ID!) { removePasskey(id: $id) }`,
+    listed: 'myPasskeys', started: 'startPasskeyRegistration', finished: 'finishPasskeyRegistration',
+  },
+  admin: {
+    LIST: gql`query AdminPasskeys { adminPasskeys { id name createdAt lastUsedAt } }`,
+    START: gql`mutation StartAdminPasskeyRegistration { startAdminPasskeyRegistration { optionsJson ticket } }`,
+    FINISH: gql`
+      mutation FinishAdminPasskeyRegistration($ticket: String!, $responseJson: String!, $name: String!) {
+        finishAdminPasskeyRegistration(ticket: $ticket, responseJson: $responseJson, name: $name) { id name }
+      }`,
+    REMOVE: gql`mutation RemoveAdminPasskey($id: ID!) { removeAdminPasskey(id: $id) }`,
+    listed: 'adminPasskeys', started: 'startAdminPasskeyRegistration', finished: 'finishAdminPasskeyRegistration',
+  },
+} as const;
 
 type Passkey = { id: string; name: string; createdAt: string; lastUsedAt: string | null };
 
@@ -49,12 +59,17 @@ function guessDeviceName(): string {
   return 'This device';
 }
 
-export function PasskeySettings({ onChanged }: { onChanged?: () => void }) {
+export function PasskeySettings({ onChanged, account = 'company' }: {
+  onChanged?: () => void;
+  /** Whose passkeys: a company user's (default) or the platform admin's. */
+  account?: 'company' | 'admin';
+}) {
+  const ops = OPS[account];
   const confirm = useConfirm();
-  const { data, refetch } = useQuery<any>(MY_PASSKEYS, { fetchPolicy: 'cache-and-network' });
-  const [start] = useMutation<any>(START);
-  const [finish] = useMutation<any>(FINISH);
-  const [remove] = useMutation<any>(REMOVE);
+  const { data, refetch } = useQuery<any>(ops.LIST, { fetchPolicy: 'cache-and-network' });
+  const [start] = useMutation<any>(ops.START);
+  const [finish] = useMutation<any>(ops.FINISH);
+  const [remove] = useMutation<any>(ops.REMOVE);
 
   // Checked once, up front: a button that fails on press is worse than a
   // button that explains why it is not there.
@@ -65,7 +80,7 @@ export function PasskeySettings({ onChanged }: { onChanged?: () => void }) {
   const [error, setError] = useState('');
   const [added, setAdded] = useState('');
 
-  const passkeys: Passkey[] = data?.myPasskeys ?? [];
+  const passkeys: Passkey[] = data?.[ops.listed] ?? [];
 
   const enrol = async () => {
     setError('');
@@ -73,7 +88,7 @@ export function PasskeySettings({ onChanged }: { onChanged?: () => void }) {
     setBusy(true);
     try {
       const { data: began } = await start();
-      const { optionsJson, ticket } = began.startPasskeyRegistration;
+      const { optionsJson, ticket } = began[ops.started];
       // The browser does the ceremony; we never see a private key.
       const credential = await startRegistration({ optionsJSON: JSON.parse(optionsJson) });
       const { data: done } = await finish({
@@ -83,7 +98,7 @@ export function PasskeySettings({ onChanged }: { onChanged?: () => void }) {
           name: guessDeviceName(),
         },
       });
-      setAdded(done.finishPasskeyRegistration.name);
+      setAdded(done[ops.finished].name);
       await refetch();
       onChanged?.();
     } catch (err: any) {

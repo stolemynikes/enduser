@@ -45,6 +45,10 @@ const SUBMISSION_FIELDS = `
       overrides { category reason createdByName createdAt }
 `;
 
+const SUPPORT_ADMIN_FACTOR = gql`
+  query SupportAdminFactor { supportAdminHasSecondFactor }
+`;
+
 const GET_ONE_SUBMISSION = gql`
   query CompanySubmission($id: ID!) {
     companySubmission(id: $id) { ${SUBMISSION_FIELDS} }
@@ -624,16 +628,19 @@ export default function CompanyDashboard() {
   // Admin support session (opened from the admin Companies tab): show a
   // floating pill over both the wizard and the dashboard, with a way back.
   const supportMode = localStorage.getItem('supportMode') === '1';
-  const exitSupport = () => {
+  const exitSupport = (adminTab?: string) => {
     ['companyToken', 'companyRole', 'companyName', 'companySlug', 'supportMode'].forEach(k => localStorage.removeItem(k));
+    if (adminTab) localStorage.setItem('admin-tab', adminTab);
     navigate('/admin/dashboard');
   };
+  // In support view, opening a document number checks the admin's own factor.
+  const { data: supportFactorData } = useQuery<any>(SUPPORT_ADMIN_FACTOR, { skip: !supportMode });
   const supportBanner = supportMode ? (
     <>
       <style>{supportStyles}</style>
       <div className={`cd-support-banner${theme === 'light' ? ' cd-support-banner--light' : ''}`}>
         <span>Support view — acting as <b>{companyName}</b></span>
-        <button className="cd-support-return" onClick={exitSupport}>Return to admin</button>
+        <button className="cd-support-return" onClick={() => exitSupport()}>Return to admin</button>
       </div>
     </>
   ) : null;
@@ -1444,9 +1451,9 @@ export default function CompanyDashboard() {
                       <RevealDocumentNumber
                         submissionId={selected.id}
                         canReveal={canManage}
-                        mfaEnabled={account?.mfaEnabled ?? false}
+                        mfaEnabled={supportMode ? !!supportFactorData?.supportAdminHasSecondFactor : (account?.mfaEnabled ?? false)}
                         support={supportMode}
-                        onSetUpMfa={() => { setSelected(null); setTab('account'); }}
+                        onSetUpMfa={supportMode ? () => exitSupport('account') : () => { setSelected(null); setTab('account'); }}
                       />
                       {verified ? (<>
                         <Detail label="Verification" value={<IdVerificationBadge status={selected.idVerificationStatus} />} />

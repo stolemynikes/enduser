@@ -51,16 +51,14 @@ export function RevealDocumentNumber({
   submissionId: string;
   /** Owner and Employee+ only; a plain Employee is not offered the control. */
   canReveal: boolean;
-  /** Without a second factor the number cannot be opened; the box says how to get one. */
+  /** Whether the person asking has a second factor (in support view: the admin's own). */
   mfaEnabled: boolean;
   /** Platform support acting as the owner: the code asked for is the admin's own. */
   support?: boolean;
   /** Takes the person to where two-factor is set up. */
   onSetUpMfa?: () => void;
 }) {
-  // In a support session the admin's own factor is checked, and the page does
-  // not know whether the admin has one; the server says so if not.
-  const hasFactor = support || mfaEnabled;
+  const hasFactor = mfaEnabled;
   const [setupNeeded, setSetupNeeded] = useState(false);
   const [asking, setAsking] = useState(false);
   const [credential, setCredential] = useState('');
@@ -171,17 +169,17 @@ export function RevealDocumentNumber({
                 ? 'Document numbers open with a code from an authenticator app. Set up two-factor on your admin account first.'
                 : 'Document numbers open with a code from your authenticator app, so a stolen password alone cannot read them. It takes about a minute.'}
             </span>
-            {!support && onSetUpMfa && (
-              <button className="rv-btn rv-btn--primary" onClick={onSetUpMfa}>Set up two-factor</button>
+            {onSetUpMfa && (
+              <button className="rv-btn rv-btn--primary" onClick={onSetUpMfa}>
+                {support ? 'Set up two-factor on my admin account' : 'Set up two-factor'}
+              </button>
             )}
           </div>
         </div>
       ) : asking ? (
         <form className="rv-form rv-enter" onSubmit={submit}>
           <p className="rv-why">
-            {support
-              ? 'Enter the code from your own authenticator app (your admin account). This look-up is recorded.'
-              : 'Enter the code from your authenticator app. This look-up is recorded.'}
+            Enter the code from your authenticator app. This look-up is recorded.
           </p>
           <TotpInput
             ref={inputRef} id={`rv-code-${submissionId}`} className="rv-input"

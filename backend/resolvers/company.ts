@@ -332,6 +332,13 @@ export const companyResolvers = {
       };
     },
 
+    supportAdminHasSecondFactor: async (_: unknown, __: unknown, ctx: Ctx) => {
+      requireCompany(ctx);
+      if (!ctx.support || !ctx.adminId) return false;
+      const admin = await prisma.admin.findUnique({ where: { id: ctx.adminId }, select: { id: true, ...MFA_SELECT } });
+      return !!admin && mfaEnabled(admin);
+    },
+
     companySubmission: async (_: unknown, { id }: { id: string }, ctx: Ctx) => {
       const { companyId } = requireCompany(ctx);
       const rows = await tenantSubmissions(companyId).findMany({

@@ -14,6 +14,8 @@ import { Mark } from '../src/components/Mark.tsx';
 import { DatePicker } from '../src/components/DatePicker.tsx';
 import { StatementWithTranslation } from '../src/components/StatementTranslation.tsx';
 import { useAppTheme } from '../src/lib/useAppTheme.ts';
+import { MfaSettings } from '../src/components/MfaSettings.tsx';
+import { PasskeySettings } from '../src/components/PasskeySettings.tsx';
 
 const GET_SUBMISSIONS = gql`
   query GetSubmissions {
@@ -147,7 +149,7 @@ type IdVerificationStatus = 'NOT_CHECKED' | 'PENDING' | 'IN_REVIEW' | 'APPROVED'
 type ViesAddressMatch = 'NOT_CHECKED' | 'UNAVAILABLE' | 'MATCH' | 'PARTIAL' | 'MISMATCH';
 
 type Filter = 'ALL' | 'PENDING_REVIEW' | 'APPROVED' | 'DENIED';
-type Tab = 'submissions' | 'access' | 'companies' | 'insights' | 'test';
+type Tab = 'submissions' | 'access' | 'companies' | 'insights' | 'test' | 'account';
 
 type CompanyActivity = {
   id: string; name: string; slug: string; membersCount: number; submissionsCount: number;
@@ -439,6 +441,13 @@ export default function Dashboard() {
                 </svg>
                 <span className="db-sb-label">Test Tools</span>
               </button>
+              <button className={`db-sb-item${tab === 'account' ? ' db-sb-active' : ''}`} onClick={() => setTab('account')}>
+                <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8">
+                  <circle cx="10" cy="7" r="3" />
+                  <path d="M4 17c0-2.8 2.7-5 6-5s6 2.2 6 5" strokeLinecap="round" />
+                </svg>
+                <span className="db-sb-label">Account</span>
+              </button>
             </div>
           </div>
           <div className="db-sb-bottom">
@@ -613,6 +622,7 @@ export default function Dashboard() {
           )}
 
           {tab === 'test' && <TestToolsTab toast={toast} onSubmissionCreated={() => refetch()} />}
+          {tab === 'account' && <AdminAccountTab />}
           </div>
         </main>
 
@@ -1068,6 +1078,37 @@ function WeeklyChart({ weekly, field, barClass, unit }: {
           })}
         </svg>
       )}
+    </div>
+  );
+}
+
+const ADMIN_MFA_STATUS = gql`
+  query AdminMfaStatus { adminMfaStatus { enabled recoveryCodesLeft } }
+`;
+
+/**
+ * The admin's own sign-in security: passkeys and an authenticator app. Opening
+ * a document number — here or in a support session — needs one of them.
+ */
+function AdminAccountTab() {
+  const { data, refetch } = useQuery<any>(ADMIN_MFA_STATUS, { fetchPolicy: 'cache-and-network' });
+  const status = data?.adminMfaStatus;
+  return (
+    <div className="db-account">
+      <div>
+        <h2 className="db-account-title">Account</h2>
+        <p className="db-account-sub">
+          How you confirm it is you. Opening an identity document number needs a code from an
+          authenticator app — here and when you support a company.
+        </p>
+      </div>
+      <PasskeySettings account="admin" onChanged={() => void refetch()} />
+      <MfaSettings
+        account="admin"
+        enabled={status?.enabled ?? false}
+        recoveryCodesLeft={status?.recoveryCodesLeft ?? 0}
+        onChanged={() => void refetch()}
+      />
     </div>
   );
 }
@@ -1588,6 +1629,16 @@ const dashStyles = `
 
   /* Motion: each tab fades up into place, rows arrive in a short cascade, and
      buttons give under the press. All of it stops for reduced motion. */
+  .db-account {
+    display: flex; flex-direction: column; gap: 16px; max-width: 900px;
+    --cd-surface: var(--surface); --cd-surface2: var(--surface2); --cd-surface3: var(--surface3);
+    --cd-border: var(--border); --cd-border2: var(--border2);
+    --cd-text: var(--text); --cd-text-mid: var(--text-mid); --cd-text-dim: var(--text-dim);
+    --cd-blue: var(--blue); --cd-green: var(--green); --cd-amber: var(--amber); --cd-accent: var(--accent);
+    --cd-r: var(--r); --cd-r-sm: var(--r-sm); --cd-r-pill: var(--r-pill);
+  }
+  .db-account-title { margin: 0; font-size: 15px; font-weight: 700; color: var(--text); }
+  .db-account-sub { margin: 4px 0 0; font-size: 12.5px; line-height: 1.55; color: var(--text-dim); max-width: 640px; }
   .db-tab-pane { animation: db-pane-in 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
   @keyframes db-pane-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
   .db-table tbody tr { animation: db-pane-in 240ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }

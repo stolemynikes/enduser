@@ -530,6 +530,11 @@ export const typeDefs = `#graphql
     are dates (YYYY-MM-DD), inclusive.
     """
     teamDecisions(search: String, reviewerId: ID, decision: SubmissionStatus, from: String, to: String, offset: Int = 0, limit: Int = 20): TeamDecisionPage!
+    """
+    In a support session: whether the admin acting here has a second factor,
+    which is what opening a document number checks. False outside support.
+    """
+    supportAdminHasSecondFactor: Boolean!
     """One statement by id, with the same access rules as the list."""
     companySubmission(id: ID!): Submission
     unreadNotificationCount: Int!

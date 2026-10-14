@@ -11,18 +11,39 @@ import { useMutation } from '@apollo/client/react';
 import { TotpInput } from './TotpInput.tsx';
 import { mfaSignal } from '../lib/mfaError.ts';
 
-const START = gql`mutation StartMfa { startMfaEnrolment { secret otpauthUri qrSvg } }`;
-const CONFIRM = gql`mutation ConfirmMfa($code: String!) { confirmMfaEnrolment(code: $code) { recoveryCodes token } }`;
-const DISABLE = gql`mutation DisableMfa($password: String!, $code: String!) { disableMfa(password: $password, code: $code) }`;
-const REGENERATE = gql`mutation RegenerateCodes($code: String!) { regenerateRecoveryCodes(code: $code) { recoveryCodes } }`;
+// The same four steps exist for a company user and for a platform admin; only
+// the operations and where the renewed token is kept differ.
+const OPS = {
+  company: {
+    START: gql`mutation StartMfa { startMfaEnrolment { secret otpauthUri qrSvg } }`,
+    CONFIRM: gql`mutation ConfirmMfa($code: String!) { confirmMfaEnrolment(code: $code) { recoveryCodes token } }`,
+    DISABLE: gql`mutation DisableMfa($password: String!, $code: String!) { disableMfa(password: $password, code: $code) }`,
+    REGENERATE: gql`mutation RegenerateCodes($code: String!) { regenerateRecoveryCodes(code: $code) { recoveryCodes } }`,
+    started: 'startMfaEnrolment', confirmed: 'confirmMfaEnrolment', regenerated: 'regenerateRecoveryCodes',
+    tokenKey: 'companyToken', signIn: '/login',
+    signOutKeys: ['companyToken', 'companyRole', 'companyName', 'companySlug', 'supportMode'],
+  },
+  admin: {
+    START: gql`mutation StartAdminMfa { startAdminMfaEnrolment { secret otpauthUri qrSvg } }`,
+    CONFIRM: gql`mutation ConfirmAdminMfa($code: String!) { confirmAdminMfaEnrolment(code: $code) { recoveryCodes token } }`,
+    DISABLE: gql`mutation DisableAdminMfa($password: String!, $code: String!) { disableAdminMfa(password: $password, code: $code) }`,
+    REGENERATE: gql`mutation RegenerateAdminCodes($code: String!) { regenerateAdminRecoveryCodes(code: $code) { recoveryCodes } }`,
+    started: 'startAdminMfaEnrolment', confirmed: 'confirmAdminMfaEnrolment', regenerated: 'regenerateAdminRecoveryCodes',
+    tokenKey: 'adminToken', signIn: '/admin',
+    signOutKeys: ['adminToken'],
+  },
+} as const;
 
 type Enrolment = { secret: string; otpauthUri: string; qrSvg: string };
 
 export function MfaSettings({
+  account = 'company',
   enabled,
   recoveryCodesLeft,
   onChanged,
 }: {
+  /** Whose second factor: a company user's (default) or the platform admin's. */
+  account?: 'company' | 'admin';
   enabled: boolean;
   recoveryCodesLeft: number;
   onChanged: () => void;
@@ -35,10 +56,11 @@ export function MfaSettings({
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
 
-  const [start, { loading: starting }] = useMutation<any>(START);
-  const [confirm, { loading: confirming }] = useMutation<any>(CONFIRM);
-  const [disable, { loading: disabling }] = useMutation<any>(DISABLE);
-  const [regenerate, { loading: regenerating }] = useMutation<any>(REGENERATE);
+  const ops = OPS[account];
+  const [start, { loading: starting }] = useMutation<any>(ops.START);
+  const [confirm, { loading: confirming }] = useMutation<any>(ops.CONFIRM);
+  const [disable, { loading: disabling }] = useMutation<any>(ops.DISABLE);
+  const [regenerate, { loading: regenerating }] = useMutation<any>(ops.REGENERATE);
 
   const busy = starting || confirming || disabling || regenerating;
 
@@ -56,7 +78,7 @@ export function MfaSettings({
     setError('');
     try {
       const { data } = await start();
-      setEnrolment(data.startMfaEnrolment);
+      setEnrolment(data[ops.started]);
       setCode('');
     } catch (err) { setError(describe(err, 'Could not start the set-up.')); }
   };
@@ -69,10 +91,10 @@ export function MfaSettings({
       // Enabling ended every session, this one included. The server hands back
       // a replacement; without storing it the next request would be refused
       // and the person would be signed out by the act of securing the account.
-      if (data.confirmMfaEnrolment.token) {
-        localStorage.setItem('companyToken', data.confirmMfaEnrolment.token);
+      if (data[ops.confirmed].token) {
+        localStorage.setItem(ops.tokenKey, data[ops.confirmed].token);
       }
-      setCodes(data.confirmMfaEnrolment.recoveryCodes);
+      setCodes(data[ops.confirmed].recoveryCodes);
       setEnrolment(null);
       setCode('');
       onChanged();
@@ -87,9 +109,8 @@ export function MfaSettings({
       // Turning it off signs the account out everywhere, this tab included —
       // removing the factor is the first thing an intruder with a stolen
       // session would do, so the password is needed to come back.
-      ['companyToken', 'companyRole', 'companyName', 'companySlug', 'supportMode']
-        .forEach(k => localStorage.removeItem(k));
-      window.location.href = '/login';
+      ops.signOutKeys.forEach(k => localStorage.removeItem(k));
+      window.location.href = ops.signIn;
     } catch (err) { setError(describe(err, 'Could not turn it off.')); }
   };
 
@@ -98,7 +119,7 @@ export function MfaSettings({
     setError('');
     try {
       const { data } = await regenerate({ variables: { code } });
-      setCodes(data.regenerateRecoveryCodes.recoveryCodes);
+      setCodes(data[ops.regenerated].recoveryCodes);
       reset();
       onChanged();
     } catch (err) { setError(describe(err, 'Could not replace the codes.')); }
@@ -257,8 +278,8 @@ export function MfaSettings({
       <h3 className="mfa-title">Two-factor authentication</h3>
       <p className="mfa-lede">
         A code from your phone on top of your password. Worth the thirty seconds: your account can
-        read every buyer&rsquo;s details in this company, so a password on its own is the one thing
-        between a phishing email and all of it.
+        read every buyer&rsquo;s details {account === 'admin' ? 'on the whole platform' : 'in this company'}, so a
+        password on its own is the one thing between a phishing email and all of it.
       </p>
       {error && <p className="mfa-error" role="alert">{error}</p>}
       <div className="mfa-actions">
