@@ -11,6 +11,7 @@ import { useDocumentTitle } from '../src/lib/useDocumentTitle.ts';
 import { useModalDismiss } from '../src/lib/useModalDismiss.ts';
 import { approvable, blockingCategories, categoryFailing, isExpired, isPending, CATEGORY_LABEL } from '../src/lib/approvalGate.ts';
 import { Mark } from '../src/components/Mark.tsx';
+import { DatePicker } from '../src/components/DatePicker.tsx';
 import { StatementWithTranslation } from '../src/components/StatementTranslation.tsx';
 
 const GET_SUBMISSIONS = gql`
@@ -502,9 +503,9 @@ export default function Dashboard() {
           </div>
           <div className="db-daterange">
             <span className="db-daterange-label">Created</span>
-            <input className="db-date" type="date" value={dateFrom} max={dateTo || undefined} onChange={e => setDateFrom(e.target.value)} aria-label="From date" />
+            <DatePicker value={dateFrom} max={dateTo || undefined} onChange={setDateFrom} label="From date" />
             <span className="db-daterange-sep">–</span>
-            <input className="db-date" type="date" value={dateTo} min={dateFrom || undefined} onChange={e => setDateTo(e.target.value)} aria-label="To date" />
+            <DatePicker value={dateTo} min={dateFrom || undefined} onChange={setDateTo} label="To date" />
             <button className="db-date-preset" onClick={() => setRangeDays(1)}>Today</button>
             <button className="db-date-preset" onClick={() => setRangeDays(7)}>7d</button>
             <button className="db-date-preset" onClick={() => setRangeDays(30)}>30d</button>

@@ -27,6 +27,7 @@ import {
 } from '../src/lib/formConfigShared';
 import { StatementWithTranslation } from '../src/components/StatementTranslation.tsx';
 import { Select, type SelectOption } from '../src/components/Select.tsx';
+import { DatePicker } from '../src/components/DatePicker.tsx';
 
 const PAGE_SIZE = 100;
 
@@ -251,6 +252,8 @@ export default function CompanyDashboard() {
   const enrolmentRequired = !!subError && mfaEnrolmentRequired(subError);
   const { data: countData, refetch: refetchCounts } = useQuery<any>(GET_COUNTS, {
     variables: { includeTest: testMode },
+    // Polled so the badge on the Submissions tab picks up new statements.
+    pollInterval: 60_000,
   });
   const counts = countData?.companySubmissionCounts;
   const refreshList = async () => {
@@ -864,6 +867,11 @@ export default function CompanyDashboard() {
                   <path d="M3 5h14M3 10h14M3 15h8" strokeLinecap="round" />
                 </svg>
                 <span className="cd-sb-label">Submissions</span>
+                {canManage && (counts?.pending ?? 0) > 0 && (
+                  <span className="cd-sb-count" aria-label={`${counts.pending} waiting for a decision`}>
+                    {counts.pending > 99 ? '99+' : counts.pending}
+                  </span>
+                )}
               </button>
               <ActivityNavItem active={tab === 'activity'} onOpen={() => setTab('activity')} />
               {isOwner && (
@@ -1019,9 +1027,9 @@ export default function CompanyDashboard() {
               </div>
               <div className="cd-daterange">
                 <span className="cd-daterange-label">Created</span>
-                <input className="cd-date" type="date" value={dateFrom} max={dateTo || undefined} onChange={e => setDateFrom(e.target.value)} aria-label="From date" />
+                <DatePicker value={dateFrom} max={dateTo || undefined} onChange={setDateFrom} label="From date" />
                 <span className="cd-daterange-sep">–</span>
-                <input className="cd-date" type="date" value={dateTo} min={dateFrom || undefined} onChange={e => setDateTo(e.target.value)} aria-label="To date" />
+                <DatePicker value={dateTo} min={dateFrom || undefined} onChange={setDateTo} label="To date" />
                 <button className="cd-date-preset" onClick={() => setRangeDays(1)}>Today</button>
                 <button className="cd-date-preset" onClick={() => setRangeDays(7)}>7d</button>
                 <button className="cd-date-preset" onClick={() => setRangeDays(30)}>30d</button>
@@ -1769,6 +1777,12 @@ const styles = `
   .cd-sb-item:hover:not(:disabled) { color: var(--cd-text); background: var(--cd-surface2); }
   .cd-sb-item:disabled { opacity: 0.35; cursor: not-allowed; }
   .cd-sb-active { color: var(--cd-text) !important; background: var(--cd-surface3) !important; }
+  /* Statements waiting for a decision. Amber, not red: waiting is normal. */
+  .cd-sb-count {
+    margin-left: auto; font-size: 10px; font-weight: 700; font-variant-numeric: tabular-nums;
+    color: #1a1405; background: var(--cd-amber); border-radius: var(--cd-r-pill);
+    padding: 1px 6px; min-width: 18px; text-align: center;
+  }
   .cd-sb-item svg { flex-shrink: 0; opacity: 0.7; }
   .cd-sb-active svg { opacity: 1; }
   .cd-sb-link { text-decoration: none; }

@@ -12,6 +12,7 @@ import { gql } from '@apollo/client';
 import { useMutation, useQuery } from '@apollo/client/react';
 import { useConfirm } from './ConfirmDialog.tsx';
 import { Select } from './Select.tsx';
+import { DatePicker } from './DatePicker.tsx';
 
 const NOTIFICATIONS = gql`
   query Notifications {
@@ -245,11 +246,11 @@ function TeamDecisions({ onOpenSubmission }: { onOpenSubmission?: (id: string) =
         </div>
         <div className="nb-dates">
           <span className="nb-dates-label">Decided</span>
-          <input type="date" value={from} max={to || undefined} aria-label="From date"
-            onChange={e => { setFrom(e.target.value); setPage(0); }} />
+          <DatePicker value={from} max={to || undefined} label="Decided from"
+            onChange={v => { setFrom(v); setPage(0); }} />
           <span aria-hidden="true">–</span>
-          <input type="date" value={to} min={from || undefined} aria-label="To date"
-            onChange={e => { setTo(e.target.value); setPage(0); }} />
+          <DatePicker value={to} min={from || undefined} label="Decided until"
+            onChange={v => { setTo(v); setPage(0); }} />
           {filtering && <button className="nb-chip" onClick={reset}>Clear filters</button>}
           <span className="nb-total" aria-live="polite">{loading && !result ? '' : `${total} decision${total === 1 ? '' : 's'}`}</span>
         </div>
