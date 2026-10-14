@@ -13,6 +13,7 @@ import { approvable, blockingCategories, categoryFailing, isExpired, isPending, 
 import { Mark } from '../src/components/Mark.tsx';
 import { DatePicker } from '../src/components/DatePicker.tsx';
 import { StatementWithTranslation } from '../src/components/StatementTranslation.tsx';
+import { useAppTheme } from '../src/lib/useAppTheme.ts';
 
 const GET_SUBMISSIONS = gql`
   query GetSubmissions {
@@ -184,12 +185,9 @@ export default function Dashboard() {
   const [modalMode, setModalMode] = useState<'view' | 'deny'>('view');
   const [overrideCat, setOverrideCat] = useState<OverrideCategory | null>(null);
   const [overrideReason, setOverrideReason] = useState('');
-  const [theme, setTheme] = useState<'dark' | 'light'>(() =>
-    (localStorage.getItem('theme-dashboard') as 'dark' | 'light') ?? 'dark'
-  );
+  const [theme, toggleTheme] = useAppTheme();
 
-  useEffect(() => { localStorage.setItem('theme-dashboard', theme); }, [theme]);
-  const toggleTheme = () => setTheme(t => t === 'dark' ? 'light' : 'dark');
+
 
   const { data, loading, error, refetch } = useQuery<any>(GET_SUBMISSIONS);
   // The list's own refresh, kept apart from Apollo's loading flag so the table
@@ -1491,7 +1489,10 @@ const dashStyles = `
     --ease: cubic-bezier(0.4,0,0.2,1);
   }
 
-  html, body { background: var(--bg); margin: 0; overflow-x: hidden; }
+  /* The dashboard scrolls inside its own main area. The page around it must
+     not scroll at all, or Windows shows a second scrollbar and a dark strip
+     at the bottom once the list is long. */
+  html, body { background: var(--bg); margin: 0; height: 100%; overflow: hidden; }
 
   .db-wrap {
     font-family: 'Inter', system-ui, sans-serif;

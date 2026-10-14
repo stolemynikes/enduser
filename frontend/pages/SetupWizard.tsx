@@ -11,6 +11,7 @@ import {
   IDENTITY_AVAILABILITY, ID_UNAVAILABLE_WARNING,
 } from '../src/lib/formConfigShared';
 import { MfaSettings } from '../src/components/MfaSettings.tsx';
+import { readAppTheme } from '../src/lib/useAppTheme.ts';
 
 // First-time setup wizard: full-screen takeover shown instead of the dashboard
 // until the owner saves their form config for the first time. Questions reveal
@@ -38,7 +39,7 @@ type Props = {
 };
 
 export default function SetupWizard({ companyName, companySlug, onDone }: Props) {
-  const theme = (localStorage.getItem('theme-company') as 'dark' | 'light') ?? 'dark';
+  const theme = readAppTheme();
   const rootRef = useRef<HTMLDivElement>(null);
   const prevRevealed = useRef(0);
 
