@@ -217,12 +217,12 @@ export default function LandingPage() {
             <h2 className="lp-h2">Everything you need, nothing you don't</h2>
           </div>
           <div className="lp-features">
-            <div className="lp-feature-card lp-reveal"><div className="lp-feature-icon">🛡</div><h3>Privacy by design</h3><p>Document photos never reach this platform, and the provider's session is deleted once the result is stored. Only the minimum fields required under GDPR are kept, auto-deleted after 18 months.</p></div>
-            <div className="lp-feature-card lp-reveal"><div className="lp-feature-icon">👥</div><h3>Team roles &amp; invites</h3><p>Invite teammates by email. Owners manage members, Employee+ reviews submissions, Employees view decisions.</p></div>
-            <div className="lp-feature-card lp-reveal"><div className="lp-feature-icon">🧩</div><h3>Embed it on your site</h3><p>Copy one snippet and the form runs inside your own website. Customers never leave your page, and their answers still come straight to us.</p></div>
-            <div className="lp-feature-card lp-reveal"><div className="lp-feature-icon">⚖️</div><h3>Fail-closed approval</h3><p>Approve stays locked while any check is red. Waiving one needs a written reason, stored against the reviewer's name — nothing is ever decided automatically.</p></div>
-            <div className="lp-feature-card lp-reveal"><div className="lp-feature-icon">✉️</div><h3>Email notifications</h3><p>Applicants are kept in the loop at every step: received, approved or denied with a reason.</p></div>
-            <div className="lp-feature-card lp-reveal"><div className="lp-feature-icon">🔍</div><h3>Precursor screening</h3><p>Every substance is resolved through PubChem and read against the Annexes of Reg. (EU) 2019/1148, quoting the limit value that applies.</p></div>
+            <div className="lp-feature-card lp-reveal"><div className="lp-feature-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z" /><path d="m9 12 2 2 4-4" /></svg></div><h3>Privacy by design</h3><p>Document photos never reach this platform, and the provider's session is deleted once the result is stored. Only the minimum fields required under GDPR are kept, auto-deleted after 18 months.</p></div>
+            <div className="lp-feature-card lp-reveal"><div className="lp-feature-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg></div><h3>Team roles &amp; invites</h3><p>Invite teammates by email. Owners manage members, Employee+ reviews submissions, Employees view decisions.</p></div>
+            <div className="lp-feature-card lp-reveal"><div className="lp-feature-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m16 18 6-6-6-6" /><path d="m8 6-6 6 6 6" /></svg></div><h3>Embed it on your site</h3><p>Copy one snippet and the form runs inside your own website. Customers never leave your page, and their answers still come straight to us.</p></div>
+            <div className="lp-feature-card lp-reveal"><div className="lp-feature-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg></div><h3>Fail-closed approval</h3><p>Approve stays locked while any check is red. Waiving one needs a written reason, stored against the reviewer's name — nothing is ever decided automatically.</p></div>
+            <div className="lp-feature-card lp-reveal"><div className="lp-feature-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="2" y="4" width="20" height="16" rx="2" /><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" /></svg></div><h3>Email notifications</h3><p>Applicants are kept in the loop at every step: received, approved or denied with a reason.</p></div>
+            <div className="lp-feature-card lp-reveal"><div className="lp-feature-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M14 2v6a2 2 0 0 0 .245.96l5.51 10.08A2 2 0 0 1 18 22H6a2 2 0 0 1-1.755-2.96l5.51-10.08A2 2 0 0 0 10 8V2" /><path d="M6.453 15h11.094" /><path d="M8.5 2h7" /></svg></div><h3>Precursor screening</h3><p>Every substance is resolved through PubChem and read against the Annexes of Reg. (EU) 2019/1148, quoting the limit value that applies.</p></div>
           </div>
         </section>
 
@@ -411,7 +411,11 @@ const styles = `
     transition: border-color 0.25s, transform 0.25s;
   }
   .lp-feature-card:hover { border-color: rgba(91,156,246,0.3); transform: translateY(-3px); }
-  .lp-feature-icon { font-size: 19px; margin-bottom: 0.9rem; }
+  .lp-feature-icon {
+    width: 40px; height: 40px; border-radius: 10px; margin-bottom: 1rem;
+    display: inline-flex; align-items: center; justify-content: center;
+    color: var(--accent); background: var(--accent-soft);
+  }
   .lp-feature-card h3 { font-size: 16px; font-weight: 700; margin-bottom: 0.5rem; letter-spacing: -0.01em; }
   .lp-feature-card p { font-size: 14.5px; color: #8a8a8f; line-height: 1.65; }
 

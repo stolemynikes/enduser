@@ -17,6 +17,17 @@ export const sceneStyles = `
 .lp-art .steps span { font-size: 14px; line-height: 1.55; color: var(--mid); }
 .lp-art .steps .n { font-size: 12px; font-weight: 700; color: var(--accent); letter-spacing: 0.1em; font-variant-numeric: tabular-nums; }
 @media (max-width: 860px) { .lp-art .steps { grid-template-columns: 1fr 1fr; row-gap: 16px; } }
+/* On a phone the four stations would be tiny side by side. The drawing is
+   shown 2.5 times as wide and the view follows the statement from station to
+   station, on the same 13-second loop. */
+@keyframes lps-r-cam { 0%, 10.15% { transform: translateX(0); } 22.85%, 49.23% { transform: translateX(-17.5%); } 61.92%, 74.62% { transform: translateX(-42.5%); } 87.31%, 96% { transform: translateX(-60%); } 100% { transform: translateX(0); } }
+@media (max-width: 640px) {
+  .lp-art.route-card { overflow: hidden; }
+  .lp-art .route-svg { width: 250%; max-width: none; animation: lps-r-cam 13s ease-in-out infinite; }
+}
+@media (max-width: 640px) and (prefers-reduced-motion: reduce) {
+  .lp-art .route-svg { width: 100%; }
+}
 /* ---------- SVG paint ---------- */
 .lp-art .f-s1 { fill: var(--surface); }
 .lp-art .f-s2 { fill: var(--surface-2); }
