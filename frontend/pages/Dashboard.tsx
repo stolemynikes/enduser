@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { gql } from '@apollo/client';
 import { useQuery, useMutation, useLazyQuery } from '@apollo/client/react';
 import { useNavigate } from 'react-router-dom';
@@ -983,36 +983,63 @@ function CompaniesTab({ companies, loading, error, busy, onOpen }: {
   );
 }
 
+// Drawn at the size it is shown, not scaled from a fixed viewBox: scaling made
+// the labels and bars grow with the card until they looked blown up and soft
+// on a wide screen. Text stays at 11px whatever the width.
 function WeeklyChart({ weekly, field, barClass, unit }: {
   weekly: Insights['weekly'];
   field: 'submissions' | 'companies';
   barClass: string;
   unit: (n: number) => string;
 }) {
-  const W = 360, H = 180, pad = 24, gap = 6;
-  const max = Math.max(1, ...weekly.map(w => w[field]));
-  const slot = (W - pad * 2) / weekly.length;
-  const barW = slot - gap;
-  const y = (v: number) => H - pad - (v / max) * (H - pad * 2);
-  const hgt = (v: number) => (v / max) * (H - pad * 2);
+  const wrap = useRef<HTMLDivElement>(null);
+  const [W, setW] = useState(0);
+  useLayoutEffect(() => {
+    const el = wrap.current;
+    if (!el) return;
+    const ro = new ResizeObserver(([entry]) => setW(Math.floor(entry.contentRect.width)));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  const H = 200, padL = 28, padR = 4, padT = 18, padB = 24;
+  const top = Math.max(1, ...weekly.map(w => w[field]));
+  // A round top for the scale, so the gridline labels are whole numbers.
+  const max = top <= 4 ? top : Math.ceil(top / 4) * 4;
+  const slot = (W - padL - padR) / Math.max(1, weekly.length);
+  const barW = Math.max(4, Math.min(28, slot * 0.6));
+  const y = (v: number) => H - padB - (v / max) * (H - padT - padB);
+  const every = slot >= 44 ? 1 : slot >= 24 ? 2 : 3;
   return (
-    <svg className="db-chart" viewBox={`0 0 ${W} ${H}`} role="img" aria-label={`Weekly ${field}`}>
-      {[0.25, 0.5, 0.75, 1].map(f => (
-        <line key={f} x1={pad} x2={W - pad} y1={y(max * f)} y2={y(max * f)} className="db-chart-grid" />
-      ))}
-      {weekly.map((w, i) => (
-        <g key={w.weekStart}>
-          <rect x={pad + i * slot + gap / 2} y={y(w[field])} width={barW} height={hgt(w[field])} rx="2" className={barClass}>
-            <title>{`Week of ${w.weekStart}: ${unit(w[field])}`}</title>
-          </rect>
-          {i % 2 === 0 && (
-            <text x={pad + i * slot + slot / 2} y={H - 6} className="db-chart-label" textAnchor="middle">
-              {w.weekStart.slice(5)}
-            </text>
-          )}
-        </g>
-      ))}
-    </svg>
+    <div ref={wrap} className="db-chart-wrap">
+      {W > 0 && (
+        <svg className="db-chart" width={W} height={H} role="img" aria-label={`Weekly ${field}`}>
+          {[0, 0.5, 1].map(f => (
+            <g key={f}>
+              <line x1={padL} x2={W - padR} y1={y(max * f)} y2={y(max * f)} className="db-chart-grid" />
+              <text x={padL - 8} y={y(max * f) + 4} className="db-chart-label" textAnchor="end">{Math.round(max * f)}</text>
+            </g>
+          ))}
+          {weekly.map((w, i) => {
+            const v = w[field];
+            const cx = padL + i * slot + slot / 2;
+            return (
+              <g key={w.weekStart}>
+                {v > 0 && (
+                  <rect x={cx - barW / 2} y={y(v)} width={barW} height={H - padB - y(v)} rx="3" className={barClass}>
+                    <title>{`Week of ${w.weekStart}: ${unit(v)}`}</title>
+                  </rect>
+                )}
+                {v > 0 && <text x={cx} y={y(v) - 6} className="db-chart-value" textAnchor="middle">{v}</text>}
+                {i % every === 0 && (
+                  <text x={cx} y={H - 6} className="db-chart-label" textAnchor="middle">{w.weekStart.slice(5)}</text>
+                )}
+              </g>
+            );
+          })}
+        </svg>
+      )}
+    </div>
   );
 }
 
@@ -1869,11 +1896,13 @@ const dashStyles = `
   .db-dot-amber { background: var(--amber); }
   .db-dot-red { background: var(--accent); }
 
-  .db-chart { width: 100%; height: auto; display: block; }
+  .db-chart-wrap { height: 200px; }
+  .db-chart { display: block; }
   .db-chart-grid { stroke: var(--border); stroke-width: 1; }
   .db-chart-bar-subs { fill: var(--blue); opacity: 0.9; }
   .db-chart-bar-cos { fill: var(--green); opacity: 0.9; }
-  .db-chart-label { fill: var(--text-dim); font-size: 9px; font-family: 'Inter', sans-serif; }
+  .db-chart-label { fill: var(--text-dim); font-size: 11px; font-family: 'Inter', sans-serif; font-variant-numeric: tabular-nums; }
+  .db-chart-value { fill: var(--text-mid, var(--text)); font-size: 11px; font-weight: 600; font-family: 'Inter', sans-serif; font-variant-numeric: tabular-nums; }
 
   .db-status-bar {
     display: flex; height: 12px; border-radius: var(--r-pill); overflow: hidden;
