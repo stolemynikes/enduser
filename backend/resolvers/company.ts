@@ -274,6 +274,34 @@ export const companyResolvers = {
       }));
     },
 
+    /**
+     * Who decided what, for the owner's Activity page. Read straight off the
+     * statements' own review fields, so it is the current decision on each one
+     * (a reopened statement drops out until it is decided again). Test
+     * submissions stay out. reviewerName is null where it was never recorded.
+     */
+    teamDecisions: async (_: unknown, { limit }: { limit?: number }, ctx: Ctx) => {
+      const { companyId } = requireOwner(ctx);
+      const rows = await tenantSubmissions(companyId).findMany({
+        // Decisions from before reviewers were recorded have no reviewedAt;
+        // they still show, last, dated by their last change.
+        where: { status: { in: ['APPROVED', 'DENIED'] }, isTest: false },
+        orderBy: [{ reviewedAt: { sort: 'desc', nulls: 'last' } }, { updatedAt: 'desc' }],
+        take: Math.min(Math.max(limit ?? 50, 1), 100),
+        include: { _count: { select: { overrides: true } } },
+      });
+      return rows.map((s: any) => ({
+        submissionId: s.id,
+        buyerName: [s.firstName, s.lastName].filter(Boolean).join(' ') || s.email || 'Unknown buyer',
+        orderNumber: s.orderNumber || null,
+        decision: s.status,
+        reviewerName: s.reviewedByName,
+        decidedAt: (s.reviewedAt ?? s.updatedAt).toISOString(),
+        reason: s.status === 'DENIED' ? s.adminNote : null,
+        overrides: s._count?.overrides ?? 0,
+      }));
+    },
+
     /** Just the number behind the dot — cheap enough to poll. */
     unreadNotificationCount: async (_: unknown, __: unknown, ctx: Ctx) => {
       const { companyId, companyUserId } = requireCompany(ctx);

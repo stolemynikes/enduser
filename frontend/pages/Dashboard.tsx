@@ -730,8 +730,10 @@ export default function Dashboard() {
                   )}
                   {verified && !selected.idVerificationPurged && (
                     <div className="db-id-alert">
-                      The document images are still held by the verification provider — the automatic
-                      purge did not confirm. Delete the session in the Didit console.
+                      Didit may still have this buyer&rsquo;s ID photos. They are normally deleted at Didit
+                      right after the check, but that deletion did not go through for this statement.
+                      Delete the session in the Didit dashboard, or run{' '}
+                      <code>scripts/purgeDiditSessions.ts --apply</code> on the server.
                     </div>
                   )}
                   {renderOverride('IDENTITY')}

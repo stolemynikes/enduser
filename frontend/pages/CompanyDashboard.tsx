@@ -600,8 +600,8 @@ export default function CompanyDashboard() {
   // first, and the control reads as the one destructive thing in the sidebar.
   const handleLogout = async () => {
     const ok = await confirm({
-      title: 'Sign out',
-      message: 'You will need your email and password to get back in.',
+      title: 'Sign out?',
+      message: 'Are you sure you want to sign out?',
       confirmLabel: 'Sign out', danger: true,
     });
     if (ok) logout();
@@ -952,7 +952,7 @@ export default function CompanyDashboard() {
             </div>
           )}
           <div key={tab} className="cd-tab-pane">
-          {tab === 'activity' && <ActivityFeed onOpenSubmission={openSubmissionById} />}
+          {tab === 'activity' && <ActivityFeed onOpenSubmission={openSubmissionById} showTeam={isOwner} />}
           {tab === 'submissions' && (
             <>
               {!isOwner && formConfigured === false && (

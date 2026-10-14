@@ -379,6 +379,19 @@ export const typeDefs = `#graphql
     SUPPORT_ACCESS
   }
 
+  type TeamDecision {
+    submissionId: ID!
+    buyerName: String!
+    orderNumber: String
+    decision: SubmissionStatus!
+    reviewerName: String
+    decidedAt: String!
+    """The reason given for a denial."""
+    reason: String
+    """How many failed checks were overridden to approve it."""
+    overrides: Int!
+  }
+
   type Notification {
     id: ID!
     kind: NotificationKind!
@@ -503,6 +516,8 @@ export const typeDefs = `#graphql
     ): [Submission!]!
     companySubmissionCounts(includeTest: Boolean = false): SubmissionCounts!
     notifications(limit: Int = 30): [Notification!]!
+    """Owners only: the latest approve and deny decisions in this company, and who made them."""
+    teamDecisions(limit: Int = 50): [TeamDecision!]!
     unreadNotificationCount: Int!
     """Earlier approvals in this company that look like the same request."""
     priorApprovals(id: ID!): PriorApprovals!
