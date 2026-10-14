@@ -100,6 +100,8 @@ export const adminResolvers = {
     adminCompanies: async (_: unknown, __: unknown, ctx: Ctx) => {
       requireAdmin(ctx);
       const companies = await prisma.company.findMany({
+        // A deleted company has nothing left to open or act on.
+        where: { deletedAt: null },
         include: { _count: { select: { members: true, submissions: { where: { isTest: false } } } } },
         orderBy: { createdAt: 'desc' },
         // The query-cost rule charges this field 100 rows; serve no more than
@@ -322,6 +324,9 @@ export const adminResolvers = {
         include: { company: true },
       });
       if (!owner) throw new Error('Company or owner not found');
+      // Every request on a deleted company's token is refused, so a session into
+      // one would only bounce staff to a sign-in page. Say why instead.
+      if (owner.company.deletedAt) throw new GraphQLError('That company has been deleted.');
 
       await prisma.supportAccess.create({ data: { adminId, companyId } });
       // The tenant is told, in their own dashboard, that platform staff opened

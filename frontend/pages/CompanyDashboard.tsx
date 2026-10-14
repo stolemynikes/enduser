@@ -620,7 +620,11 @@ export default function CompanyDashboard() {
   // fire while a laptop is asleep, so a lid closed for twenty minutes used to
   // come back to a session that had quietly expired. Waking the tab renews
   // immediately; the interval covers a tab left open and visible.
+  //
+  // A support session is the exception: the server will not extend it (it is
+  // kept short on purpose), and asking anyway reads as a dead session.
   useEffect(() => {
+    if (localStorage.getItem('supportMode') === '1') return;
     const renew = async () => {
       try {
         const { data } = await refreshSession();

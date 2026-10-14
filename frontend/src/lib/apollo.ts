@@ -37,9 +37,12 @@ const errorLink = onError(({ error }) => {
     return;
   }
   if (path.startsWith('/company')) {
+    // An ended support session returns staff to their own dashboard, where the
+    // admin token is still valid, rather than to the company sign-in page.
+    const wasSupport = localStorage.getItem('supportMode') === '1';
     ['companyToken', 'companyRole', 'companyName', 'companySlug', 'supportMode']
       .forEach(k => localStorage.removeItem(k));
-    window.location.assign('/login?expired=1');
+    window.location.assign(wasSupport ? '/admin/dashboard' : '/login?expired=1');
   }
 });
 
