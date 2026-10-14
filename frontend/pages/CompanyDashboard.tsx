@@ -813,7 +813,7 @@ export default function CompanyDashboard() {
         <nav className="cd-sidebar">
           <div className="cd-sb-top">
             <div className="cd-sb-brand">
-              <span className="cd-nav-wordmark"><Mark size={17} /> eu<b>statement</b></span>
+              <span className="cd-nav-wordmark"><Mark size={17} /> <span className="wordmark-text">eustatement</span></span>
               <div className="cd-sb-meta">
                 <span className="cd-nav-tag">{roleLabels[role]}</span>
                 <span className="cd-nav-title">{companyName}</span>
@@ -1699,7 +1699,6 @@ const styles = `
   .cd-sb-bottom { padding: 0.75rem; border-top: 1px solid var(--cd-border); display: flex; flex-direction: column; gap: 2px; }
   .cd-sb-brand { padding: 0 0.5rem 1.25rem; }
   .cd-nav-wordmark { font-size: 14px; font-weight: 800; letter-spacing: -0.02em; color: var(--cd-text); display: flex; align-items: center; gap: 8px; margin-bottom: 0.625rem; }
-  .cd-nav-wordmark b { color: var(--cd-blue); font-weight: 800; }
   .cd-sb-meta { display: flex; flex-direction: column; gap: 5px; align-items: flex-start; }
   .cd-nav-tag {
     font-size: 9px; font-weight: 600; letter-spacing: 0.16em; color: var(--cd-blue);
@@ -2010,7 +2009,7 @@ const styles = `
     .cd-sb-top { padding: 1rem 0.5rem 0; align-items: center; }
     .cd-sb-brand { padding: 0 0 1rem; display: flex; justify-content: center; }
     .cd-nav-wordmark { font-size: 12px; margin-bottom: 0; }
-    .cd-nav-wordmark b { display: none; }
+    .cd-nav-wordmark .wordmark-text { display: none; }
     .cd-sb-meta { display: none; }
     .cd-sb-label { display: none; }
     .cd-sb-nav { width: 100%; align-items: center; }

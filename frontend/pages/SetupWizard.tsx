@@ -164,7 +164,7 @@ export default function SetupWizard({ companyName, companySlug, onDone }: Props)
         <div className="wz-progress"><div className="wz-progress-fill" style={{ width: `${(revealed / (TOTAL_STEPS - 1)) * 100}%` }} /></div>
         <div className="wz-col">
           <div className="wz-intro">
-            <span className="wz-wordmark"><Mark size={18} /> eu<b>statement</b></span>
+            <span className="wz-wordmark"><Mark size={18} /> <span className="wordmark-text">eustatement</span></span>
             <h1 className="wz-title">Welcome, {companyName}</h1>
             <p className="wz-sub">
               {awaitingApproval ? (
@@ -382,7 +382,6 @@ const styles = `
 
   .wz-intro { display: flex; flex-direction: column; gap: 10px; margin-bottom: 1.5rem; }
   .wz-wordmark { font-size: 14px; font-weight: 800; letter-spacing: -0.02em; display: flex; align-items: center; gap: 8px; }
-  .wz-wordmark b { color: var(--wz-blue); font-weight: 800; }
   .wz-title { font-size: 26px; font-weight: 800; letter-spacing: -0.03em; }
   .wz-sub { font-size: 13.5px; color: var(--wz-text-mid); line-height: 1.6; max-width: 480px; }
   .wz-slug { color: var(--wz-blue); font-weight: 600; }

@@ -393,7 +393,7 @@ export default function Dashboard() {
         <nav className="db-sidebar">
           <div className="db-sb-top">
             <div className="db-sb-brand">
-              <span className="db-nav-wordmark"><Mark size={17} /> eu<b>statement</b></span>
+              <span className="db-nav-wordmark"><Mark size={17} /> <span className="wordmark-text">eustatement</span></span>
               <div className="db-sb-meta">
                 <span className="db-nav-tag">ADMIN</span>
                 <span className="db-nav-title">End-User Statements</span>
@@ -1454,7 +1454,6 @@ const dashStyles = `
   .db-sb-bottom { padding: 0.75rem; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 2px; }
   .db-sb-brand { padding: 0 0.5rem 1.25rem; }
   .db-nav-wordmark { font-size: 14px; font-weight: 800; letter-spacing: -0.02em; color: var(--text); display: flex; align-items: center; gap: 8px; margin-bottom: 0.625rem; }
-  .db-nav-wordmark b { color: var(--blue); font-weight: 800; }
   .db-sb-meta { display: flex; flex-direction: column; gap: 5px; align-items: flex-start; }
   .db-nav-tag {
     font-size: 9px; font-weight: 600; letter-spacing: 0.16em;
@@ -1777,7 +1776,7 @@ const dashStyles = `
     .db-sb-top { padding: 1rem 0.5rem 0; align-items: center; }
     .db-sb-brand { padding: 0 0 1rem; display: flex; justify-content: center; }
     .db-nav-wordmark { font-size: 12px; margin-bottom: 0; }
-    .db-nav-wordmark b { display: none; }
+    .db-nav-wordmark .wordmark-text { display: none; }
     .db-sb-meta { display: none; }
     .db-sb-label { display: none; }
     .db-sb-nav { width: 100%; align-items: center; }
