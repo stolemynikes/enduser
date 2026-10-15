@@ -123,6 +123,7 @@ Zamówiona(-e) substancja(-e):
   notReadyTitle: 'Formularz jeszcze niedostępny',
   notReadyBody: 'Ten formularz nie przyjmuje jeszcze oświadczeń. Proszę spróbować później.',
   contactSupplier: 'Jeśli ten link pochodzi od dostawcy, proszę skontaktować się z nim w celu uzyskania pomocy.',
+  notFoundHome: 'Przejdź do strony głównej',
 
   errVerifyExpired: 'Sesja weryfikacji wygasła. Proszę rozpocząć ją ponownie.',
   errVerifyStart: 'Nie udało się rozpocząć weryfikacji tożsamości. Proszę spróbować ponownie.',

@@ -123,6 +123,7 @@ Det eller de beställda ämnena:
   notReadyTitle: 'Formuläret är inte tillgängligt än',
   notReadyBody: 'Formuläret tar inte emot intyg än. Försök igen senare.',
   contactSupplier: 'Om du fick länken från en leverantör, kontakta dem för hjälp.',
+  notFoundHome: 'Till startsidan',
 
   errVerifyExpired: 'Din kontrollsession har gått ut. Starta den igen.',
   errVerifyStart: 'Identitetskontrollen kunde inte startas. Försök igen.',

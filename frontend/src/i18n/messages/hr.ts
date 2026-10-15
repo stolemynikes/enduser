@@ -123,6 +123,7 @@ Naručena tvar ili tvari:
   notReadyTitle: 'Obrazac još nije dostupan',
   notReadyBody: 'Ovaj obrazac još ne prima izjave. Pokušajte ponovno kasnije.',
   contactSupplier: 'Ako ste ovu poveznicu dobili od dobavljača, obratite mu se za pomoć.',
+  notFoundHome: 'Idi na početnu stranicu',
 
   errVerifyExpired: 'Vaša sesija provjere je istekla. Pokrenite je ponovno.',
   errVerifyStart: 'Provjeru identiteta nije bilo moguće pokrenuti. Pokušajte ponovno.',

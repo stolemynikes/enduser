@@ -511,3 +511,71 @@ export function DecisionScene() {
     </svg>
   );
 }
+
+/** 404: she follows the link from her phone, and where the form should be there is only its outline. */
+export function LostScene() {
+  return (
+    <svg className="lp-art" viewBox="0 0 520 360" role="img" aria-label="A buyer taps a link on her phone. It travels along a dashed line to where the form should be, but there is only an empty outline with a question mark, and she is left wondering.">
+      <path className="f-blob" d="M44 204 C34 118 120 50 246 52 C372 54 484 96 494 200 C504 302 402 344 266 340 C130 336 54 290 44 204Z"/>
+      <ellipse cx="130" cy="338" rx="34" ry="6" className="f-shadow"/>
+      <ellipse cx="375" cy="338" rx="118" ry="7" className="f-shadow"/>
+
+      {/* where the form should be: only its outline, rows and all */}
+      <g className="float-b">
+        <rect x="270" y="50" width="210" height="250" rx="16" className="n-frame"/>
+        <text x="294" y="82" className="t-cap">404</text>
+        <rect x="294" y="92" width="162" height="1.5" className="f-line"/>
+        <rect x="294" y="110" width="140" height="22" rx="6" className="n-ghost"/>
+        <rect x="294" y="146" width="162" height="22" rx="6" className="n-ghost"/>
+        <rect x="294" y="182" width="116" height="22" rx="6" className="n-ghost"/>
+        <g transform="translate(375 252)"><g className="pop n-q">
+          <circle r="24" className="f-soft"/>
+          <circle r="24" fill="none" className="s-acc" strokeWidth="2"/>
+          <text x="0" y="8" textAnchor="middle" className="t-acc" style={{ fontSize: "24px", fontWeight: 800 }}>?</text>
+        </g></g>
+      </g>
+
+      {/* the link, from her phone to the empty outline */}
+      <mask id="lp-n-mask" maskUnits="userSpaceOnUse" x="0" y="0" width="520" height="360">
+        <path id="lp-n-route" d="M162 200 C188 124 226 108 266 128" fill="none" stroke="#fff" strokeWidth="12" strokeLinecap="round" pathLength="1" strokeDasharray="1 1" className="trail" data-from="10" data-to="40" data-dur="8"/>
+      </mask>
+      <path className="dash flow" d="M162 200 C188 124 226 108 266 128" mask="url(#lp-n-mask)"/>
+      <g className="mover" data-segs="lp-n-route:10:40" data-dur="8" data-rotate="1"><g className="n-plane"><path d="M12 0 L-10 -8 L-4 0 L-10 8 Z" className="f-paper"/><path d="M12 0 L-4 0 L-10 8 Z" className="f-pl"/></g></g>
+
+      <g transform="translate(45 336)">
+        <path d="M-15 -30 h30 l-4 30 h-22z" className="f-accd"/>
+        <ellipse cx="-9" cy="-50" rx="7" ry="18" transform="rotate(-24 -9 -50)" className="f-leaf"/>
+        <ellipse cx="9" cy="-52" rx="7" ry="19" transform="rotate(22 9 -52)" className="f-leaf"/>
+        <ellipse cx="0" cy="-58" rx="6" ry="20" className="f-leaf"/>
+      </g>
+      <g transform="translate(500 40)"><path className="f-gold twinkle" d="M0 -7 L1.8 -1.8 L7 0 L1.8 1.8 L0 7 L-1.8 1.8 L-7 0 L-1.8 -1.8Z"/></g>
+      <g transform="translate(222 46)"><path className="f-acc twinkle d1" d="M0 -6 L1.5 -1.5 L6 0 L1.5 1.5 L0 6 L-1.5 1.5 L-6 0 L-1.5 -1.5Z"/></g>
+
+      {/* buyer on her phone; her hands hold it from behind, so we see its back */}
+      <g transform="translate(130 336) scale(0.95)">
+        <rect x="-15" y="-80" width="13" height="76" rx="5" className="f-navy"/>
+        <rect x="2" y="-80" width="13" height="76" rx="5" className="f-navy"/>
+        <path d="M-19 -6h17v6h-21a4 4 0 0 1 4-6z" className="f-shoe"/>
+        <path d="M2 -6h17a4 4 0 0 1 4 6h-21z" className="f-shoe"/>
+        <use href="#lp-hair-long-back" x="0" y="-165" className="c-h1"/>
+        <path d="M-22 -138 Q0 -146 22 -138 L25 -74 H-25Z" className="f-acc"/>
+        <rect x="-5" y="-152" width="10" height="16" className="f-sk2"/>
+        <circle cx="0" cy="-165" r="15" className="f-sk2"/>
+        <use href="#lp-face" x="0" y="-163"/>
+        <use href="#lp-hair-long-front" x="0" y="-165" className="c-h1"/>
+        <path d="M-18 -134 L-18 -110 L2 -106" className="arm s-acc"/><circle cx="2" cy="-106" r="5.5" className="f-sk2"/>
+        <path d="M18 -134 L30 -114 L25 -106" className="arm s-acc"/>
+        <g className="n-thumb"><circle cx="25" cy="-106" r="5.5" className="f-sk2"/></g>
+        <rect x="3" y="-130" width="22" height="38" rx="5" className="f-navy s-line"/>
+        <rect x="6" y="-127" width="9" height="13" rx="3" className="f-s1"/>
+        <circle cx="10.5" cy="-123.5" r="2.2" className="f-bg" stroke="var(--mid)" strokeWidth="0.8"/><circle cx="10.5" cy="-117.5" r="2.2" className="f-bg" stroke="var(--mid)" strokeWidth="0.8"/>
+        <circle cx="14" cy="-104" r="2" className="f-line"/>
+      </g>
+      <g transform="translate(86 126)"><g className="pop n-think">
+        <circle r="16" className="f-s2" stroke="var(--line)" strokeWidth="1.5"/>
+        <text x="0" y="6" textAnchor="middle" className="t-acc" style={{ fontSize: "17px", fontWeight: 800 }}>?</text>
+        <circle cx="16" cy="20" r="4" className="f-s2" stroke="var(--line)" strokeWidth="1.5"/><circle cx="24" cy="30" r="2.5" className="f-s2" stroke="var(--line)" strokeWidth="1.5"/>
+      </g></g>
+    </svg>
+  );
+}

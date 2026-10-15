@@ -129,6 +129,7 @@ Maidir leis an tsubstaint nó na substaintí a ordaíodh:
   notReadyTitle: 'Níl an fhoirm ar fáil fós',
   notReadyBody: 'Níl an fhoirm seo ag glacadh le ráitis fós. Bain triail eile as níos déanaí.',
   contactSupplier: 'Má fuair tú an nasc seo ó sholáthraí, déan teagmháil leo chun cabhair a fháil.',
+  notFoundHome: 'Téigh go dtí an leathanach baile',
 
   errVerifyExpired: 'Chuaigh do sheisiún fíoraithe in éag. Tosaigh arís é.',
   errVerifyStart: 'Níorbh fhéidir fíorú aitheantais a thosú. Bain triail eile as.',

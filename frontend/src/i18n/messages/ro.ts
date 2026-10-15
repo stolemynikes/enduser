@@ -123,6 +123,7 @@ Substanța (substanțele) comandată (comandate):
   notReadyTitle: 'Formularul nu este încă disponibil',
   notReadyBody: 'Acest formular nu acceptă încă declarații. Încercați din nou mai târziu.',
   contactSupplier: 'Dacă ați primit acest link de la un furnizor, contactați-l pentru ajutor.',
+  notFoundHome: 'Mergeți la pagina principală',
 
   errVerifyExpired: 'Sesiunea de verificare a expirat. Începeți-o din nou.',
   errVerifyStart: 'Verificarea identității nu a putut fi pornită. Încercați din nou.',

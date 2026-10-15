@@ -31,6 +31,7 @@ const Docs = lazy(() => import('../pages/legal/Docs.tsx'));
 const Privacy = lazy(() => import('../pages/legal/Privacy.tsx'));
 const Terms = lazy(() => import('../pages/legal/Terms.tsx'));
 const Dpa = lazy(() => import('../pages/legal/Dpa.tsx'));
+const NotFound = lazy(() => import('../pages/NotFound.tsx'));
 
 /**
  * What a split route shows while its chunk arrives.
@@ -106,6 +107,8 @@ export default function App() {
       <Route path="/verify/:token" element={<VerifyEmail />} />
       {/* Public company forms live at the root — keep this route last. */}
       <Route path="/:slug" element={<Form />} />
+      {/* Anything deeper than one segment cannot be a form. */}
+      <Route path="*" element={<NotFound />} />
     </Routes>
       </Suspense>
     </ConfirmProvider>

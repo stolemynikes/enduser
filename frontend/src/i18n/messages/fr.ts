@@ -123,6 +123,7 @@ La ou les substances commandées :
   notReadyTitle: 'Formulaire pas encore disponible',
   notReadyBody: 'Ce formulaire n’accepte pas encore de déclarations. Veuillez réessayer plus tard.',
   contactSupplier: 'Si vous avez reçu ce lien d’un fournisseur, contactez-le pour obtenir de l’aide.',
+  notFoundHome: 'Aller à la page d’accueil',
 
   errVerifyExpired: 'Votre session de vérification a expiré. Veuillez la recommencer.',
   errVerifyStart: 'La vérification d’identité n’a pas pu démarrer. Veuillez réessayer.',

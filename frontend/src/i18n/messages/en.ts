@@ -148,6 +148,7 @@ The ordered substance(s):
   notReadyTitle: 'Form not available yet',
   notReadyBody: 'This form is not open for submissions yet. Please check back later.',
   contactSupplier: 'If you received this link from a supplier, contact them for help.',
+  notFoundHome: 'Go to the homepage',
 
   // ── Errors raised in the browser ───────────────────────────────────────
   errVerifyExpired: 'Your verification session expired. Please start it again.',

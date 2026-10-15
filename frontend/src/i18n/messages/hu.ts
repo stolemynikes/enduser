@@ -123,6 +123,7 @@ A megrendelt anyag(ok)at:
   notReadyTitle: 'Az űrlap még nem érhető el',
   notReadyBody: 'Ez az űrlap még nem fogad nyilatkozatokat. Próbálja újra később.',
   contactSupplier: 'Ha a hivatkozást egy beszállítótól kapta, segítségért forduljon hozzá.',
+  notFoundHome: 'Ugrás a kezdőlapra',
 
   errVerifyExpired: 'Az ellenőrzési munkamenet lejárt. Indítsa újra.',
   errVerifyStart: 'A személyazonosság ellenőrzését nem sikerült elindítani. Próbálja újra.',

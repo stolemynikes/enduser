@@ -123,6 +123,7 @@ Der/die bestellte(n) Stoff(e):
   notReadyTitle: 'Formular noch nicht verfügbar',
   notReadyBody: 'Dieses Formular nimmt noch keine Erklärungen entgegen. Bitte versuchen Sie es später erneut.',
   contactSupplier: 'Wenn Sie diesen Link von einem Lieferanten erhalten haben, wenden Sie sich bitte an ihn.',
+  notFoundHome: 'Zur Startseite',
 
   errVerifyExpired: 'Ihre Prüfsitzung ist abgelaufen. Bitte starten Sie sie erneut.',
   errVerifyStart: 'Die Identitätsprüfung konnte nicht gestartet werden. Bitte versuchen Sie es erneut.',

@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, lazy, Suspense } from 'react';
 import { gql } from '@apollo/client';
 import { useMutation, useQuery } from '@apollo/client/react';
 import { useParams } from 'react-router-dom';
@@ -22,6 +22,9 @@ const SUBMIT_STATEMENT = gql`
     }
   }
 `;
+
+// An unknown slug gets the full 404 page, loaded only when it is needed.
+const NotFound = lazy(() => import('./NotFound.tsx'));
 
 const FORM_INFO = gql`
   query FormInfo($slug: String!) {
@@ -398,6 +401,15 @@ function StatementForm({ embed }: { embed: boolean }) {
   // ready" page. /form (no slug) keeps rendering the standard form.
   if (slug && formInfoData && (formInfoData.formInfo == null || formInfoData.formInfo.configured === false)) {
     const notFound = formInfoData.formInfo == null;
+    // Inside a seller's iframe a full dark page would look broken, so the embed
+    // keeps the small card below.
+    if (notFound && !embed) {
+      return (
+        <Suspense fallback={<div style={{ minHeight: '100vh', background: '#0f0f10' }} />}>
+          <NotFound />
+        </Suspense>
+      );
+    }
     return (
       <>
         <style>{styles}</style>

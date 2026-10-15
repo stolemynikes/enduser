@@ -123,6 +123,7 @@ Užsakyta (-os) medžiaga (-os):
   notReadyTitle: 'Forma dar neprieinama',
   notReadyBody: 'Ši forma dar nepriima deklaracijų. Bandykite vėliau.',
   contactSupplier: 'Jei šią nuorodą gavote iš tiekėjo, kreipkitės į jį pagalbos.',
+  notFoundHome: 'Į pagrindinį puslapį',
 
   errVerifyExpired: 'Jūsų patikrinimo sesija baigėsi. Pradėkite iš naujo.',
   errVerifyStart: 'Nepavyko pradėti tapatybės patikrinimo. Bandykite dar kartą.',

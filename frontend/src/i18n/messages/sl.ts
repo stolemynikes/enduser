@@ -123,6 +123,7 @@ Naročena snov oziroma snovi:
   notReadyTitle: 'Obrazec še ni na voljo',
   notReadyBody: 'Ta obrazec še ne sprejema izjav. Poskusite znova pozneje.',
   contactSupplier: 'Če ste povezavo prejeli od dobavitelja, se za pomoč obrnite nanj.',
+  notFoundHome: 'Na domačo stran',
 
   errVerifyExpired: 'Vaša seja preverjanja je potekla. Začnite znova.',
   errVerifyStart: 'Preverjanja istovetnosti ni bilo mogoče začeti. Poskusite znova.',

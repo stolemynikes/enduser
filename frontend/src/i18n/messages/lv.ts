@@ -123,6 +123,7 @@ Pasūtīto vielu (vielas):
   notReadyTitle: 'Veidlapa vēl nav pieejama',
   notReadyBody: 'Šī veidlapa vēl nepieņem deklarācijas. Mēģiniet vēlāk.',
   contactSupplier: 'Ja šo saiti saņēmāt no piegādātāja, sazinieties ar viņu, lai saņemtu palīdzību.',
+  notFoundHome: 'Uz sākumlapu',
 
   errVerifyExpired: 'Jūsu pārbaudes sesija ir beigusies. Sāciet no jauna.',
   errVerifyStart: 'Neizdevās sākt identitātes pārbaudi. Mēģiniet vēlreiz.',

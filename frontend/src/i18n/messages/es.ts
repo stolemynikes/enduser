@@ -123,6 +123,7 @@ La(s) sustancia(s) pedida(s):
   notReadyTitle: 'Formulario aún no disponible',
   notReadyBody: 'Este formulario todavía no acepta declaraciones. Vuelva a intentarlo más tarde.',
   contactSupplier: 'Si recibió este enlace de un proveedor, póngase en contacto con él.',
+  notFoundHome: 'Ir a la página de inicio',
 
   errVerifyExpired: 'Su sesión de verificación ha caducado. Vuelva a iniciarla.',
   errVerifyStart: 'No se pudo iniciar la verificación de identidad. Inténtelo de nuevo.',

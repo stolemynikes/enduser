@@ -123,6 +123,7 @@ Det eller de bestilte stoffer:
   notReadyTitle: 'Formularen er ikke tilgængelig endnu',
   notReadyBody: 'Formularen modtager ikke erklæringer endnu. Prøv igen senere.',
   contactSupplier: 'Hvis du har fået linket fra en leverandør, så kontakt dem for hjælp.',
+  notFoundHome: 'Gå til forsiden',
 
   errVerifyExpired: 'Din kontrolsession er udløbet. Start den igen.',
   errVerifyStart: 'Identitetskontrollen kunne ikke startes. Prøv igen.',

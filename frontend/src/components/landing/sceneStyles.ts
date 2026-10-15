@@ -246,6 +246,17 @@ export const sceneStyles = `
 .lp-art .d-mail { opacity: 0; animation: lps-d-mail 9s infinite; }
 .lp-art .d-bubble { animation: lps-d-bubble 9s infinite; }
 .lp-art .d-glow { opacity: 1; animation: lps-d-glow 9s infinite; }
+/* 404: the link flies from her phone to where the form should be; only its outline is there. 8s */
+.lp-art .n-frame { fill: none; stroke: var(--mid); stroke-opacity: 0.6; stroke-width: 2; stroke-dasharray: 8 7; }
+.lp-art .n-ghost { fill: none; stroke: var(--line); stroke-width: 1.5; stroke-dasharray: 5 5; }
+@keyframes lps-n-plane { 0%, 8% { opacity: 0; } 10%, 90% { opacity: 1; } 94%, 100% { opacity: 0; } }
+@keyframes lps-n-q { 0%, 42% { transform: scale(0); } 45% { transform: scale(1.18); } 47%, 90% { transform: scale(1); } 94%, 100% { transform: scale(0); } }
+@keyframes lps-n-think { 0%, 52% { transform: scale(0); } 55% { transform: scale(1.12); } 57%, 90% { transform: scale(1); } 94%, 100% { transform: scale(0); } }
+@keyframes lps-n-thumb { 0%, 3%, 7%, 100% { transform: translateY(0); } 5% { transform: translateY(-3px); } }
+.lp-art .n-plane { animation: lps-n-plane 8s infinite; }
+.lp-art .n-q { animation: lps-n-q 8s infinite; }
+.lp-art .n-think { animation: lps-n-think 8s infinite; }
+.lp-art .n-thumb { animation: lps-n-thumb 8s infinite; }
 /* Reduced motion: every scene rests on its finished frame, which carries the story on its own. */
 @media (prefers-reduced-motion: reduce) {
     .lp-art, .lp-art * { animation: none !important; }

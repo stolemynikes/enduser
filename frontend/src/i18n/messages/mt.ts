@@ -126,6 +126,7 @@ Is-sustanza/i ordnata/i:
   notReadyTitle: 'Il-formola għadha mhix disponibbli',
   notReadyBody: 'Din il-formola għadha ma taċċettax dikjarazzjonijiet. Erġa’ pprova aktar tard.',
   contactSupplier: 'Jekk irċevejt dan il-link minn fornitur, ikkuntattjah għall-għajnuna.',
+  notFoundHome: 'Mur fil-paġna ewlenija',
 
   errVerifyExpired: 'Is-sessjoni tal-verifika tiegħek skadiet. Erġa’ ibdieha.',
   errVerifyStart: 'Il-verifika tal-identità ma setgħetx tinbeda. Erġa’ pprova.',

@@ -123,6 +123,7 @@ De bestelde stof(fen):
   notReadyTitle: 'Formulier nog niet beschikbaar',
   notReadyBody: 'Dit formulier neemt nog geen verklaringen aan. Probeer het later opnieuw.',
   contactSupplier: 'Hebt u deze link van een leverancier gekregen? Neem dan contact met hen op.',
+  notFoundHome: 'Naar de startpagina',
 
   errVerifyExpired: 'Uw controlesessie is verlopen. Start de controle opnieuw.',
   errVerifyStart: 'De identiteitscontrole kon niet worden gestart. Probeer het opnieuw.',

@@ -123,6 +123,7 @@ Tilattua ainetta tai tilattuja aineita:
   notReadyTitle: 'Lomake ei ole vielä käytettävissä',
   notReadyBody: 'Lomake ei vielä ota vastaan ilmoituksia. Yrittäkää myöhemmin uudelleen.',
   contactSupplier: 'Jos saitte linkin toimittajalta, ottakaa häneen yhteyttä.',
+  notFoundHome: 'Etusivulle',
 
   errVerifyExpired: 'Tarkistusistuntonne on vanhentunut. Aloittakaa se uudelleen.',
   errVerifyStart: 'Henkilöllisyyden tarkistusta ei voitu aloittaa. Yrittäkää uudelleen.',

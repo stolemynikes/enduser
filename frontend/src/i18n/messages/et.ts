@@ -123,6 +123,7 @@ Tellitud ainet või aineid:
   notReadyTitle: 'Vorm ei ole veel saadaval',
   notReadyBody: 'See vorm ei võta veel deklaratsioone vastu. Proovige hiljem uuesti.',
   contactSupplier: 'Kui saite selle lingi tarnijalt, võtke abi saamiseks temaga ühendust.',
+  notFoundHome: 'Avalehele',
 
   errVerifyExpired: 'Teie kontrolliseanss on aegunud. Alustage uuesti.',
   errVerifyStart: 'Isikusamasuse kontrolli ei saanud alustada. Proovige uuesti.',

@@ -123,6 +123,7 @@ A(s) substância(s) encomendada(s):
   notReadyTitle: 'Formulário ainda não disponível',
   notReadyBody: 'Este formulário ainda não aceita declarações. Tente novamente mais tarde.',
   contactSupplier: 'Se recebeu esta ligação de um fornecedor, contacte-o para obter ajuda.',
+  notFoundHome: 'Ir para a página inicial',
 
   errVerifyExpired: 'A sua sessão de verificação expirou. Inicie-a novamente.',
   errVerifyStart: 'Não foi possível iniciar a verificação de identidade. Tente novamente.',

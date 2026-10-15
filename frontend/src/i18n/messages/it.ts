@@ -123,6 +123,7 @@ La/le sostanza/e ordinata/e:
   notReadyTitle: 'Modulo non ancora disponibile',
   notReadyBody: 'Questo modulo non accetta ancora dichiarazioni. Riprovi più tardi.',
   contactSupplier: 'Se ha ricevuto questo link da un fornitore, lo contatti per assistenza.',
+  notFoundHome: 'Vai alla pagina iniziale',
 
   errVerifyExpired: 'La sessione di verifica è scaduta. La avvii di nuovo.',
   errVerifyStart: 'Non è stato possibile avviare la verifica dell’identità. Riprovi.',

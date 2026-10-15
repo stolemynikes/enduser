@@ -123,6 +123,7 @@ Objednaná látka (látky):
   notReadyTitle: 'Formulář zatím není k dispozici',
   notReadyBody: 'Tento formulář zatím nepřijímá prohlášení. Zkuste to prosím později.',
   contactSupplier: 'Pokud jste odkaz dostali od dodavatele, obraťte se na něj s žádostí o pomoc.',
+  notFoundHome: 'Přejít na úvodní stránku',
 
   errVerifyExpired: 'Vaše relace ověření vypršela. Spusťte ji prosím znovu.',
   errVerifyStart: 'Ověření totožnosti se nepodařilo spustit. Zkuste to prosím znovu.',
