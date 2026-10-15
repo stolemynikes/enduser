@@ -22,6 +22,7 @@ import { useI18n } from '../src/i18n/index.ts';
 import type { Lang } from '../src/i18n/languages.ts';
 import { LanguagePicker } from '../src/components/LanguagePicker.tsx';
 import { useDocumentTitle } from '../src/lib/useDocumentTitle.ts';
+import { readPublicTheme, storePublicTheme } from '../src/lib/publicTheme.ts';
 import { CONTACT_EMAIL, LAST_UPDATED } from '../src/lib/legal.ts';
 import en, { type HowItWorks as Copy } from '../src/i18n/howItWorks/en.ts';
 
@@ -46,10 +47,6 @@ function useCopy(lang: Lang): Copy {
   return loaded.get(lang) ?? en;
 }
 
-function readTheme(): 'light' | 'dark' {
-  try { return localStorage.getItem('theme-form') === 'dark' ? 'dark' : 'light'; } catch { return 'light'; }
-}
-
 export default function HowItWorksPage() {
   return (
     <I18nProvider>
@@ -69,9 +66,9 @@ function HowItWorks() {
   });
   const seller = data?.formInfo?.companyName;
 
-  const [theme, setTheme] = useState<'light' | 'dark'>(readTheme);
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => readPublicTheme() ?? 'dark');
   useEffect(() => {
-    try { localStorage.setItem('theme-form', theme); } catch { /* per visit */ }
+    storePublicTheme(theme);
     document.documentElement.classList.toggle('hw-dark-page', theme === 'dark');
     return () => document.documentElement.classList.remove('hw-dark-page');
   }, [theme]);

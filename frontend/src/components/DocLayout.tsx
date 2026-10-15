@@ -10,12 +10,15 @@
 //   - one column, no sidebar: these are documents, not apps
 //   - section headings are real h2s in order, each linkable by its anchor
 //   - the current page is marked in the navigation (aria-current)
-//   - light and dark designed together; the first visit follows the system
+//   - light and dark designed together, sharing one choice with the form and
+//     How it works (lib/publicTheme.ts); with none made yet, dark like the
+//     landing page these pages are reached from
 //   - links underlined in body text, so they are not told apart by colour alone
 import { useEffect, useState, type ReactNode } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useDocumentTitle } from '../lib/useDocumentTitle.ts';
 import { lastUpdatedLabel } from '../lib/legal.ts';
+import { readPublicTheme, storePublicTheme } from '../lib/publicTheme.ts';
 
 const NAV: { to: string; label: string }[] = [
   { to: '/docs', label: 'Docs' },
@@ -25,21 +28,13 @@ const NAV: { to: string; label: string }[] = [
   { to: '/dpa', label: 'DPA' },
 ];
 
-function initialTheme(): 'light' | 'dark' {
-  try {
-    const stored = localStorage.getItem('theme-docs');
-    if (stored === 'light' || stored === 'dark') return stored;
-  } catch { /* storage blocked */ }
-  return window.matchMedia?.('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
-}
-
 export function DocLayout({ title, intro, children }: { title: string; intro?: ReactNode; children: ReactNode }) {
   useDocumentTitle(`${title} — eustatement`);
   const { pathname, hash } = useLocation();
-  const [theme, setTheme] = useState<'light' | 'dark'>(initialTheme);
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => readPublicTheme() ?? 'dark');
 
   useEffect(() => {
-    try { localStorage.setItem('theme-docs', theme); } catch { /* per visit */ }
+    storePublicTheme(theme);
   }, [theme]);
 
   // Land on the anchor when one was linked; otherwise start at the top, since

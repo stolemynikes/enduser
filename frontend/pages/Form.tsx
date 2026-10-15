@@ -12,6 +12,7 @@ import { I18nProvider } from '../src/i18n/I18nProvider.tsx';
 import en, { type Messages, type ServerErrorCode } from '../src/i18n/messages/en.ts';
 import { LanguagePicker } from '../src/components/LanguagePicker.tsx';
 import { COUNTRY_CODE } from '../src/lib/countries.ts';
+import { readPublicTheme, storePublicTheme } from '../src/lib/publicTheme.ts';
 
 const SUBMIT_STATEMENT = gql`
   mutation SubmitEndUserStatement($input: SubmitInput!) {
@@ -101,15 +102,6 @@ type VerificationStatus =
 
 const VERIFY_POLL_MS = 4000;
 
-// localStorage throws in a third-party iframe when the host browser blocks
-// storage access, so every read/write goes through these.
-function readStoredTheme(): 'light' | 'dark' | null {
-  try { return (localStorage.getItem('theme-form') as 'light' | 'dark' | null) ?? null; } catch { return null; }
-}
-function storeTheme(value: 'light' | 'dark') {
-  try { localStorage.setItem('theme-form', value); } catch { /* storage blocked — theme is per-visit */ }
-}
-
 /**
  * `embed` renders the same form for the /embed/:slug route, which is what a
  * seller drops into their own website in an iframe. Only the presentation
@@ -162,7 +154,7 @@ function StatementForm({ embed }: { embed: boolean }) {
       // The embedding page chooses, via ?theme= on the iframe src.
       return new URLSearchParams(window.location.search).get('theme') === 'dark' ? 'dark' : 'light';
     }
-    return readStoredTheme() ?? 'light';
+    return readPublicTheme() ?? 'light';
   });
   useEffect(() => {
     if (!embed) return;
@@ -170,7 +162,7 @@ function StatementForm({ embed }: { embed: boolean }) {
     return () => document.documentElement.classList.remove('eu-embed-page');
   }, [embed]);
   useEffect(() => {
-    if (!embed) storeTheme(theme);
+    if (!embed) storePublicTheme(theme);
     document.documentElement.classList.toggle('eu-dark-page', theme === 'dark');
     document.body.classList.toggle('eu-dark-page', theme === 'dark');
     return () => {
