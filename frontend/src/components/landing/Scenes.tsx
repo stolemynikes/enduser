@@ -273,10 +273,10 @@ export function RouteScene() {
   );
 }
 
-/** Identity: the photos go to Didit and are deleted there; the seller only gets the result. */
+/** Identity: the photos go to the verification provider and are deleted there; the seller only gets the result. */
 export function IdentityScene() {
   return (
-    <svg className="lp-art" viewBox="0 0 520 360" role="img" aria-label="A phone takes a selfie of the buyer holding her passport. The photo goes to Didit, which checks it and then deletes it. The seller only receives a card: verified, the name, the document type and a masked document number.">
+    <svg className="lp-art" viewBox="0 0 520 360" role="img" aria-label="A phone takes a selfie of the buyer holding her passport. The photo goes to the identity-verification provider, which checks it and then deletes it. The seller only receives a card: verified, the name, the document type and a masked document number.">
       <path className="f-blob" d="M40 210 C30 120 110 50 220 54 C330 58 470 70 492 180 C512 290 410 340 270 338 C130 336 50 300 40 210Z"/>
       <ellipse cx="120" cy="316" rx="50" ry="6" className="f-shadow"/>
 
@@ -311,7 +311,7 @@ export function IdentityScene() {
         <rect x="78" y="92" width="84" height="188" rx="11" className="f-paper q-flash"/>
       </g>
 
-      {/* Didit */}
+      {/* the verification provider */}
       <g transform="translate(290 185)"><g className="pop q-pulse">
         <path d="M0 -42 L34 -28 V0 C34 25 18 38 0 44 C-18 38 -34 25 -34 0 V-28Z" className="f-accd"/>
         <circle cx="0" cy="-8" r="9" className="f-pl"/><path d="M-15 20 a15 12 0 0 1 30 0z" className="f-pl"/>
@@ -323,7 +323,7 @@ export function IdentityScene() {
         <rect x="0" y="-6" width="9" height="7" rx="1.5" className="f-pass q-bit b2"/>
         <rect x="-4" y="-2" width="8" height="8" rx="1.5" className="f-pl q-bit b3"/>
       </g>
-      <text x="290" y="250" textAnchor="middle" className="t-lab">Didit</text>
+      <text x="290" y="250" textAnchor="middle" className="t-lab">ID check</text>
       <text x="290" y="266" textAnchor="middle" className="t-sub q-gone">photos deleted</text>
 
       {/* what the seller receives */}

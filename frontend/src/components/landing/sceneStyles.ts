@@ -173,7 +173,7 @@ export const sceneStyles = `
 .lp-art .r-approved { animation: lps-r-mark 13s infinite; }
 .lp-art .r-bubble { animation: lps-r-bubble 13s infinite; }
 .lp-art .r-glow { opacity: 1; animation: lps-r-glow 13s infinite; }
-/* Identity: phone, Didit, and the card the seller receives. 10s */
+/* Identity: phone, the verification provider, and the card the seller receives. 10s */
 @keyframes lps-q-flash { 0% { opacity: 0; } 3% { opacity: 0.9; } 7%, 100% { opacity: 0; } }
 @keyframes lps-q-photo { 0%, 5% { opacity: 0; } 7%, 22% { opacity: 1; } 25%, 100% { opacity: 0; } }
 @keyframes lps-q-pulse { 0%, 22% { transform: scale(1); } 25% { transform: scale(1.08); } 29%, 100% { transform: scale(1); } }

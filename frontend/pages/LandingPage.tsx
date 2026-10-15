@@ -160,14 +160,14 @@ export default function LandingPage() {
           <section className="lp-chapter">
             <div className="lp-chapter-text">
               <span className="lp-eyebrow">IDENTITY</span>
-              <h3 className="lp-h3">Passport photos go to Didit, and nowhere else</h3>
+              <h3 className="lp-h3">Passport photos go to the verification provider, and nowhere else</h3>
               <p className="lp-body">
                 The buyer photographs their passport or ID card and takes a selfie in a secure window from
-                Didit. You get the outcome and what is printed on the document. The photos never reach you or us.
+                our identity-verification provider. You get the outcome and what is printed on the document. The photos never reach you or us.
               </p>
               <ul className="lp-facts">
-                <li>Didit checks the document is genuine and belongs to the buyer</li>
-                <li>Didit deletes the session, photos included, once the result is stored</li>
+                <li>The provider checks the document is genuine and belongs to the buyer</li>
+                <li>The provider deletes the session, photos included, once the result is stored</li>
                 <li>An ID showing the buyer is under 18 stops the statement from being sent</li>
               </ul>
             </div>
