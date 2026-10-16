@@ -150,14 +150,14 @@ type IdDocumentType = 'PASSPORT' | 'ID_CARD';
 type CompanyRole = 'OWNER' | 'EMPLOYEE_PLUS' | 'EMPLOYEE';
 
 const roleLabels: Record<CompanyRole, string> = {
-  OWNER: 'Owner', EMPLOYEE_PLUS: 'Employee+', EMPLOYEE: 'Employee',
+  OWNER: 'Owner', EMPLOYEE_PLUS: 'Reviewer', EMPLOYEE: 'Viewer',
 };
 
 // What each role may do, shown in the role menus so the choice is informed.
 const ROLE_OPTIONS: SelectOption<CompanyRole>[] = [
   { value: 'OWNER', label: 'Owner', description: 'Everything, including form settings, the team and closing the account.' },
-  { value: 'EMPLOYEE_PLUS', label: 'Employee+', description: 'Approves and denies statements, overrides a failed check with a reason.' },
-  { value: 'EMPLOYEE', label: 'Employee', description: 'Reads statements and their check results.' },
+  { value: 'EMPLOYEE_PLUS', label: 'Reviewer', description: 'Approves and denies statements, overrides a failed check with a reason.' },
+  { value: 'EMPLOYEE', label: 'Viewer', description: 'Reads statements and their check results.' },
 ];
 const docTypeLabels: Record<IdDocumentType, string> = {
   PASSPORT: 'Passport', ID_CARD: 'Identity Card',
@@ -404,7 +404,7 @@ export default function CompanyDashboard() {
     setOverrideReason('');
   }
 
-  // Per-check override control. Owners & Employee+ may override; only shown for a
+  // Per-check override control. Owners & Reviewers may override; only shown for a
   // pending submission whose check is currently failing.
   const renderOverride = (category: OverrideCategory) => {
     if (!selected || selected.status !== 'PENDING_REVIEW') return null;

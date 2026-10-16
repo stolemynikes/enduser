@@ -3,7 +3,7 @@ import { prisma } from './prisma.ts';
 import { sendNewSubmissionToCompany } from '../services/email.ts';
 import { mailBudgetAllows } from './mailBudget.ts';
 
-/** Owners and Employee+ — the roles that can actually act on a statement. */
+/** Owners and Reviewers (EMPLOYEE_PLUS) — the roles that can actually act on a statement. */
 const REVIEWER_ROLES = ['OWNER', 'EMPLOYEE_PLUS'] as const;
 
 export async function sellerName(companyId?: string | null): Promise<string | undefined> {

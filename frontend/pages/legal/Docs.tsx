@@ -77,8 +77,8 @@ export default function Docs() {
             <thead><tr><th scope="col">Role</th><th scope="col">Can</th></tr></thead>
             <tbody>
               <tr><td>Owner</td><td>Everything below, plus form settings, inviting and removing team members, changing roles, the record of document-number look-ups, and closing the account.</td></tr>
-              <tr><td>Employee+</td><td>Approve and deny statements, override a failed check with a reason, re-run checks, and look up identity document numbers.</td></tr>
-              <tr><td>Employee</td><td>Read statements and their check results.</td></tr>
+              <tr><td>Reviewer</td><td>Approve and deny statements, override a failed check with a reason, re-run checks, and look up identity document numbers.</td></tr>
+              <tr><td>Viewer</td><td>Read statements and their check results.</td></tr>
             </tbody>
           </table>
         </div>

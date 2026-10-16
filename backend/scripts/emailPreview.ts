@@ -132,7 +132,7 @@ function page(items: Captured[]): string {
   await capture('denied', 'Statement declined', 'the buyer, with the reviewer’s reason',
     () => sendDenied(BUYER, 'Maria de Vries',
       'The VAT number could not be verified against the EU VIES register.', SELLER));
-  await capture('new-submission', 'New statement waiting', 'the seller’s reviewers (owner and Employee+)',
+  await capture('new-submission', 'New statement waiting', 'the seller’s reviewers (owner and reviewers)',
     () => sendNewSubmissionToCompany(['owner@chemicalsdirect.example'], {
       sellerName: SELLER, buyerName: 'Maria de Vries', buyerCompany: 'De Vries Analytisch BV' }));
   await capture('invite', 'Colleague invitation', 'someone an owner invited into their team',

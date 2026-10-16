@@ -1,7 +1,7 @@
 // Fields a resolver must not hand back.
 //
-// This used to be a role check: Owner and Employee+ received the identity
-// document number with every row, plain Employees did not. That left a stolen
+// This used to be a role check: Owner and Reviewer received the identity
+// document number with every row, Viewers did not. That left a stolen
 // owner session — which is what a phishing proxy or malware produces, with the
 // second factor already passed — reading every number in the tenant in one
 // query.

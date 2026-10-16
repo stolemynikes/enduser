@@ -106,7 +106,7 @@ export async function sendDenied(to: string, name: string, reason: string, selle
 
 /**
  * Tells the seller a statement is waiting. Goes to the people who can act on it
- * — the owner and any Employee+ — because everyone else can only read
+ * — the owner and any Reviewer — because everyone else can only read
  * decisions, and a notification nobody can act on is noise.
  */
 export async function sendNewSubmissionToCompany(

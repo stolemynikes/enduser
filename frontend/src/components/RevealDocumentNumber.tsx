@@ -43,7 +43,7 @@ export function RevealDocumentNumber({
   onSetUpMfa,
 }: {
   submissionId: string;
-  /** Owner and Employee+ only; a plain Employee is not offered the control. */
+  /** Owner and Reviewer only; a Viewer is not offered the control. */
   canReveal: boolean;
   /** Whether the person asking has a second factor (in support view: the admin's own). */
   mfaEnabled: boolean;

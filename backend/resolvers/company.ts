@@ -157,6 +157,12 @@ async function sendVerification(user: { id: string; email: string; name: string 
   }
 }
 
+/** The role names people see; the enum values stay as stored. */
+const ROLE_NAMES: Record<string, string> = { OWNER: 'Owner', EMPLOYEE_PLUS: 'Reviewer', EMPLOYEE: 'Viewer' };
+function roleName(role: string): string {
+  return ROLE_NAMES[role] ?? role;
+}
+
 function buildAuthPayload(token: string, company: { id: string; name: string; slug: string }, role: string) {
   return { token, company: { id: company.id, name: company.name, slug: company.slug }, role };
 }
@@ -701,7 +707,7 @@ export const companyResolvers = {
         companyId: invite.companyId,
         kind: 'INVITE_ACCEPTED',
         title: 'An invitation was accepted',
-        body: `${memberName} joined as ${invite.role === 'EMPLOYEE_PLUS' ? 'Employee+' : String(invite.role).toLowerCase()}.`,
+        body: `${memberName} joined as ${roleName(invite.role)}.`,
       });
 
       const jwtToken = signCompanyToken({ companyUserId: user.id, companyId: invite.companyId, role: invite.role });
@@ -982,7 +988,7 @@ export const companyResolvers = {
      * Reviewers are allowed to see it — the point is that a session alone is
      * not enough, so a stolen one (which is what a phishing proxy and malware
      * both produce, with the second factor already passed) cannot read the
-     * tenant's numbers. Plain Employees cannot reveal at all; that has always
+     * tenant's numbers. Viewers cannot reveal at all; that has always
      * been true and stays true.
      */
     revealDocumentNumber: async (
@@ -1161,7 +1167,7 @@ export const companyResolvers = {
         companyId, userId,
         kind: 'ROLE_CHANGED',
         title: 'Your role changed',
-        body: `You are now ${member.role === 'EMPLOYEE_PLUS' ? 'Employee+' : member.role.toLowerCase()} in this company.`,
+        body: `You are now ${roleName(member.role)} in this company.`,
       });
       return {
         id: member.id, userId: member.userId,
