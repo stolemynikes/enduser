@@ -205,7 +205,9 @@ export async function checkSubstanceUse(
         }
       } catch (err) {
         if (!(err instanceof PubChemUnavailable)) throw err;
-        findings.push(`"${name}" could not be looked up — PubChem was unreachable. Identify it by hand before approving.`);
+        // A problem, not a finding: an outage must not leave a substance nobody
+        // identified looking greener than one PubChem said it did not know.
+        problems.push(`"${name}" could not be looked up — PubChem was unreachable. Identify it by hand before approving.`);
       }
     }
   }

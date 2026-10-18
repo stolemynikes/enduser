@@ -10,7 +10,7 @@
 // one — and two instances would each have seen half the traffic. It holds no
 // personal data, only opaque ids and a cached status.
 import { prisma } from '../lib/prisma.ts';
-import type { DiditVerificationStatus } from './didit.ts';
+import { DIDIT_ENABLED, deleteSession, type DiditVerificationStatus } from './didit.ts';
 
 const TTL_MS = 60 * 60 * 1000; // 1 hour — hosted flow plus finishing the form
 
@@ -119,10 +119,69 @@ export async function consumeSession(sessionId: string, companyId: string | null
   return count === 1;
 }
 
-/** Drops spent and expired rows. Called from the nightly maintenance job. */
+// Pruning. A session no submission took over still has the buyer's document
+// photos at Didit: they finished (or started) the hosted flow and then left,
+// were refused after it (under age, wrong document), or the submission failed
+// after the session was spent. Only a submission purges its own session, so
+// these are purged here instead.
+const DAY_MS = 24 * 60 * 60 * 1000;
+/** Past expiry before a session is purged, so a submission still in flight when it expired is not raced. */
+const PURGE_GRACE_MS = 60 * 60 * 1000;
+/** After this, a session Didit keeps refusing to delete is dropped and logged for reconciliation. */
+const PURGE_GIVE_UP_MS = 30 * DAY_MS;
+/** Didit deletions per night; the rest wait for the next run. */
+const MAX_PURGES_PER_RUN = 1000;
+const PAGE = 500;
+
+/**
+ * Drops expired rows. An expired session no submission took over is deleted at
+ * Didit first, and its row is only dropped once that worked, so a failed purge
+ * is retried the next night. Called from the nightly maintenance job.
+ */
 export async function pruneSessions(): Promise<number> {
-  const { count } = await prisma.verificationSession.deleteMany({
-    where: { expiresAt: { lt: new Date() } },
-  });
-  return count;
+  const now = Date.now();
+  let pruned = 0;
+  let purges = 0;
+  let after = '';
+  for (;;) {
+    const rows = await prisma.verificationSession.findMany({
+      where: { expiresAt: { lt: new Date(now) }, sessionId: { gt: after } },
+      select: { sessionId: true, expiresAt: true },
+      orderBy: { sessionId: 'asc' },
+      take: PAGE,
+    });
+    if (rows.length === 0) break;
+    after = rows[rows.length - 1].sessionId;
+
+    const taken = new Set(
+      (await prisma.submission.findMany({
+        where: { idVerificationSessionId: { in: rows.map(r => r.sessionId) } },
+        select: { idVerificationSessionId: true },
+      })).map(s => s.idVerificationSessionId),
+    );
+
+    const drop: string[] = [];
+    for (const { sessionId, expiresAt } of rows) {
+      // The submission owns its session's purge (and the webhook may still need it).
+      if (taken.has(sessionId)) { drop.push(sessionId); continue; }
+      const age = now - expiresAt.getTime();
+      if (age < PURGE_GRACE_MS) continue;
+      if (DIDIT_ENABLED) {
+        // Over the nightly budget: untouched, so it is neither purged nor given up on.
+        if (purges >= MAX_PURGES_PER_RUN) continue;
+        purges++;
+        if (await deleteSession(sessionId)) { drop.push(sessionId); continue; }
+      }
+      // Given up on only after a failed attempt (or with Didit switched off,
+      // when no attempt is possible), never for want of one.
+      if (age > PURGE_GIVE_UP_MS) {
+        console.error(`[didit] giving up purging abandoned session ${sessionId}; delete it at Didit by hand`);
+        drop.push(sessionId);
+      }
+    }
+    if (drop.length) {
+      pruned += (await prisma.verificationSession.deleteMany({ where: { sessionId: { in: drop } } })).count;
+    }
+  }
+  return pruned;
 }

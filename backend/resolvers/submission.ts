@@ -209,6 +209,16 @@ export const submissionResolvers = {
         }
       }
 
+      // The core fields every form collects (lib/formConfig.ts). The form
+      // requires them too, but only this check holds for a direct API call —
+      // and a blank substance would skip the substance check, which counts as
+      // green at approval.
+      for (const key of ['firstName', 'lastName', 'substances', 'statement']) {
+        if (typeof rest[key] !== 'string' || !rest[key].trim()) {
+          throw buyerError('FIELD_REQUIRED', `Field "${key}" is required.`);
+        }
+      }
+
       // Server-side enforcement: REQUIRED fields must be present,
       // HIDDEN fields are discarded even if sent.
       const configFields: Record<'orderNumber' | 'address' | 'casNumbers' | 'concentration', string[]> = {

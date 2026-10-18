@@ -202,5 +202,29 @@ for (const args of [
   console.log(`  ${r.note}`);
 }
 
+console.log('\n— PubChem outage —');
+{
+  // Every PubChem call fails as if the network were down. Fresh names, so the
+  // lookup cache from the cases above cannot answer for them.
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: any, init?: any) => {
+    if (String(input).includes('pubchem.ncbi.nlm.nih.gov')) throw new TypeError('fetch failed');
+    return realFetch(input, init);
+  }) as typeof fetch;
+  try {
+    const unknown = await checkSubstanceUse({ substances: 'Zorblex cleaning agent', casNumbers: '', statement: OK_USE, buyerType: 'COMPANY' });
+    check('no CAS, unlisted name, PubChem down: flagged, not green', unknown.status === 'FLAGGED',
+      `got ${unknown.status}: ${unknown.note.slice(0, 160)}`);
+    check('…and the note says PubChem was unreachable', unknown.note.includes('PubChem was unreachable'));
+    const listed = await checkSubstanceUse({ substances: 'Wasserstoffperoxid', casNumbers: '', statement: OK_USE, buyerType: 'INDIVIDUAL' });
+    check('no CAS, listed name, PubChem down: still recognised from the annex', listed.status === 'FLAGGED' && listed.note.includes('Annex I'),
+      `got ${listed.status}: ${listed.note.slice(0, 160)}`);
+    const withCas = await checkSubstanceUse({ substances: 'Zorblex', casNumbers: '50-00-0', statement: OK_USE, buyerType: 'COMPANY' });
+    check('with CAS, PubChem down: ERROR, never OK', withCas.status === 'ERROR', `got ${withCas.status}`);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
