@@ -87,7 +87,7 @@ import { verifyHumanOrThrow } from '../services/turnstile.ts';
 import { mailBudgetAllows } from '../lib/mailBudget.ts';
 import { statementCopy } from '../lib/statementCopy.ts';
 import { matchKeys } from '../lib/matchKeys.ts';
-import { buyerError } from '../lib/buyerError.ts';
+import { buyerError, type BuyerErrorCode } from '../lib/buyerError.ts';
 import { revealDocumentNumber } from '../lib/reveal.ts';
 import { secondFactorError, mfaSetupRequiredError } from './auth.ts';
 import { notifySubmission, notify } from '../lib/notifications.ts';
@@ -297,8 +297,17 @@ export const submissionResolvers = {
         // Re-assert the document policy server-side. Didit is told to only
         // offer passports and identity cards, but that is a setting on their
         // side, not a control on ours.
+        // A refusal from here on ends this verification for good: the session
+        // is spent and no submission will own it. Its photos are deleted at
+        // Didit now rather than by the nightly prune — for an under-age buyer
+        // especially, a day is too long to keep them.
+        const refuse = async (code: BuyerErrorCode, message: string): Promise<never> => {
+          await deleteSession(diditSessionId);
+          throw buyerError(code, message);
+        };
+
         if (decision.documentType == null && decision.status === 'APPROVED') {
-          throw buyerError('ID_DOCUMENT_TYPE', 'Only passports and identity cards are accepted.');
+          await refuse('ID_DOCUMENT_TYPE', 'Only passports and identity cards are accepted.');
         }
 
         // Age is checked here and nowhere else, because here is the only place
@@ -308,7 +317,7 @@ export const submissionResolvers = {
         // to say no to them.
         if (decision.age != null && decision.age < MINIMUM_AGE) {
           console.warn('[submit] refused: buyer is under the minimum age');
-          throw buyerError(
+          await refuse(
             'UNDER_AGE',
             `You must be at least ${MINIMUM_AGE} years old to submit an end-user statement.`,
           );
