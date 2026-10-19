@@ -58,10 +58,13 @@ export async function hasSecondFactor(kind: AccountKind, id: string): Promise<bo
   // a single related row rather than by a flag lookup followed by a count.
   const account = await (prisma[kind] as any).findUnique({
     where: { id },
-    select: {
-      totpEnabledAt: true,
-      passkeys: kind === 'companyUser' ? { select: { id: true }, take: 1 } : undefined,
-    },
+    // The admin model has no passkeys relation, and Prisma rejects even an
+    // undefined key for a field the model lacks — so it is left out entirely
+    // rather than passed as undefined. (Passing it threw on every admin
+    // request once two-factor was required, locking every admin out.)
+    select: kind === 'companyUser'
+      ? { totpEnabledAt: true, passkeys: { select: { id: true }, take: 1 } }
+      : { totpEnabledAt: true },
   });
   if (!account) return false;
   if (account.totpEnabledAt) return true;

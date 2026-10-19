@@ -567,7 +567,7 @@ export default function CompanyDashboard() {
       ['Substance(s)', s.substances],
       ['CAS number', s.casNumbers || '—'],
       ['Concentration', s.concentration || '—'],
-      ['Statement', s.statement],
+      ['Intended use', s.statement],
       ...(s.statementTranslation
         ? [[`Machine translation${s.statementLang ? ` (from ${s.statementLang.toUpperCase()})` : ''}`, s.statementTranslation] as [string, string]]
         : []),
@@ -756,7 +756,11 @@ export default function CompanyDashboard() {
           const next = fetchMoreResult?.companySubmissions ?? [];
           if (next.length < PAGE_SIZE) setPageExhausted(true);
           if (next.length === 0) return prev;
-          return { ...prev, companySubmissions: [...(prev.companySubmissions ?? []), ...next] };
+          // Offsets shift when a statement arrives between two pages, so the
+          // same row can come back twice; it is kept once.
+          const have = new Set((prev.companySubmissions ?? []).map((r: { id: string }) => r.id));
+          const fresh = next.filter((r: { id: string }) => !have.has(r.id));
+          return { ...prev, companySubmissions: [...(prev.companySubmissions ?? []), ...fresh] };
         },
       });
       if ((more?.data?.companySubmissions ?? []).length < PAGE_SIZE) setPageExhausted(true);
@@ -802,6 +806,10 @@ export default function CompanyDashboard() {
     APPROVED: counts?.approved ?? 0,
     DENIED: counts?.denied ?? 0,
   };
+  // A search or a date range narrows what is loaded; without one the list is
+  // the whole tab, and its total comes from the server.
+  const narrowed = !!q || dateActive;
+  const tabTotal = tabCounts[filter];
   const filterLabels: Record<Filter, string> = { ALL: 'All', PENDING_REVIEW: 'Pending', APPROVED: 'Approved', DENIED: 'Denied' };
 
   const handleInvite = async (e: React.FormEvent) => {
@@ -1093,16 +1101,18 @@ export default function CompanyDashboard() {
                           </td>
                         </tr>
                       ))}
-                      {visible.length < filtered.length && (
+                      {(visible.length < filtered.length || (!narrowed && !pageExhausted && submissions.length < tabTotal)) && (
                         <tr ref={sentinelRef} className="cd-row-more">
-                          <td colSpan={9}>Loading more… ({visible.length} of {filtered.length})</td>
+                          <td colSpan={9}>Loading more…</td>
                         </tr>
                       )}
                     </tbody>
                   </table>
-                  {filtered.length > 50 && visible.length >= filtered.length && (
-                    <div className="cd-list-foot">Showing all {filtered.length}</div>
-                  )}
+                  <div className="cd-list-foot" aria-live="polite">
+                    {narrowed
+                      ? <>Showing {visible.length} of {filtered.length} matching{!pageExhausted && submissions.length < tabTotal ? <> among the {submissions.length} most recent — search covers the statements loaded so far</> : null}</>
+                      : <>Showing {visible.length} of {tabTotal}</>}
+                  </div>
                 </div>
               )}
             </>
@@ -1412,7 +1422,7 @@ export default function CompanyDashboard() {
                         <Detail label="CAS Number" value={selected.casNumbers || <Dim />} />
                         <Detail label="Concentration" value={selected.concentration || <Dim />} />
                       </div>
-                      <Detail label="Statement" value={
+                      <Detail label="Intended use" value={
                       <StatementWithTranslation statement={selected.statement}
                         lang={selected.statementLang} translation={selected.statementTranslation} />
                     } />

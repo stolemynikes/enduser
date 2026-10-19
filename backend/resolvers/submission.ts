@@ -90,6 +90,7 @@ import { matchKeys } from '../lib/matchKeys.ts';
 import { buyerError, type BuyerErrorCode } from '../lib/buyerError.ts';
 import { recordEvent } from '../lib/ops.ts';
 import { checkStatement } from '../lib/statementCheck.ts';
+import { requireAdmin } from '../lib/adminGuard.ts';
 import { revealDocumentNumber } from '../lib/reveal.ts';
 import { secondFactorError, mfaSetupRequiredError } from './auth.ts';
 import { notifySubmission, notify } from '../lib/notifications.ts';
@@ -116,16 +117,16 @@ export const submissionResolvers = {
       { limit, offset }: { limit?: number; offset?: number },
       ctx: { admin?: boolean },
     ) => {
-      if (!ctx.admin) throw new Error('Unauthorized');
+      requireAdmin(ctx);
       return prisma.submission.findMany({
-        orderBy: { createdAt: 'desc' },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
         include: { overrides: true },
         take: Math.min(Math.max(limit ?? 200, 1), 200),
         skip: Math.max(offset ?? 0, 0),
       });
     },
     submission: (_: unknown, { id }: { id: string }, ctx: { admin?: boolean }) => {
-      if (!ctx.admin) throw new Error('Unauthorized');
+      requireAdmin(ctx);
       return prisma.submission.findUnique({ where: { id }, include: { overrides: true } });
     },
   },
@@ -478,7 +479,7 @@ export const submissionResolvers = {
     },
 
     approveSubmission: async (_: unknown, { id }: { id: string }, ctx: { admin?: boolean; adminId?: string }) => {
-      if (!ctx.admin) throw new Error('Unauthorized');
+      requireAdmin(ctx);
 
       await assertApprovable(id);
       const submission = await prisma.submission.update({
@@ -500,7 +501,7 @@ export const submissionResolvers = {
       { id, reason }: { id: string; reason: string },
       ctx: { admin?: boolean; adminId?: string }
     ) => {
-      if (!ctx.admin) throw new Error('Unauthorized');
+      requireAdmin(ctx);
 
       const note = typeof reason === 'string' ? reason.trim().slice(0, 1000) : '';
       if (!note) throw new Error('A reason is required.');
@@ -521,7 +522,7 @@ export const submissionResolvers = {
       { id, category, reason }: { id: string; category: OverrideCategory; reason: string },
       ctx: { admin?: boolean; adminId?: string }
     ) => {
-      if (!ctx.admin) throw new Error('Unauthorized');
+      requireAdmin(ctx);
       return applyOverride(id, category, reason, ctx.adminId ?? 'admin', 'Admin');
     },
 
@@ -530,7 +531,7 @@ export const submissionResolvers = {
       { id, category }: { id: string; category: OverrideCategory },
       ctx: { admin?: boolean }
     ) => {
-      if (!ctx.admin) throw new Error('Unauthorized');
+      requireAdmin(ctx);
       return clearOverride(id, category);
     },
 
@@ -548,7 +549,7 @@ export const submissionResolvers = {
       { id, credential }: { id: string; credential: string },
       ctx: { admin?: boolean; adminId?: string },
     ) => {
-      if (!ctx.admin || !ctx.adminId) throw new Error('Unauthorized');
+      const adminId = requireAdmin(ctx);
       const submission = await prisma.submission.findUnique({ where: { id } });
       if (!submission) throw new Error('Submission not found.');
 
@@ -557,9 +558,9 @@ export const submissionResolvers = {
         // A submission with no company still needs somewhere to file the
         // access; the platform is the tenant of last resort.
         companyId: submission.companyId ?? 'platform',
-        userId: ctx.adminId,
+        userId: adminId,
         userName: 'Platform admin',
-        adminId: ctx.adminId,
+        adminId,
         asAdmin: true,
         credential,
       });
@@ -572,7 +573,7 @@ export const submissionResolvers = {
     },
 
     recheckSubmissionSubstance: async (_: unknown, { id }: { id: string }, ctx: { admin?: boolean }) => {
-      if (!ctx.admin) throw new Error('Unauthorized');
+      requireAdmin(ctx);
       if (!SUBSTANCE_CHECK_ENABLED) throw new Error('Substance check is not configured.');
       // Every re-run is outbound work against PubChem — see the company-side
       // mutation for why a held-down button must not become an amplifier.

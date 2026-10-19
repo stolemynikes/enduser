@@ -194,7 +194,7 @@ export function RouteScene() {
         <rect x="350" y="142" width="30" height="14" rx="4" className="f-mid"/>
         <text x="332" y="181.5" className="t-lab" style={{ fontSize: "10px" }}>Substance</text>
         <text x="332" y="209.5" className="t-lab" style={{ fontSize: "10px" }}>VAT</text>
-        <text x="332" y="237.5" className="t-lab" style={{ fontSize: "10px" }}>Stated use</text>
+        <text x="332" y="237.5" className="t-lab" style={{ fontSize: "10px" }}>Intended use</text>
         <text x="332" y="265.5" className="t-lab" style={{ fontSize: "10px" }}>Age 18+</text>
         <g transform="translate(394 178)"><g className="pop r-ck1"><circle r="7.5" className="f-green"/><path className="glyph" d="M-3.4 0l2.4 2.4 4.4-4.8" strokeWidth="2"/></g></g>
         <g transform="translate(394 206)"><g className="pop r-ck2"><circle r="7.5" className="f-green"/><path className="glyph" d="M-3.4 0l2.4 2.4 4.4-4.8" strokeWidth="2"/></g></g>

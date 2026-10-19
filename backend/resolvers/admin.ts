@@ -1,4 +1,5 @@
 import { prisma } from '../lib/prisma.ts';
+import { requireAdmin } from '../lib/adminGuard.ts';
 import { signCompanyToken } from '../services/companyAuth.ts';
 import { checkVies, matchViesAddress } from '../services/vies.ts';
 import { checkSubstanceUse } from '../services/substanceCheck.ts';
@@ -60,25 +61,6 @@ async function decidable(id: string) {
 type Ctx = { admin?: boolean; adminId?: string; needsEnrolment?: boolean };
 type BuyerType = 'INDIVIDUAL' | 'COMPANY';
 
-/**
- * A platform admin, allowed to act.
- *
- * The enrolment requirement is checked here rather than per resolver, for the
- * same reason as on the company side: a guard added resolver by resolver is a
- * guard with a hole in it. The MFA and passkey mutations live in
- * resolvers/auth.ts behind a lenient guard, so an admin without a factor can
- * reach the screen that gives them one — and nothing else.
- */
-function requireAdmin(ctx: Ctx) {
-  if (!ctx.admin || !ctx.adminId) throw new Error('Unauthorized');
-  if (ctx.needsEnrolment) {
-    throw new GraphQLError(
-      'Set up two-factor authentication to continue.',
-      { extensions: { code: 'MFA_ENROLMENT_REQUIRED' } },
-    );
-  }
-  return ctx.adminId;
-}
 
 // Monday 00:00 of the week containing d (local time).
 function weekStart(d: Date) {
@@ -173,7 +155,8 @@ export const adminResolvers = {
         await Promise.all([
           prisma.submission.groupBy({ by: ['status'], _count: { _all: true }, where: { isTest: false } }),
           prisma.submission.groupBy({ by: ['viesStatus'], _count: { _all: true }, where: { isTest: false } }),
-          prisma.company.count(),
+          // Closed and purged companies are not customers any more.
+          prisma.company.count({ where: { deletedAt: null, deletionRequestedAt: null } }),
           // Identity counters span both pipelines: idMrzValid/idLikelySynthetic
           // are only set on rows from the old in-house OCR, the verification
           // fields only on Didit-verified rows.

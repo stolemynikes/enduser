@@ -28,7 +28,7 @@ export default function Docs() {
         <ul>
           <li><strong>Fields</strong> — order number, address, CAS numbers and concentration can each be required, optional or hidden. Email, name, substance and intended use are always asked.</li>
           <li><strong>Buyers</strong> — companies only, private individuals only, or both. Company buyers give a company name and a VAT number, which is checked against the EU VIES register.</li>
-          <li><strong>Identity verification</strong> — required or off. When required, the buyer photographs their passport or identity card and takes a selfie in a secure window from Didit. The photos never reach you or us.</li>
+          <li><strong>Identity verification</strong> — required or off. When required, the buyer photographs their passport or identity card and takes a selfie in a secure window from our identity-verification provider (named in the <Link to="/dpa#sub-processors">DPA</Link>). The photos never reach you or us, and are deleted at the provider after the check.</li>
           <li><strong>Terms</strong> — the platform’s default declaration, your own text, or a link to your terms.</li>
         </ul>
       </Clause>
@@ -53,7 +53,7 @@ export default function Docs() {
           <li><strong>Identity</strong> — the outcome of the identity check, and the name, document type and number printed on the document. A failed check is flagged, never an automatic refusal.</li>
           <li><strong>VAT</strong> — company buyers’ VAT numbers are checked in VIES, including whether the registered address matches.</li>
           <li><strong>Substance</strong> — CAS numbers are confirmed in PubChem and checked against Annexes I and II of Regulation (EU) 2019/1148. Names are recognised in every official EU language, so “Salpetersäure” is nitric acid. Without a CAS number the substance is identified by name, and the check says so.</li>
-          <li><strong>Stated use</strong> — screened for warning signs in English, Dutch, German and French. Statements in other languages are machine-translated on our own server and the translation is screened too; the reviewer sees the original with the translation under it.</li>
+          <li><strong>Intended use</strong> — screened for warning signs in English, Dutch, German and French. Statements in other languages are machine-translated on our own server and the translation is screened too; the reviewer sees the original with the translation under it.</li>
           <li><strong>Earlier approvals</strong> — if the same buyer, document or substances were approved before in your company, the statement says so, so a repeat order is quick to check.</li>
         </ul>
         <div className="doc-note">

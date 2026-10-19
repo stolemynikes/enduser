@@ -22,8 +22,8 @@ import '@fontsource/inter/500.css';
 import '@fontsource/inter/600.css';
 
 const GET_SUBMISSIONS = gql`
-  query GetSubmissions {
-    submissions {
+  query GetSubmissions($limit: Int, $offset: Int) {
+    submissions(limit: $limit, offset: $offset) {
       id email orderNumber firstName lastName companyName vatNumber buyerType
       street zipCode place country substances casNumbers concentration statement statementLang statementTranslation
       viesStatus viesName viesAddress viesAddressMatch status adminNote createdAt isTest
@@ -227,13 +227,41 @@ export default function Dashboard() {
 
 
 
-  const { data, loading, error, refetch } = useQuery<any>(GET_SUBMISSIONS);
+  // Paged like the sellers' queue: the newest 200 first, more as the list is
+  // scrolled. It used to stop at 200 without saying so.
+  const ADMIN_PAGE = 200;
+  const { data, loading, error, refetch, fetchMore } = useQuery<any>(GET_SUBMISSIONS, {
+    variables: { limit: ADMIN_PAGE, offset: 0 },
+    notifyOnNetworkStatusChange: true,
+  });
+  const [adminExhausted, setAdminExhausted] = useState(false);
+  const adminLoadingMore = useRef(false);
+  const loadMoreAdmin = async () => {
+    if (adminLoadingMore.current || adminExhausted) return;
+    adminLoadingMore.current = true;
+    try {
+      await fetchMore({
+        variables: { limit: ADMIN_PAGE, offset: (data?.submissions ?? []).length },
+        updateQuery: (prev: any, { fetchMoreResult }: any) => {
+          const next = fetchMoreResult?.submissions ?? [];
+          if (next.length < ADMIN_PAGE) setAdminExhausted(true);
+          const have = new Set((prev.submissions ?? []).map((r: { id: string }) => r.id));
+          return { ...prev, submissions: [...(prev.submissions ?? []), ...next.filter((r: { id: string }) => !have.has(r.id))] };
+        },
+      });
+    } finally {
+      adminLoadingMore.current = false;
+    }
+  };
+  useEffect(() => {
+    if (data?.submissions && data.submissions.length < ADMIN_PAGE) setAdminExhausted(true);
+  }, [data?.submissions]);
   // The list's own refresh, kept apart from Apollo's loading flag so the table
   // stays on screen while it reloads.
   const [refreshing, setRefreshing] = useState(false);
   const refreshList = async () => {
     setRefreshing(true);
-    try { await refetch(); } finally { setRefreshing(false); }
+    try { setAdminExhausted(false); await refetch(); } finally { setRefreshing(false); }
   };
   const [approve, { loading: approving }] = useMutation<any>(APPROVE, {
     onCompleted: () => { refetch(); setSelected(null); toast.success('Submission approved'); },
@@ -389,12 +417,17 @@ export default function Dashboard() {
     const node = sentinelRef.current;
     if (!node) return;
     const io = new IntersectionObserver(
-      ([entry]) => { if (entry.isIntersecting) setVisibleCount(c => c + 50); },
+      ([entry]) => {
+        if (!entry.isIntersecting) return;
+        setVisibleCount(c => c + 50);
+        if (visibleCount + 50 >= submissions.length) void loadMoreAdmin();
+      },
       { rootMargin: '300px' },
     );
     io.observe(node);
     return () => io.disconnect();
-  }, [visible.length, filtered.length]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible.length, filtered.length, submissions.length, visibleCount]);
 
   // Quick date-range presets (local time, YYYY-MM-DD for <input type="date">).
   const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -638,16 +671,17 @@ export default function Dashboard() {
                           </td>
                         </tr>
                       ))}
-                      {visible.length < filtered.length && (
+                      {(visible.length < filtered.length || !adminExhausted) && (
                         <tr ref={sentinelRef} className="db-row-more">
-                          <td colSpan={9}>Loading more… ({visible.length} of {filtered.length})</td>
+                          <td colSpan={9}>Loading more…</td>
                         </tr>
                       )}
                     </tbody>
                   </table>
-                  {filtered.length > 50 && visible.length >= filtered.length && (
-                    <div className="db-list-foot">Showing all {filtered.length}</div>
-                  )}
+                  <div className="db-list-foot" aria-live="polite">
+                    Showing {visible.length} of {filtered.length}{adminExhausted ? '' : ` loaded so far (${submissions.length} newest)`}
+                    {(q || dateFrom || dateTo || filter !== 'ALL') && !adminExhausted ? ' — filters cover the statements loaded so far' : ''}
+                  </div>
                 </div>
           )}
           </>)}
@@ -722,7 +756,7 @@ export default function Dashboard() {
                       <Detail label="CAS Number" value={selected.casNumbers || <span style={{ color: 'var(--text-dim)' }}>—</span>} />
                       <Detail label="Concentration" value={selected.concentration || <span style={{ color: 'var(--text-dim)' }}>—</span>} />
                     </div>
-                    <Detail label="Statement" value={
+                    <Detail label="Intended use" value={
                       <StatementWithTranslation statement={selected.statement}
                         lang={selected.statementLang} translation={selected.statementTranslation} />
                     } />
@@ -1796,7 +1830,7 @@ function TestToolsTab({ toast, onSubmissionCreated }: {
             <select className="db-test-input db-test-select" value={sub.buyerType} onChange={e => setSub({ ...sub, buyerType: e.target.value })}>
               <option value="COMPANY">Company</option><option value="INDIVIDUAL">Individual</option></select></label>
         </div>
-        <label className="db-test-field" style={{ marginTop: '0.85rem' }}><span className="db-test-label">Statement</span>
+        <label className="db-test-field" style={{ marginTop: '0.85rem' }}><span className="db-test-label">Intended use</span>
           <textarea className="db-test-input db-test-textarea" rows={2} value={sub.statement} onChange={e => setSub({ ...sub, statement: e.target.value })} /></label>
         <div className="db-test-actions">
           <button className="db-btn-view" disabled={subLoading} onClick={onSubstance}>{subLoading ? 'Running…' : 'Run check'}</button>
@@ -1887,7 +1921,7 @@ function TestToolsTab({ toast, onSubmissionCreated }: {
           <label className="db-test-field"><span className="db-test-label">Attach to company slug (optional)</span>
             <input className="db-test-input" value={ts.companySlug} onChange={e => setTs({ ...ts, companySlug: e.target.value })} placeholder="e.g. acme-test" /></label>
         </div>
-        <label className="db-test-field" style={{ marginTop: '0.85rem' }}><span className="db-test-label">Statement</span>
+        <label className="db-test-field" style={{ marginTop: '0.85rem' }}><span className="db-test-label">Intended use</span>
           <textarea className="db-test-input db-test-textarea" rows={2} value={ts.statement} onChange={e => setTs({ ...ts, statement: e.target.value })} /></label>
         <label className="db-test-field" style={{ marginTop: '0.85rem' }}><span className="db-test-label">Identity check outcome (simulated — uses no verification quota)</span>
           <select className="db-test-input db-test-select" value={idPreset} onChange={e => setIdPreset(e.target.value)}>

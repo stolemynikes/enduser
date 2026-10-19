@@ -217,7 +217,7 @@ function renderPdf(sellerName: string, at: Date, about: Record<string, string>, 
       field('Substance(s)', d.substances);
       field('CAS number(s)', d.casNumbers);
       field('Concentration', d.concentration);
-      field('Stated use', d.statedUse);
+      field('Intended use', d.statedUse);
       field('English translation made for the reviewer', d.statedUseEnglishTranslation);
       if (s.identityCheck) {
         const c = s.identityCheck;

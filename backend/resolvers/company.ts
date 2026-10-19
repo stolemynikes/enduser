@@ -262,7 +262,9 @@ export const companyResolvers = {
           // queue unless the dashboard explicitly asks for them.
           isTest: includeTest === true,
         },
-        orderBy: { createdAt: 'desc' },
+        // The id breaks ties, so two rows created in the same millisecond keep
+        // one order across pages and none is shown twice or skipped.
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
         include: { overrides: true },
         take: Math.min(Math.max(limit ?? 100, 1), 200),
         skip: Math.max(offset ?? 0, 0),

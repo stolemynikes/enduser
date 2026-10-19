@@ -117,7 +117,7 @@ export function buildStatementPdf(
     field('Substance(s)', submission.substances);
     if (submission.casNumbers) field('CAS number(s)', submission.casNumbers);
     if (submission.concentration) field('Concentration', submission.concentration);
-    field('Declared use', submission.statement);
+    field('Intended use', submission.statement);
 
     // Identity is recorded as having happened, and nothing more: the document
     // details belong in the seller's file, not in the buyer's inbox.
