@@ -5,8 +5,8 @@
 
 Contact: mailto:security@eustatement.example
 Preferred-Languages: en, nl
-Canonical: https://eustatement.example/.well-known/security.txt
-Policy: https://eustatement.example/security-policy
+Canonical: https://eustatement.com/.well-known/security.txt
+Policy: https://eustatement.com/security-policy.txt
 
 # Replace the date before every deploy. An expired file reads as an abandoned
 # mailbox, which is worse than no file at all.
