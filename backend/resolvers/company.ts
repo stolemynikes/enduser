@@ -1014,7 +1014,9 @@ export const companyResolvers = {
       { ticket, responseJson }: { ticket: string; responseJson: string },
     ) => {
       const outcome = await finishAuthentication({ ticket, responseJson });
-      if (!outcome.ok) {
+      // The kind is checked as the admin side checks it: an admin's login
+      // ticket must never be redeemed here for a company session.
+      if (!outcome.ok || outcome.kind !== 'companyUser') {
         // One message for every failure: which part went wrong is not
         // something an unauthenticated caller gets to learn.
         throw new Error('That passkey could not be verified. Try again.');

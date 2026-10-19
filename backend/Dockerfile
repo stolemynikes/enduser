@@ -26,6 +26,12 @@ RUN npx prisma generate
 
 COPY . .
 
+# Not root. The app writes nothing to disk at runtime, so the image's own
+# unprivileged user can run it; a compromise of the process is then not root
+# inside the container. The source stays owned by root, so it cannot be
+# rewritten from inside either.
+USER node
+
 # Postgres is reached over the compose network; nothing here is published.
 EXPOSE 3000
 

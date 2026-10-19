@@ -32,10 +32,14 @@ export function decryptField(value: string, field?: string): string {
   const version = value.startsWith(PREFIX_V2) ? PREFIX_V2 : value.startsWith(PREFIX_V1) ? PREFIX_V1 : null;
   if (!version) return value; // legacy plaintext row
   const [ivB64, tagB64, dataB64] = value.slice(version.length).split(':');
-  const decipher = crypto.createDecipheriv('aes-256-gcm', key, Buffer.from(ivB64, 'base64'));
+  // The tag length is pinned. Without it, GCM accepts a truncated tag, and a
+  // 4-byte tag is a forgery budget of 2^32 rather than 2^128.
+  const tag = Buffer.from(tagB64, 'base64');
+  if (tag.length !== 16) throw new Error('Encrypted value is malformed.');
+  const decipher = crypto.createDecipheriv('aes-256-gcm', key, Buffer.from(ivB64, 'base64'), { authTagLength: 16 });
   // The tag only verifies against the column the value was written for.
   if (version === PREFIX_V2 && field) decipher.setAAD(Buffer.from(field, 'utf8'));
-  decipher.setAuthTag(Buffer.from(tagB64, 'base64'));
+  decipher.setAuthTag(tag);
   return Buffer.concat([decipher.update(Buffer.from(dataB64, 'base64')), decipher.final()]).toString('utf8');
 }
 
