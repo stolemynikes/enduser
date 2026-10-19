@@ -183,6 +183,47 @@ try {
   }
   check('passkey sign-in has the sign-in budget', limited);
 
+  console.log('— Second verification pass —');
+  // F1: a persisted query is a hash with no text, and the operation limits read the text.
+  const apq = await fetch(API, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'apollo-require-preflight': '1' },
+    body: JSON.stringify({ extensions: { persistedQuery: { version: 1, sha256Hash: 'a'.repeat(64) } } }),
+  }).then(r => r.json()).catch(() => ({})) as any;
+  check('persisted queries are switched off', /PERSISTED_QUERY_NOT_SUPPORTED|PersistedQueryNotSupported/i.test(JSON.stringify(apq)), JSON.stringify(apq).slice(0, 160));
+
+  // F2: a parallel burst of wrong codes cannot get more than the budget judged.
+  await prisma.rateLimitHit.deleteMany({});
+  await prisma.companyUser.update({ where: { id: victim.u.id }, data: { failedLogins: 0, lockedUntil: null } });
+  const subRow = await prisma.submission.create({ data: {
+    companyId: victimCo.id, email: 'r@test.local', orderNumber: '', firstName: 'R', lastName: 'R', street: '', zipCode: '',
+    place: '', country: '', companyName: '', vatNumber: '', substances: 'Acetone', casNumbers: '', statement: 'x', viesStatus: 'NOT_CHECKED',
+  } });
+  const burst = await Promise.all(Array.from({ length: 20 }, (_, i) =>
+    gql('mutation($id:ID!,$c:String!){ revealDocumentNumber(id:$id, credential:$c){ documentNumber } }',
+      { id: subRow.id, c: String(100000 + i) }, victimToken)));
+  const judged = burst.filter(r => code(r) === 'MFA_INVALID').length;
+  check('twenty codes at once: at most eight are judged, the rest meet the lock', judged <= 8 && burst.some(r => code(r) === 'ACCOUNT_LOCKED'), `judged ${judged}: ${burst.map(code).join(',')}`);
+
+  // F3: a passkey ticket works once, and only for what it was issued for.
+  const { startAuthentication, finishAuthentication } = await import('../lib/passkeys.ts');
+  const t1 = await startAuthentication('companyUser', pk.u.id, 'step-up');
+  const first = await finishAuthentication({ ticket: t1!.ticket, responseJson: '{"id":"x"}', scope: 'step-up' });
+  const again = await finishAuthentication({ ticket: t1!.ticket, responseJson: '{"id":"x"}', scope: 'step-up' });
+  check('a ticket is spent by its first use', first.ok === false && first.reason !== 'bad-ticket' && again.ok === false && again.reason === 'bad-ticket', JSON.stringify([first, again]));
+  const t2 = await startAuthentication('companyUser', pk.u.id, 'step-up');
+  const wrongScope = await finishAuthentication({ ticket: t2!.ticket, responseJson: '{"id":"x"}', scope: `reveal:${subRow.id}` });
+  check('a step-up ticket is not a reveal ticket', wrongScope.ok === false && wrongScope.reason === 'bad-ticket');
+  const t3 = await startAuthentication('companyUser', pk.u.id, 'login');
+  const loginAsStep = await finishAuthentication({ ticket: t3!.ticket, responseJson: '{"id":"x"}', scope: 'step-up' });
+  check('a sign-in ticket is not a step-up ticket', loginAsStep.ok === false && loginAsStep.reason === 'bad-ticket');
+
+  // F4: removing a passkey needs the factor you have, like adding one.
+  await prisma.companyUser.update({ where: { id: victim.u.id }, data: { failedLogins: 0, lockedUntil: null } });
+  const vk = await prisma.passkey.create({ data: { userId: victim.u.id, credentialId: `rf-cred-victim-${run}`, publicKey: 'AA', name: 'Victim key' } });
+  const rm = await gql('mutation($id:ID!){ removePasskey(id:$id) }', { id: vk.id }, victimToken);
+  check('a passkey is not removed on the session alone', code(rm) === 'STEP_UP_REQUIRED' && (await prisma.passkey.count({ where: { id: vk.id } })) === 1, JSON.stringify(rm.errors?.[0]));
+  await prisma.submission.delete({ where: { id: subRow.id } });
+
   await prisma.passkey.deleteMany({ where: { userId: { in: users } } });
   await prisma.admin.delete({ where: { id: admin.id } });
 } finally {

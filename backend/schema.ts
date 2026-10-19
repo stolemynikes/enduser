@@ -784,7 +784,7 @@ export const typeDefs = `#graphql
     """
     startPasskeyRegistration(proof: String): PasskeyChallenge!
     finishPasskeyRegistration(ticket: String!, responseJson: String!, name: String!): PasskeyInfo!
-    removePasskey(id: ID!): Boolean!
+    removePasskey(id: ID!, proof: String): Boolean!
     """
     Step one of signing in with a passkey: proves the password, then hands back
     a challenge. Returns nothing useful without the correct password.
@@ -798,7 +798,7 @@ export const typeDefs = `#graphql
     regenerateRecoveryCodes(code: String!): RecoveryCodes!
     startAdminPasskeyRegistration(proof: String): PasskeyChallenge!
     finishAdminPasskeyRegistration(ticket: String!, responseJson: String!, name: String!): PasskeyInfo!
-    removeAdminPasskey(id: ID!): Boolean!
+    removeAdminPasskey(id: ID!, proof: String): Boolean!
     beginAdminPasskeyLogin(username: String!, password: String!, turnstileToken: String): PasskeyChallenge!
     finishAdminPasskeyLogin(ticket: String!, responseJson: String!): AuthPayload!
     startAdminStepUp: PasskeyChallenge!

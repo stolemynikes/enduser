@@ -91,6 +91,7 @@ import { buyerError, type BuyerErrorCode } from '../lib/buyerError.ts';
 import { recordEvent } from '../lib/ops.ts';
 import { checkStatement } from '../lib/statementCheck.ts';
 import { requireAdmin } from '../lib/adminGuard.ts';
+import { formOpen } from '../lib/access.ts';
 import { revealDocumentNumber } from '../lib/reveal.ts';
 import { secondFactorError, mfaSetupRequiredError } from './auth.ts';
 import { notifySubmission, notify } from '../lib/notifications.ts';
@@ -203,16 +204,14 @@ export const submissionResolvers = {
         throw buyerError('FORM_NOT_OPEN', 'This form is not accepting submissions yet.');
       }
       if (companySlug) {
-        const co = await prisma.company.findUnique({
-          where: { slug: companySlug },
-          include: { members: { where: { role: 'OWNER' }, select: { user: { select: { emailVerifiedAt: true } } }, take: 1 } },
-        });
+        const co = await prisma.company.findUnique({ where: { slug: companySlug } });
         if (co) {
-          // Enforced here as well as in formInfo: a form belonging to an
-          // unconfirmed account accepts nothing, so registering under someone
+          // Enforced here as well as in formInfo, by the one rule both use
+          // (lib/access.ts formOpen): a form belonging to an unconfirmed or
+          // unapproved account accepts nothing, so registering under someone
           // else's address buys an attacker a dead page rather than a working
           // collection point.
-          if (co.deletedAt || co.members[0]?.user.emailVerifiedAt == null || !co.approvedAt) {
+          if (!(await formOpen(co.id))) {
             throw buyerError('FORM_NOT_OPEN', 'This form is not accepting submissions yet.');
           }
           companyId = co.id;

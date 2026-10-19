@@ -23,16 +23,48 @@ export function lockedFor(account: Account | null): number {
   return ms > 0 ? Math.ceil(ms / 60_000) : 0;
 }
 
-export async function recordFailure(model: 'companyUser' | 'admin', account: Account): Promise<void> {
-  // Incremented in the database, not written from the value read earlier:
-  // guesses sent in parallel all read the same count, and writing count + 1
-  // back from each let them through without the lock ever closing.
-  const after = await (prisma[model] as any).update({
-    where: { id: account.id },
+/**
+ * Takes one attempt from the account's budget before the attempt is judged.
+ * Returns 0 when the attempt may go ahead, otherwise the minutes left on the
+ * lock.
+ *
+ * The count is taken first, atomically and conditionally, because judging
+ * first and counting afterwards let a burst through: every request in a
+ * parallel burst read "not locked", was judged, and only then counted. With
+ * the reservation, at most MAX_FAILURES attempts can be in flight per lock
+ * window, however many are sent at once.
+ */
+export async function reserveAttempt(model: 'companyUser' | 'admin', id: string): Promise<number> {
+  const now = new Date();
+  const { count } = await (prisma[model] as any).updateMany({
+    where: { id, failedLogins: { lt: MAX_FAILURES }, OR: [{ lockedUntil: null }, { lockedUntil: { lt: now } }] },
     data: { failedLogins: { increment: 1 } },
-    select: { failedLogins: true },
   });
-  if (after.failedLogins >= MAX_FAILURES) {
+  if (count === 1) return 0;
+  const account = await (prisma[model] as any).findUnique({ where: { id }, select: { failedLogins: true, lockedUntil: true } });
+  if (!account) return LOCK_MINUTES;
+  if (!account.lockedUntil || account.lockedUntil < now) {
+    // The budget is spent and the lock not yet written: write it now.
+    await (prisma[model] as any).update({
+      where: { id }, data: { failedLogins: 0, lockedUntil: new Date(now.getTime() + LOCK_MINUTES * 60_000) },
+    });
+    return LOCK_MINUTES;
+  }
+  return lockedFor(account);
+}
+
+/** Gives back a reserved attempt that was not a guess (no code given yet, or a right password). */
+export async function refundAttempt(model: 'companyUser' | 'admin', id: string): Promise<void> {
+  await (prisma[model] as any).updateMany({ where: { id, failedLogins: { gt: 0 } }, data: { failedLogins: { decrement: 1 } } });
+}
+
+/**
+ * After a reserved attempt failed: closes the lock once the budget is spent.
+ * The attempt itself was already counted by reserveAttempt.
+ */
+export async function recordFailure(model: 'companyUser' | 'admin', account: Account): Promise<void> {
+  const now = await (prisma[model] as any).findUnique({ where: { id: account.id }, select: { failedLogins: true } });
+  if (now && now.failedLogins >= MAX_FAILURES) {
     await (prisma[model] as any).update({
       where: { id: account.id },
       data: { failedLogins: 0, lockedUntil: new Date(Date.now() + LOCK_MINUTES * 60_000) },
@@ -70,12 +102,13 @@ export const LOCKED_MESSAGE = (minutes: number) =>
 export async function checkSecondFactorLimited(
   model: 'companyUser' | 'admin', account: MfaAccount & Account, code: string | null | undefined,
 ): Promise<SecondFactorResult> {
-  const minutes = lockedFor(account);
+  const minutes = await reserveAttempt(model, account.id);
   if (minutes > 0) {
     throw new GraphQLError(LOCKED_MESSAGE(minutes), { extensions: { code: 'ACCOUNT_LOCKED' } });
   }
   const result = await checkSecondFactor(model, account, code);
-  if (!result.ok && result.reason === 'invalid') await recordFailure(model, account);
-  else if (result.ok && account.failedLogins > 0) await recordSuccess(model, account.id);
+  if (result.ok) await recordSuccess(model, account.id);
+  else if (result.reason === 'invalid') await recordFailure(model, account);
+  else await refundAttempt(model, account.id);
   return result;
 }

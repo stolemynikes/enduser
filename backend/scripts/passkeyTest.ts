@@ -154,7 +154,10 @@ async function gql(query: string, variables?: object, token?: string): Promise<R
 
   console.log('— The last factor cannot be removed —');
   const keyRow = await prisma.passkey.findFirst({ where: { userId: owner.id }, select: { id: true } });
-  const lastOne = await gql('mutation($id:ID!){ removePasskey(id:$id) }', { id: keyRow!.id }, ownerToken);
+  // With the proof given, so it is the last-factor rule that refuses, not the step-up.
+  const { issueStepUp } = await import('../lib/stepUp.ts');
+  const lastOne = await gql('mutation($id:ID!,$p:String){ removePasskey(id:$id, proof:$p) }',
+    { id: keyRow!.id, p: issueStepUp('companyUser', owner.id) }, ownerToken);
   check('removing the only passkey is refused while there is no app',
     !!lastOne.errors?.length, JSON.stringify(lastOne.data));
   check('and it is still there',
@@ -167,8 +170,10 @@ async function gql(query: string, variables?: object, token?: string): Promise<R
     },
   });
   await prisma.rateLimitHit.deleteMany({});
-  const nowFine = await gql('mutation($id:ID!){ removePasskey(id:$id) }', { id: keyRow!.id }, ownerToken);
-  check('with two enrolled, one can go', nowFine.data?.removePasskey === true,
+  // Removing needs the existing factor (reviewFindingsTest); a passkey step-up is that proof.
+  const nowFine = await gql('mutation($id:ID!,$p:String){ removePasskey(id:$id, proof:$p) }',
+    { id: keyRow!.id, p: issueStepUp('companyUser', owner.id) }, ownerToken);
+  check('with two enrolled and the passkey used, one can go', nowFine.data?.removePasskey === true,
     JSON.stringify(nowFine.errors));
 
   console.log('— Listing is per account —');

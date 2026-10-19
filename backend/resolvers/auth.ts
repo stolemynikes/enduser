@@ -2,7 +2,7 @@ import { prisma } from '../lib/prisma.ts';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import { GraphQLError } from 'graphql';
-import { DUMMY_HASH, LOCKED_MESSAGE, checkSecondFactorLimited, lockedFor, recordFailure, recordSuccess } from '../lib/loginGuard.ts';
+import { DUMMY_HASH, LOCKED_MESSAGE, checkSecondFactorLimited, recordFailure, recordSuccess, refundAttempt, reserveAttempt } from '../lib/loginGuard.ts';
 import { verifyHumanOrThrow } from '../services/turnstile.ts';
 import { issueStepUp, proveExistingFactor } from '../lib/stepUp.ts';
 import {
@@ -29,8 +29,8 @@ async function requireExistingFactor(kind: 'companyUser' | 'admin', id: string, 
   if (r.reason === 'needed') {
     throw new GraphQLError(
       r.method === 'code'
-        ? 'Enter a code from your authenticator app to add another sign-in method.'
-        : 'Confirm with your passkey to add another sign-in method.',
+        ? 'Enter a code from your authenticator app to change your sign-in methods.'
+        : 'Confirm with your passkey to change your sign-in methods.',
       { extensions: { code: 'STEP_UP_REQUIRED', method: r.method } },
     );
   }
@@ -78,7 +78,8 @@ export const authResolvers = {
       const admin = typeof username === 'string' && username.length <= 200
         ? await prisma.admin.findUnique({ where: { username } })
         : null;
-      const minutes = lockedFor(admin);
+      // Counted before it is judged (lib/loginGuard.ts reserveAttempt).
+      const minutes = admin ? await reserveAttempt('admin', admin.id) : 0;
 
       const valid = await bcrypt.compare(password, admin?.password ?? DUMMY_HASH);
 
@@ -100,6 +101,7 @@ export const authResolvers = {
         // six digits cannot be ground down. A code not yet given does not: the
         // form has simply not been filled in.
         if (second.reason === 'invalid') await recordFailure('admin', admin);
+        else await refundAttempt('admin', admin.id);
         throw secondFactorError(second.reason);
       }
       if (second.usedRecoveryCode) {
@@ -124,14 +126,14 @@ export const authResolvers = {
      */
     startAdminStepUp: async (_: unknown, __: unknown, ctx: AdminCtx) => {
       const adminId = requireAdminId(ctx);
-      const challenge = await startAuthentication('admin', adminId);
+      const challenge = await startAuthentication('admin', adminId, 'step-up');
       if (!challenge) throw new Error('This account has no passkey.');
       return challenge;
     },
 
     finishAdminStepUp: async (_: unknown, { ticket, responseJson }: { ticket: string; responseJson: string }, ctx: AdminCtx) => {
       const adminId = requireAdminId(ctx);
-      const outcome = await finishAuthentication({ ticket, responseJson });
+      const outcome = await finishAuthentication({ ticket, responseJson, scope: 'step-up' });
       if (!outcome.ok || outcome.kind !== 'admin' || outcome.accountId !== adminId) {
         throw new Error('That passkey could not be verified. Try again.');
       }
@@ -181,12 +183,13 @@ export const authResolvers = {
       const admin = await prisma.admin.findUnique({ where: { id: adminId } });
       if (!admin) throw new Error('Unauthorized');
       if (!mfaEnabled(admin)) return true;
-      const minutes = lockedFor(admin);
+      const minutes = await reserveAttempt('admin', admin.id);
       if (minutes > 0) throw new Error(LOCKED_MESSAGE(minutes));
       if (!(await bcrypt.compare(typeof password === 'string' ? password : '', admin.password))) {
         await recordFailure('admin', admin);
         throw new Error('That password is not correct.');
       }
+      await refundAttempt('admin', admin.id);
       const second = await checkSecondFactorLimited('admin', admin, code);
       if (!second.ok) throw secondFactorError(second.reason);
       await disableMfa('admin', adminId);
@@ -225,8 +228,9 @@ export const authResolvers = {
       return all.find(p => p.id === result.passkeyId) ?? all[all.length - 1];
     },
 
-    removeAdminPasskey: async (_: unknown, { id }: { id: string }, ctx: AdminCtx) => {
+    removeAdminPasskey: async (_: unknown, { id, proof }: { id: string; proof?: string }, ctx: AdminCtx) => {
       const adminId = requireAdminId(ctx);
+      await requireExistingFactor('admin', adminId, proof);
       const admin = await prisma.admin.findUnique({
         where: { id: adminId }, select: { totpEnabledAt: true },
       });
@@ -247,13 +251,14 @@ export const authResolvers = {
       const admin = typeof username === 'string' && username.length <= 200
         ? await prisma.admin.findUnique({ where: { username } })
         : null;
-      const minutes = lockedFor(admin);
+      const minutes = admin ? await reserveAttempt('admin', admin.id) : 0;
       const valid = await bcrypt.compare(password, admin?.password ?? DUMMY_HASH);
       if (!admin || !valid) {
         if (admin && minutes === 0) await recordFailure('admin', admin);
         throw new Error('Invalid credentials');
       }
       if (minutes > 0) throw new Error(LOCKED_MESSAGE(minutes));
+      await refundAttempt('admin', admin.id);
       const challenge = await startAuthentication('admin', admin.id);
       if (!challenge) throw new Error('This account has no passkey. Use your authenticator app.');
       return challenge;

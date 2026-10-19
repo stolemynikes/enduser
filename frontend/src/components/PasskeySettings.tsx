@@ -33,7 +33,7 @@ const OPS = {
       mutation FinishPasskeyRegistration($ticket: String!, $responseJson: String!, $name: String!) {
         finishPasskeyRegistration(ticket: $ticket, responseJson: $responseJson, name: $name) { id name }
       }`,
-    REMOVE: gql`mutation RemovePasskey($id: ID!) { removePasskey(id: $id) }`,
+    REMOVE: gql`mutation RemovePasskey($id: ID!, $proof: String) { removePasskey(id: $id, proof: $proof) }`,
     listed: 'myPasskeys', started: 'startPasskeyRegistration', finished: 'finishPasskeyRegistration',
   },
   admin: {
@@ -43,7 +43,7 @@ const OPS = {
       mutation FinishAdminPasskeyRegistration($ticket: String!, $responseJson: String!, $name: String!) {
         finishAdminPasskeyRegistration(ticket: $ticket, responseJson: $responseJson, name: $name) { id name }
       }`,
-    REMOVE: gql`mutation RemoveAdminPasskey($id: ID!) { removeAdminPasskey(id: $id) }`,
+    REMOVE: gql`mutation RemoveAdminPasskey($id: ID!, $proof: String) { removeAdminPasskey(id: $id, proof: $proof) }`,
     listed: 'adminPasskeys', started: 'startAdminPasskeyRegistration', finished: 'finishAdminPasskeyRegistration',
   },
 } as const;
@@ -86,6 +86,8 @@ export function PasskeySettings({ onChanged, account = 'company' }: {
   // passkey is asked for by the browser; a code is typed here.
   const client = useApolloClient();
   const [codeProof, setCodeProof] = useState<string | null>(null);
+  // What the typed code is for: adding a passkey, or removing this one.
+  const [codeFor, setCodeFor] = useState<Passkey | null>(null);
 
   const passkeys: Passkey[] = data?.[ops.listed] ?? [];
 
@@ -103,7 +105,7 @@ export function PasskeySettings({ onChanged, account = 'company' }: {
           const p = await passkeyProof(client, account);
           ({ data: began } = await start({ variables: { proof: p } }));
         } else if (need === 'code' && !proof) {
-          setCodeProof('');
+          setCodeFor(null); setCodeProof('');
           return;
         } else {
           throw err;
@@ -141,20 +143,40 @@ export function PasskeySettings({ onChanged, account = 'company' }: {
     }
   };
 
-  const drop = async (key: Passkey) => {
-    const ok = await confirm({
-      title: 'Remove this passkey',
-      message: `“${key.name}” will no longer sign you in. You can add it again from that device.`,
-      confirmLabel: 'Remove', danger: true,
-    });
-    if (!ok) return;
+  const drop = async (key: Passkey, proof?: string) => {
+    if (proof === undefined) {
+      const ok = await confirm({
+        title: 'Remove this passkey',
+        message: `“${key.name}” will no longer sign you in. You can add it again from that device.`,
+        confirmLabel: 'Remove', danger: true,
+      });
+      if (!ok) return;
+    }
     setError('');
+    setBusy(true);
     try {
-      await remove({ variables: { id: key.id } });
+      try {
+        await remove({ variables: { id: key.id, proof: proof ?? null } });
+      } catch (err) {
+        // Removing a sign-in method needs the one you have, like adding one.
+        const need = stepUpNeeded(err);
+        if (need === 'passkey' && proof === undefined) {
+          await remove({ variables: { id: key.id, proof: await passkeyProof(client, account) } });
+        } else if (need === 'code' && proof === undefined) {
+          setCodeFor(key); setCodeProof('');
+          return;
+        } else {
+          throw err;
+        }
+      }
+      setCodeProof(null); setCodeFor(null);
       await refetch();
       onChanged?.();
     } catch (err: any) {
-      setError(err?.message ?? 'Could not remove it.');
+      if (err?.name === 'NotAllowedError' || err?.name === 'AbortError') return;
+      setError(proof !== undefined ? secondFactorMessage(err) : (err?.message ?? 'Could not remove it.'));
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -209,13 +231,15 @@ export function PasskeySettings({ onChanged, account = 'company' }: {
       {error && <p className="pk-error" role="alert">{error}</p>}
 
       {codeProof !== null && (
-        <form className="pk-proof" onSubmit={e => { e.preventDefault(); const c = codeProof; void enrol(c); }}>
+        <form className="pk-proof" onSubmit={e => { e.preventDefault(); const c = codeProof; void (codeFor ? drop(codeFor, c) : enrol(c)); }}>
           <label className="pk-lede" htmlFor="pk-proof-code">
-            Enter a code from your authenticator app first — a new sign-in method is only added by someone who can use the existing one.
+            {codeFor
+              ? <>Enter a code from your authenticator app to remove “{codeFor.name}” — sign-in methods are only changed by someone who can use the existing one.</>
+              : <>Enter a code from your authenticator app first — a new sign-in method is only added by someone who can use the existing one.</>}
           </label>
           <TotpInput id="pk-proof-code" className="pk-proof-input" value={codeProof} onChange={setCodeProof} disabled={busy} />
           <div className="pk-actions">
-            <button type="button" className="pk-btn" onClick={() => { setCodeProof(null); setError(''); }} disabled={busy}>Cancel</button>
+            <button type="button" className="pk-btn" onClick={() => { setCodeProof(null); setCodeFor(null); setError(''); }} disabled={busy}>Cancel</button>
             <button type="submit" className="pk-btn pk-btn--primary" disabled={busy || !codeProof}>Continue</button>
           </div>
         </form>

@@ -168,6 +168,11 @@ const server = new ApolloServer({
   introspection: !HARDENED,
   // Reject one-request query batching (amplification vector).
   allowBatchedHttpRequests: false,
+  // Off. A persisted query arrives as a hash with no query text, and the
+  // operation-specific rate limits below read the text — so a mutation
+  // registered once could then be repeated as a bare hash under the general
+  // limit only. The app never uses them.
+  persistedQueries: false,
   // Depth bounds how far a query reaches; cost bounds how much it asks for.
   // Without the second, aliases multiplied both work and side effects while the
   // per-request rate limiters saw one request.
@@ -280,8 +285,8 @@ app.post('/verification-session', extractLimiter, async (req, res) => {
     const company = await prisma.company.findUnique({ where: { slug }, select: { id: true } });
     companyId = company?.id ?? null;
   }
-  // A paid session is started only for a form that is open: an approved,
-  // confirmed, not-closed company. Without one, only the platform admin may
+  // A paid session is started only for a form that is open (lib/access.ts
+  // formOpen: approved, owner's email confirmed, not deleted). Without one, only the platform admin may
   // start one (the Test tools), so a stranger cannot spend the allowance on
   // made-up or closed forms.
   if (!(companyId && await formOpen(companyId))) {

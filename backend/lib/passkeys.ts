@@ -14,6 +14,7 @@
 // lines of HMAC with published test vectors, and WebAuthn is CBOR decoding,
 // COSE key parsing and signature verification across several algorithms. The
 // first is safer written out; the second is safer delegated.
+import crypto from 'node:crypto';
 import jwt from 'jsonwebtoken';
 import {
   generateAuthenticationOptions,
@@ -71,7 +72,27 @@ type Ticket = {
   kind: AccountKind;
   accountId: string;
   challenge: string;
+  /**
+   * What a passkey signature is for: 'login', 'step-up', or 'reveal:<id>'.
+   * Checked by whoever finishes the ceremony, so a signature made to sign in
+   * cannot be spent on a reveal, nor one reveal's on another submission.
+   */
+  scope?: string;
 };
+
+// Tickets are spent once. A synced passkey reports a signature counter of 0,
+// so the library's replay check never fires for it, and one assertion could be
+// submitted again and again within the ticket's two minutes. One instance
+// (see the Dockerfile), so memory is enough.
+const spentTickets = new Map<string, number>();
+function spendTicket(jti: string | undefined, exp: number | undefined): boolean {
+  if (!jti) return false;
+  const now = Date.now();
+  for (const [k, e] of spentTickets) if (e < now) spentTickets.delete(k);
+  if (spentTickets.has(jti)) return false;
+  spentTickets.set(jti, (exp ?? 0) * 1000);
+  return true;
+}
 
 const TICKET_TTL_SECONDS = 120;
 
@@ -82,6 +103,7 @@ function issueTicket(t: Ticket): string {
     expiresIn: TICKET_TTL_SECONDS,
     algorithm: 'HS256',
     audience: 'passkey-ticket',
+    jwtid: crypto.randomUUID(),
   });
 }
 
@@ -89,10 +111,11 @@ function readTicket(token: string, purpose: TicketPurpose): Ticket | null {
   try {
     const claims = jwt.verify(token, process.env.COMPANY_JWT_SECRET!, {
       algorithms: ['HS256'], audience: 'passkey-ticket',
-    }) as Ticket;
+    }) as Ticket & { jti?: string; exp?: number };
     // A ticket for one ceremony must never be accepted for the other, and
     // neither may stand in for a session.
-    return claims.purpose === purpose ? claims : null;
+    if (claims.purpose !== purpose) return null;
+    return spendTicket(claims.jti, claims.exp) ? claims : null;
   } catch {
     return null;
   }
@@ -223,7 +246,7 @@ export async function removePasskey(kind: AccountKind, id: string, passkeyId: st
 // --- Authentication ---------------------------------------------------------
 
 export async function startAuthentication(
-  kind: AccountKind, id: string,
+  kind: AccountKind, id: string, scope: string = 'login',
 ): Promise<{ optionsJson: string; ticket: string } | null> {
   const credentials = await prisma.passkey.findMany({
     where: owner(kind, id),
@@ -242,7 +265,7 @@ export async function startAuthentication(
 
   return {
     optionsJson: JSON.stringify(options),
-    ticket: issueTicket({ purpose: 'passkey-login', kind, accountId: id, challenge: options.challenge }),
+    ticket: issueTicket({ purpose: 'passkey-login', kind, accountId: id, challenge: options.challenge, scope }),
   };
 }
 
@@ -258,10 +281,11 @@ export type AuthOutcome =
  * valid assertion for one account being presented as a sign-in for another.
  */
 export async function finishAuthentication({
-  ticket, responseJson,
-}: { ticket: string; responseJson: string }): Promise<AuthOutcome> {
+  ticket, responseJson, scope = 'login',
+}: { ticket: string; responseJson: string; scope?: string }): Promise<AuthOutcome> {
   const claims = readTicket(ticket, 'passkey-login');
-  if (!claims) return { ok: false, reason: 'bad-ticket' };
+  // The signature must have been asked for this purpose (see Ticket.scope).
+  if (!claims || (claims.scope ?? 'login') !== scope) return { ok: false, reason: 'bad-ticket' };
 
   let parsed: { id?: string };
   try { parsed = JSON.parse(responseJson); } catch { return { ok: false, reason: 'rejected' }; }

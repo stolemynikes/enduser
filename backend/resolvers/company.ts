@@ -10,7 +10,7 @@ import { REGISTRATION_OPEN, formOpen } from '../lib/access.ts';
 import { consumeToken, issueToken } from '../lib/authTokens.ts';
 import { hashToken, randomToken } from '../lib/tokens.ts';
 import { mailBudgetAllows } from '../lib/mailBudget.ts';
-import { DUMMY_HASH, LOCKED_MESSAGE, checkSecondFactorLimited, lockedFor, recordFailure, recordSuccess } from '../lib/loginGuard.ts';
+import { DUMMY_HASH, LOCKED_MESSAGE, checkSecondFactorLimited, recordFailure, recordSuccess, refundAttempt, reserveAttempt } from '../lib/loginGuard.ts';
 import { verifyHumanOrThrow } from '../services/turnstile.ts';
 
 import { statementCopy } from '../lib/statementCopy.ts';
@@ -115,8 +115,8 @@ async function requireExistingFactor(kind: 'companyUser' | 'admin', id: string, 
   if (r.reason === 'needed') {
     throw new GraphQLError(
       r.method === 'code'
-        ? 'Enter a code from your authenticator app to add another sign-in method.'
-        : 'Confirm with your passkey to add another sign-in method.',
+        ? 'Enter a code from your authenticator app to change your sign-in methods.'
+        : 'Confirm with your passkey to change your sign-in methods.',
       { extensions: { code: 'STEP_UP_REQUIRED', method: r.method } },
     );
   }
@@ -652,7 +652,8 @@ export const companyResolvers = {
         : null;
 
 
-      const minutes = lockedFor(user);
+      // Counted before it is judged (lib/loginGuard.ts reserveAttempt).
+      const minutes = user ? await reserveAttempt('companyUser', user.id) : 0;
 
       // Always run a comparison, so an unknown address and a wrong password
       // take the same time and cannot be told apart.
@@ -674,6 +675,7 @@ export const companyResolvers = {
         // A wrong code spends the same budget as a wrong password; a code not
         // yet given does not.
         if (second.reason === 'invalid') await recordFailure('companyUser', user);
+        else await refundAttempt('companyUser', user.id);
         throw secondFactorError(second.reason);
       }
       if (second.usedRecoveryCode) {
@@ -792,7 +794,7 @@ export const companyResolvers = {
       const invite = await prisma.companyInvite.findUnique({
         where: { tokenHash: hashToken(token) }, include: { company: true },
       });
-      if (!invite || invite.usedAt || invite.expiresAt < new Date()) {
+      if (!invite || invite.usedAt || invite.expiresAt < new Date() || invite.company.deletedAt) {
         throw new Error('This invite link is invalid or has expired.');
       }
 
@@ -812,6 +814,10 @@ export const companyResolvers = {
           extensions: { code: 'SIGN_IN_TO_ACCEPT' },
         });
       }
+      // Spent first and conditionally, like the signed-in path: of two tabs
+      // racing on one link, one wins and the other is refused.
+      const spent = await prisma.companyInvite.updateMany({ where: { id: invite.id, usedAt: null }, data: { usedAt: new Date() } });
+      if (spent.count !== 1) throw new Error('This invite link is invalid or has expired.');
       const user = await prisma.companyUser.create({ data: { email: invite.email, passwordHash, name: memberName } });
 
       // Add membership (or update role if already a member)
@@ -821,7 +827,6 @@ export const companyResolvers = {
         update: { role: invite.role },
       });
 
-      await prisma.companyInvite.update({ where: { id: invite.id }, data: { usedAt: new Date() } });
 
       void notify({
         companyId: invite.companyId,
@@ -929,8 +934,11 @@ export const companyResolvers = {
      * Removing the last factor is refused while a second factor is required,
      * because the next sign-in would have nothing to offer.
      */
-    removePasskey: async (_: unknown, { id }: { id: string }, ctx: Ctx) => {
+    removePasskey: async (_: unknown, { id, proof }: { id: string; proof?: string }, ctx: Ctx) => {
       const { companyUserId } = requireCompany(ctx);
+      // Removing one is a downgrade too — to the factor a phishing page can
+      // capture — so it needs the same proof as adding one.
+      await requireExistingFactor('companyUser', companyUserId, proof);
       const user = await prisma.companyUser.findUnique({
         where: { id: companyUserId }, select: { totpEnabledAt: true },
       });
@@ -961,13 +969,15 @@ export const companyResolvers = {
         ? await prisma.companyUser.findUnique({ where: { email: address } })
         : null;
 
-      const minutes = lockedFor(user);
+      const minutes = user ? await reserveAttempt('companyUser', user.id) : 0;
       const valid = await bcrypt.compare(password, user?.passwordHash ?? DUMMY_HASH);
       if (!user || !valid) {
         if (user && minutes === 0) await recordFailure('companyUser', user);
         throw new Error('Invalid email or password');
       }
       if (minutes > 0) throw new Error(LOCKED_MESSAGE(minutes));
+      // The password was right; the passkey still has to sign.
+      await refundAttempt('companyUser', user.id);
 
       const challenge = await startAuthentication('companyUser', user.id);
       if (!challenge) throw new Error('This account has no passkey. Use your authenticator app.');
@@ -1008,14 +1018,14 @@ export const companyResolvers = {
      */
     startStepUp: async (_: unknown, __: unknown, ctx: Ctx) => {
       const { companyUserId } = requireCompanyEnrolling(ctx);
-      const challenge = await startAuthentication('companyUser', companyUserId);
+      const challenge = await startAuthentication('companyUser', companyUserId, 'step-up');
       if (!challenge) throw new Error('This account has no passkey.');
       return challenge;
     },
 
     finishStepUp: async (_: unknown, { ticket, responseJson }: { ticket: string; responseJson: string }, ctx: Ctx) => {
       const { companyUserId } = requireCompanyEnrolling(ctx);
-      const outcome = await finishAuthentication({ ticket, responseJson });
+      const outcome = await finishAuthentication({ ticket, responseJson, scope: 'step-up' });
       if (!outcome.ok || outcome.kind !== 'companyUser' || outcome.accountId !== companyUserId) {
         throw new Error('That passkey could not be verified. Try again.');
       }
@@ -1026,7 +1036,7 @@ export const companyResolvers = {
     startRevealWithPasskey: async (_: unknown, { id }: { id: string }, ctx: Ctx) => {
       const { companyId, companyUserId } = requireOwnerOrPlus(ctx);
       await tenantSubmissions(companyId).getOwned(id);
-      const challenge = await startAuthentication('companyUser', companyUserId);
+      const challenge = await startAuthentication('companyUser', companyUserId, `reveal:${id}`);
       if (!challenge) throw new Error('This account has no passkey.');
       return challenge;
     },
@@ -1038,10 +1048,11 @@ export const companyResolvers = {
     ) => {
       const { companyId, companyUserId } = requireOwnerOrPlus(ctx);
       const submission = await tenantSubmissions(companyId).getOwned(id);
-      const outcome = await finishAuthentication({ ticket, responseJson });
-      // The assertion is bound to an account by its ticket, so this also
-      // refuses a signature made by somebody else's passkey.
-      if (!outcome.ok || outcome.accountId !== companyUserId) {
+      const outcome = await finishAuthentication({ ticket, responseJson, scope: `reveal:${id}` });
+      // The assertion is bound to an account, a kind and this one submission
+      // by its ticket, so it refuses a signature made by somebody else's
+      // passkey, or made to sign in, or for another reveal.
+      if (!outcome.ok || outcome.kind !== 'companyUser' || outcome.accountId !== companyUserId) {
         throw new Error('That passkey could not be verified. Try again.');
       }
       const m = await membershipOrThrow(companyId, companyUserId);
@@ -1107,7 +1118,7 @@ export const companyResolvers = {
       const user = await prisma.companyUser.findUnique({ where: { id: companyUserId } });
       if (!user) throw new Error('Membership not found');
       if (!mfaEnabled(user)) return true;
-      const minutes = lockedFor(user);
+      const minutes = await reserveAttempt('companyUser', user.id);
       if (minutes > 0) throw new Error(LOCKED_MESSAGE(minutes));
       // A wrong password counts like one at sign-in: from a session, this was
       // an uncounted password oracle.
@@ -1115,6 +1126,7 @@ export const companyResolvers = {
         await recordFailure('companyUser', user);
         throw new Error('That password is not correct.');
       }
+      await refundAttempt('companyUser', user.id);
       const second = await checkSecondFactorLimited('companyUser', user, code);
       if (!second.ok) throw secondFactorError(second.reason);
       await disableMfa('companyUser', companyUserId);
