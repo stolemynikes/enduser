@@ -312,6 +312,25 @@ curl -sI https://<host>/embed/some-slug | grep -i 'frame-ancestors\|x-frame-opti
 
 The second should show `frame-ancestors https:` and **no** `X-Frame-Options`.
 
+### An outside scan, once the domain is live
+
+The tests and code reviews check the code; nothing here checks the machine as
+the internet sees it. Run the free light scans at
+[pentest-tools.com](https://pentest-tools.com/for/free) against the real domain
+(never a `*.trycloudflare.com` tunnel — that is Cloudflare's infrastructure, not
+yours):
+
+- **Website Vulnerability Scanner** — headers, cookie flags, known server
+  software issues. It should agree with the `curl` checks above.
+- **SSL/TLS Scanner** — certificate, protocols, ciphers.
+- **Port Scanner** — only 80 and 443 (and SSH, if you left it open to the
+  world on purpose) should answer. Postgres `5432`, the API's `3000` and the
+  translator must not be reachable from outside.
+- **Subdomain Finder** — nothing you forgot about, no staging host.
+
+Deeper scans need proof that you own the domain (a DNS record or a file).
+Repeat after any change to the host, the firewall or the Caddyfile.
+
 ## 7. Didit
 
 Point the production webhook at `https://<host>/didit-webhook`. The signature
