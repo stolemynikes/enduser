@@ -753,9 +753,9 @@ export const typeDefs = `#graphql
     verifyEmail(token: String!): Boolean!
     resendEmailVerification: Boolean!
     """
-    Reveals one submission's identity document number. Needs the code from your
-    authenticator app, or your password while you have no second factor. Every
-    call is recorded.
+    Reveals one submission's identity document number. Needs a current code from
+    your authenticator app, or a passkey step-up token; an account without a
+    second factor is told to set one up. Every call is recorded.
     """
     revealDocumentNumber(id: ID!, credential: String!): RevealedDocument!
     """Everything held about the buyer of this statement, for a GDPR access request. Owner or reviewer, with a current second-factor code; logged."""
