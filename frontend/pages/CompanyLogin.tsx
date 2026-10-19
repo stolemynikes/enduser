@@ -68,7 +68,10 @@ export default function CompanyLogin() {
     localStorage.setItem('companyRole', payload.role);
     localStorage.setItem('companyName', payload.company.name);
     localStorage.setItem('companySlug', payload.company.slug);
-    navigate('/company/dashboard');
+    // Back to an invitation after signing in to accept it. Only an invitation
+    // path is followed, so the parameter cannot send anyone elsewhere.
+    const next = new URLSearchParams(window.location.search).get('next') ?? '';
+    navigate(/^\/invite\/[A-Za-z0-9_-]{16,200}$/.test(next) ? next : '/company/dashboard');
   };
 
   /**

@@ -4,6 +4,7 @@ import jwt from 'jsonwebtoken';
 import { GraphQLError } from 'graphql';
 import { DUMMY_HASH, LOCKED_MESSAGE, checkSecondFactorLimited, lockedFor, recordFailure, recordSuccess } from '../lib/loginGuard.ts';
 import { verifyHumanOrThrow } from '../services/turnstile.ts';
+import { issueStepUp, proveExistingFactor } from '../lib/stepUp.ts';
 import {
   MFA_SELECT, checkSecondFactor, confirmEnrolment, disableMfa, issueRecoveryCodes,
   mfaEnabled, recoveryCodesLeft, startEnrolment,
@@ -21,6 +22,21 @@ type AdminCtx = { admin?: boolean; adminId?: string; needsEnrolment?: boolean };
  * other admin resolver goes through requireAdmin in resolvers/admin.ts, which
  * refuses until they have.
  */
+/** Refuses unless the account's existing factor was just used (lib/stepUp.ts). */
+async function requireExistingFactor(kind: 'companyUser' | 'admin', id: string, proof: unknown) {
+  const r = await proveExistingFactor(kind, id, proof);
+  if (r.ok) return;
+  if (r.reason === 'needed') {
+    throw new GraphQLError(
+      r.method === 'code'
+        ? 'Enter a code from your authenticator app to add another sign-in method.'
+        : 'Confirm with your passkey to add another sign-in method.',
+      { extensions: { code: 'STEP_UP_REQUIRED', method: r.method } },
+    );
+  }
+  throw secondFactorError('invalid');
+}
+
 function requireAdminId(ctx: AdminCtx): string {
   if (!ctx.admin || !ctx.adminId) throw new Error('Unauthorized');
   return ctx.adminId;
@@ -106,8 +122,25 @@ export const authResolvers = {
      * Step one of enrolment: a secret the app can scan, not yet in force. The
      * factor only switches on when a code proves the app really has it.
      */
-    startAdminMfaEnrolment: async (_: unknown, __: unknown, ctx: AdminCtx) => {
+    startAdminStepUp: async (_: unknown, __: unknown, ctx: AdminCtx) => {
       const adminId = requireAdminId(ctx);
+      const challenge = await startAuthentication('admin', adminId);
+      if (!challenge) throw new Error('This account has no passkey.');
+      return challenge;
+    },
+
+    finishAdminStepUp: async (_: unknown, { ticket, responseJson }: { ticket: string; responseJson: string }, ctx: AdminCtx) => {
+      const adminId = requireAdminId(ctx);
+      const outcome = await finishAuthentication({ ticket, responseJson });
+      if (!outcome.ok || outcome.kind !== 'admin' || outcome.accountId !== adminId) {
+        throw new Error('That passkey could not be verified. Try again.');
+      }
+      return issueStepUp('admin', adminId);
+    },
+
+    startAdminMfaEnrolment: async (_: unknown, { proof }: { proof?: string }, ctx: AdminCtx) => {
+      const adminId = requireAdminId(ctx);
+      await requireExistingFactor('admin', adminId, proof);
       const admin = await prisma.admin.findUnique({
         where: { id: adminId }, select: { username: true, totpEnabledAt: true },
       });
@@ -148,7 +181,12 @@ export const authResolvers = {
       const admin = await prisma.admin.findUnique({ where: { id: adminId } });
       if (!admin) throw new Error('Unauthorized');
       if (!mfaEnabled(admin)) return true;
-      if (!(await bcrypt.compare(password, admin.password))) throw new Error('That password is not correct.');
+      const minutes = lockedFor(admin);
+      if (minutes > 0) throw new Error(LOCKED_MESSAGE(minutes));
+      if (!(await bcrypt.compare(typeof password === 'string' ? password : '', admin.password))) {
+        await recordFailure('admin', admin);
+        throw new Error('That password is not correct.');
+      }
       const second = await checkSecondFactorLimited('admin', admin, code);
       if (!second.ok) throw secondFactorError(second.reason);
       await disableMfa('admin', adminId);
@@ -156,8 +194,9 @@ export const authResolvers = {
       return true;
     },
 
-    startAdminPasskeyRegistration: async (_: unknown, __: unknown, ctx: AdminCtx) => {
+    startAdminPasskeyRegistration: async (_: unknown, { proof }: { proof?: string }, ctx: AdminCtx) => {
       const adminId = requireAdminId(ctx);
+      await requireExistingFactor('admin', adminId, proof);
       const admin = await prisma.admin.findUnique({
         where: { id: adminId }, select: { username: true },
       });

@@ -28,7 +28,7 @@ export default function Docs() {
         <ul>
           <li><strong>Fields</strong> — order number, address, CAS numbers and concentration can each be required, optional or hidden. Email, name, substance and intended use are always asked.</li>
           <li><strong>Buyers</strong> — companies only, private individuals only, or both. Company buyers give a company name and a VAT number, which is checked against the EU VIES register.</li>
-          <li><strong>Identity verification</strong> — required or off. When required, the buyer photographs their passport or identity card and takes a selfie in a secure window from our identity-verification provider (named in the <Link to="/dpa#sub-processors">DPA</Link>). The photos never reach you or us, and are deleted at the provider after the check.</li>
+          <li><strong>Identity verification</strong> — required or off. When required, the buyer photographs their passport or identity card and takes a selfie in a secure window from our identity-verification provider (named in the <Link to="/dpa#sub-processors">DPA</Link>). The photos never reach you or us, and the provider is told to delete them once the check is over.</li>
           <li><strong>Terms</strong> — the platform’s default declaration, your own text, or a link to your terms.</li>
         </ul>
       </Clause>

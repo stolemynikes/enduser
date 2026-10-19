@@ -92,6 +92,15 @@ export async function contextFor(authorization: string | undefined, operation: s
   if (issuedBefore(claims.iat, membership.user.sessionsValidFrom)) return {};
 
   if (claims.support) {
+    // A support session is the admin's, carried into a seller's account. It
+    // ends when the admin's own sessions are revoked, the admin is removed,
+    // or the admin no longer meets the two-factor requirement — not just when
+    // its two hours run out.
+    const admin = claims.adminId
+      ? await prisma.admin.findUnique({ where: { id: claims.adminId }, select: { id: true, sessionsValidFrom: true } })
+      : null;
+    if (!admin || issuedBefore(claims.iat, admin.sessionsValidFrom)) return {};
+    if (MFA_REQUIRED && !(await hasSecondFactor('admin', admin.id))) return {};
     console.log(`[support] admin ${claims.adminId} → company ${claims.companyId}: ${operation}`);
   }
 

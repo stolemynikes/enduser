@@ -14,6 +14,7 @@ import bcrypt from 'bcrypt';
 import { prisma } from './prisma.ts';
 import { MFA_SELECT, mfaEnabled } from './mfa.ts';
 import { checkSecondFactorLimited } from './loginGuard.ts';
+import { consumeStepUp, isStepUpToken } from './stepUp.ts';
 
 export type RevealOutcome =
   | { ok: true; documentNumber: string | null }
@@ -41,6 +42,10 @@ export async function checkCredential(
       });
   if (!account) return { ok: false, reason: 'invalid' };
 
+  // A passkey, exchanged for a one-time step-up token, counts as a code.
+  if (isStepUpToken(credential)) {
+    return consumeStepUp(credential, kind, accountId) ? { ok: true } : { ok: false, reason: 'invalid' };
+  }
   if (!mfaEnabled(account)) return { ok: false, reason: 'no-credential' };
   const second = await checkSecondFactorLimited(kind, account, credential);
   return second.ok ? { ok: true } : { ok: false, reason: second.reason };
@@ -90,7 +95,10 @@ export async function revealDocumentNumber({
       adminId: adminId ?? null,
     },
   }).catch((err: any) => {
+    // No record, no number: an access that leaves no trace is exactly what
+    // the log exists to rule out.
     console.error(`[reveal] could not record an access: ${err?.message ?? 'unknown error'}`);
+    throw new Error('The look-up could not be recorded, so the number is not shown. Try again.');
   });
 
   if (adminId) {

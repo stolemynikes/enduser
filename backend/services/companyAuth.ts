@@ -55,7 +55,11 @@ export function signCompanyToken(payload: CompanyTokenPayload): string {
 export function verifyCompanyToken(token: string): CompanyTokenPayload | null {
   try {
     // Pin the algorithm rather than letting the library infer it from the key.
-    return jwt.verify(token, SECRET, { algorithms: ['HS256'] }) as CompanyTokenPayload;
+    const payload = jwt.verify(token, SECRET, { algorithms: ['HS256'] }) as CompanyTokenPayload & { aud?: unknown };
+    // Session tokens carry no audience; anything that does (a passkey ticket,
+    // signed with the same secret) is not a session.
+    if (payload.aud !== undefined) return null;
+    return payload;
   } catch {
     return null;
   }

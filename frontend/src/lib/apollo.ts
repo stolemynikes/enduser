@@ -15,6 +15,9 @@ function tokenForPath(path: string): string | null {
 }
 
 const authLink = setContext((_, { headers }) => {
+  // A request may name its token itself (accepting an invitation as the
+  // account already signed in); otherwise the path decides.
+  if (headers?.authorization) return { headers };
   const token = tokenForPath(window.location.pathname);
   return { headers: { ...headers, authorization: token ? `Bearer ${token}` : '' } };
 });

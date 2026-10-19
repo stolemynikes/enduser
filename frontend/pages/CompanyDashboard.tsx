@@ -817,7 +817,9 @@ export default function CompanyDashboard() {
     setInviteError(''); setInviteResult('');
     try {
       const { data } = await invite({ variables: { email: inviteEmail, role: inviteRole } });
-      setInviteResult(data.inviteMember.inviteUrl);
+      // The link comes back only on a local instance; otherwise it is in the
+      // invitee's email and nowhere else.
+      setInviteResult(data.inviteMember.inviteUrl ?? `sent:${inviteEmail}`);
       setInviteEmail('');
     } catch (err: any) {
       setInviteError(err?.message ?? 'Invite failed');
@@ -1614,7 +1616,13 @@ export default function CompanyDashboard() {
                 <button className="cd-modal-close" onClick={() => setInviteOpen(false)} aria-label="Close">✕</button>
               </div>
               <div className="cd-modal-body">
-                {inviteResult ? (
+                {inviteResult.startsWith('sent:') ? (
+                  <>
+                    <p className="cd-invite-success">Invitation sent to {inviteResult.slice(5)}. The link in that email is theirs alone and works for 7 days.</p>
+                    <button className="cd-btn-approve cd-btn-lg" style={{ marginTop: '1rem', width: '100%' }}
+                      onClick={() => { setInviteOpen(false); setInviteResult(''); }}>Done</button>
+                  </>
+                ) : inviteResult ? (
                   <>
                     <p className="cd-invite-success">Invite sent! Share this link if email doesn't arrive:</p>
                     <div className="cd-invite-link">{inviteResult}</div>

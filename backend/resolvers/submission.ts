@@ -194,9 +194,14 @@ export const submissionResolvers = {
         purged: boolean;
       } = { sessionId: null, status: 'NOT_CHECKED', livenessPassed: null, faceMatch: null, warnings: null, purged: false };
 
-      // Resolve the company's form config (defaults when no slug / unknown company)
+      // A statement belongs to an open company's form. One with no form, or a
+      // form address nobody owns, used to be accepted into the platform queue
+      // under the default settings — a statement nobody had asked for.
       let companyId: string | undefined;
       let config: FormConfig = DEFAULT_CONFIG;
+      if (!companySlug) {
+        throw buyerError('FORM_NOT_OPEN', 'This form is not accepting submissions yet.');
+      }
       if (companySlug) {
         const co = await prisma.company.findUnique({
           where: { slug: companySlug },
@@ -212,6 +217,8 @@ export const submissionResolvers = {
           }
           companyId = co.id;
           config = resolveConfig(co.formConfig);
+        } else {
+          throw buyerError('FORM_NOT_OPEN', 'This form is not accepting submissions yet.');
         }
       }
 

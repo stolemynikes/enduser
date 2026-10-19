@@ -34,6 +34,8 @@ import { buildBuyerExport, buyerStatementIds } from '../lib/buyerData.ts';
 import { LEGAL_VERSION, acceptanceRecordPdf, legalStatus, recordAcceptance } from '../lib/legal.ts';
 import { activeNotices } from '../lib/subprocessors.ts';
 import { decisionLogCsv } from '../lib/decisionExport.ts';
+import { IS_EXPOSED } from '../lib/exposure.ts';
+import { issueStepUp, proveExistingFactor } from '../lib/stepUp.ts';
 import { deleteSubmissions } from '../lib/submissionDelete.ts';
 import {
   countPasskeys, finishAuthentication, finishRegistration, listPasskeys,
@@ -104,6 +106,21 @@ async function freshFactor(companyId: string, companyUserId: string, credential:
   const check = await checkCredential('companyUser', companyUserId, typeof credential === 'string' ? credential : '');
   if (!check.ok) throw check.reason === 'no-credential' ? mfaSetupRequiredError() : secondFactorError(check.reason);
   return m;
+}
+
+/** Refuses unless the account's existing factor was just used (lib/stepUp.ts). */
+async function requireExistingFactor(kind: 'companyUser' | 'admin', id: string, proof: unknown) {
+  const r = await proveExistingFactor(kind, id, proof);
+  if (r.ok) return;
+  if (r.reason === 'needed') {
+    throw new GraphQLError(
+      r.method === 'code'
+        ? 'Enter a code from your authenticator app to add another sign-in method.'
+        : 'Confirm with your passkey to add another sign-in method.',
+      { extensions: { code: 'STEP_UP_REQUIRED', method: r.method } },
+    );
+  }
+  throw secondFactorError('invalid');
 }
 
 async function recordBuyerAction(companyId: string, userId: string, userName: string, kind: 'EXPORT' | 'ERASURE' | 'DECISION_EXPORT', statements: number) {
@@ -337,7 +354,7 @@ export const companyResolvers = {
           isTest: false,
           ...(reviewerId === 'NONE' ? { reviewedById: null } : reviewerId ? { reviewedById: reviewerId } : {}),
         },
-        orderBy: [{ reviewedAt: { sort: 'desc', nulls: 'last' } }, { updatedAt: 'desc' }],
+        orderBy: [{ reviewedAt: { sort: 'desc', nulls: 'last' } }, { updatedAt: 'desc' }, { id: 'desc' }],
         take: 5000,
         include: { _count: { select: { overrides: true } } },
       });
@@ -725,7 +742,47 @@ export const companyResolvers = {
 
       await sendCompanyInvite(address, inviterName, company.name, inviteUrl).catch(() => {});
 
-      return { ok: true, inviteUrl };
+      // The link is a credential for the address it was sent to, so it goes
+      // to that inbox and nowhere else. Handing it back to the inviter let
+      // anyone who could register a company accept invitations on other
+      // people's behalf. Only a local, unexposed instance — where there may be
+      // no mail server at all — shows it.
+      return { ok: true, inviteUrl: IS_EXPOSED ? null : inviteUrl };
+    },
+
+    /**
+     * An existing account accepts an invitation from inside its own session,
+     * so every sign-in check has already been passed. The invitation must be
+     * for this account's own address.
+     */
+    acceptInviteSignedIn: async (_: unknown, { token }: { token: string }, ctx: Ctx) => {
+      const { companyUserId } = requireCompany(ctx);
+      const invite = await prisma.companyInvite.findUnique({
+        where: { tokenHash: hashToken(typeof token === 'string' ? token : '') }, include: { company: true },
+      });
+      if (!invite || invite.usedAt || invite.expiresAt < new Date() || invite.company.deletedAt) {
+        throw new Error('This invite link is invalid or has expired.');
+      }
+      const user = await prisma.companyUser.findUnique({ where: { id: companyUserId } });
+      if (!user || user.email.toLowerCase() !== invite.email.toLowerCase()) {
+        throw new Error('This invitation is for a different email address. Sign in with that address to accept it.');
+      }
+      // Spent first and conditionally, so two tabs cannot both accept it.
+      const { count } = await prisma.companyInvite.updateMany({ where: { id: invite.id, usedAt: null }, data: { usedAt: new Date() } });
+      if (count !== 1) throw new Error('This invite link is invalid or has expired.');
+      await prisma.companyMember.upsert({
+        where: { companyId_userId: { companyId: invite.companyId, userId: user.id } },
+        create: { companyId: invite.companyId, userId: user.id, role: invite.role },
+        update: { role: invite.role },
+      });
+      void notify({
+        companyId: invite.companyId,
+        kind: 'INVITE_ACCEPTED',
+        title: 'An invitation was accepted',
+        body: `${user.name} joined as ${roleName(invite.role)}.`,
+      });
+      const jwtToken = signCompanyToken({ companyUserId: user.id, companyId: invite.companyId, role: invite.role, sid: ctx.sessionId });
+      return buildAuthPayload(jwtToken, invite.company, invite.role);
     },
 
     acceptInvite: async (
@@ -744,19 +801,18 @@ export const companyResolvers = {
 
       const passwordHash = await bcrypt.hash(password, 12);
 
-      // The invite proves the address was invited, not that whoever opened the
-      // link is its owner. When an account already exists, the password typed
-      // must be that account's — otherwise a forwarded invite would mint a
-      // session for someone else's account.
-      let user = await prisma.companyUser.findUnique({ where: { email: invite.email } });
-      if (user) {
-        const valid = await bcrypt.compare(password, user.passwordHash);
-        if (!valid) {
-          throw new Error('An account already exists for this email — enter its password to accept the invite.');
-        }
-      } else {
-        user = await prisma.companyUser.create({ data: { email: invite.email, passwordHash, name: memberName } });
+      // An existing account joins by signing in first — password, second
+      // factor, lockout, all of it — and accepting from inside that session
+      // (acceptInviteSignedIn). Checking the password here instead minted a
+      // session from the password alone: no second factor, no lockout, and a
+      // guessing oracle that never spent the invite.
+      const existing = await prisma.companyUser.findUnique({ where: { email: invite.email }, select: { id: true } });
+      if (existing) {
+        throw new GraphQLError('You already have an account. Sign in with it, then open this link again to join.', {
+          extensions: { code: 'SIGN_IN_TO_ACCEPT' },
+        });
       }
+      const user = await prisma.companyUser.create({ data: { email: invite.email, passwordHash, name: memberName } });
 
       // Add membership (or update role if already a member)
       await prisma.companyMember.upsert({
@@ -838,8 +894,9 @@ export const companyResolvers = {
       return true;
     },
 
-    startPasskeyRegistration: async (_: unknown, __: unknown, ctx: Ctx) => {
+    startPasskeyRegistration: async (_: unknown, { proof }: { proof?: string }, ctx: Ctx) => {
       const { companyUserId } = requireCompanyEnrolling(ctx);
+      await requireExistingFactor('companyUser', companyUserId, proof);
       const user = await prisma.companyUser.findUnique({
         where: { id: companyUserId }, select: { email: true },
       });
@@ -944,6 +1001,27 @@ export const companyResolvers = {
       return buildAuthPayload(token, membership.company, membership.role);
     },
 
+    /**
+     * A passkey, used for one sensitive step: the challenge here, and
+     * finishStepUp exchanges the signed answer for a one-time token that
+     * counts as a code (lib/stepUp.ts).
+     */
+    startStepUp: async (_: unknown, __: unknown, ctx: Ctx) => {
+      const { companyUserId } = requireCompanyEnrolling(ctx);
+      const challenge = await startAuthentication('companyUser', companyUserId);
+      if (!challenge) throw new Error('This account has no passkey.');
+      return challenge;
+    },
+
+    finishStepUp: async (_: unknown, { ticket, responseJson }: { ticket: string; responseJson: string }, ctx: Ctx) => {
+      const { companyUserId } = requireCompanyEnrolling(ctx);
+      const outcome = await finishAuthentication({ ticket, responseJson });
+      if (!outcome.ok || outcome.kind !== 'companyUser' || outcome.accountId !== companyUserId) {
+        throw new Error('That passkey could not be verified. Try again.');
+      }
+      return issueStepUp('companyUser', companyUserId);
+    },
+
     /** A passkey satisfies the reveal as well as a code does. */
     startRevealWithPasskey: async (_: unknown, { id }: { id: string }, ctx: Ctx) => {
       const { companyId, companyUserId } = requireOwnerOrPlus(ctx);
@@ -974,7 +1052,8 @@ export const companyResolvers = {
           sessionId: ctx.sessionId ?? null,
           adminId: ctx.support ? ctx.adminId ?? null : null,
         },
-      }).catch(() => {});
+      });
+      // Not caught: a reveal that cannot be recorded does not happen.
       return { submissionId: id, documentNumber: submission.idDocumentNumber };
     },
 
@@ -984,8 +1063,9 @@ export const companyResolvers = {
      * enabling on the strength of a scan alone is how people lock themselves
      * out of their own account.
      */
-    startMfaEnrolment: async (_: unknown, __: unknown, ctx: Ctx) => {
+    startMfaEnrolment: async (_: unknown, { proof }: { proof?: string }, ctx: Ctx) => {
       const { companyUserId } = requireCompanyEnrolling(ctx);
+      await requireExistingFactor('companyUser', companyUserId, proof);
       const user = await prisma.companyUser.findUnique({
         where: { id: companyUserId }, select: { email: true, totpEnabledAt: true },
       });
@@ -1027,7 +1107,12 @@ export const companyResolvers = {
       const user = await prisma.companyUser.findUnique({ where: { id: companyUserId } });
       if (!user) throw new Error('Membership not found');
       if (!mfaEnabled(user)) return true;
-      if (!(await bcrypt.compare(password, user.passwordHash))) {
+      const minutes = lockedFor(user);
+      if (minutes > 0) throw new Error(LOCKED_MESSAGE(minutes));
+      // A wrong password counts like one at sign-in: from a session, this was
+      // an uncounted password oracle.
+      if (!(await bcrypt.compare(typeof password === 'string' ? password : '', user.passwordHash))) {
+        await recordFailure('companyUser', user);
         throw new Error('That password is not correct.');
       }
       const second = await checkSecondFactorLimited('companyUser', user, code);

@@ -101,17 +101,19 @@ async function gql(query: string, variables?: object, token?: string) {
     !!team.errors?.some(e => /too many rows/.test(e.message)), team.errors?.[0]?.message);
 
   console.log('— Finding 6 · invite tokens —');
-  const invites: string[] = [];
-  for (let i = 0; i < 3; i++) {
-    const r = await gql(`mutation($e:String!,$r:CompanyRole!){ inviteMember(email:$e,role:$r){ inviteUrl } }`,
-      { e: `sec-inv${i}-${run}@test.local`, r: 'EMPLOYEE' }, freshOwner);
-    invites.push(String(r.data?.inviteMember?.inviteUrl ?? '').split('/invite/')[1] ?? '');
-  }
-  const shared = invites[0] && invites.every(t => t.length === invites[0].length)
-    ? invites[0].split('').filter((ch, i) => invites.every(t => t[i] === ch)).length : -1;
-  check('tokens are long and random', invites[0]?.length >= 40, `length ${invites[0]?.length}`);
+  // The link is not handed back on a public instance (reviewFindingsTest), so
+  // the tokens are read from the generator the invitation uses.
+  const { randomToken, hashToken } = await import('../lib/tokens.ts');
+  const invites = [randomToken(), randomToken(), randomToken()];
+  const shared = invites[0].split('').filter((ch, i) => invites.every(t => t[i] === ch)).length;
+  check('tokens are long and random', invites[0].length >= 40, `length ${invites[0].length}`);
   check('consecutive tokens share almost nothing', shared <= 2, `${shared} characters identical`);
-  check('the raw token is not stored', (await prisma.companyInvite.count({ where: { tokenHash: invites[0] } })) === 0);
+  const sent = await gql(`mutation($e:String!,$r:CompanyRole!){ inviteMember(email:$e,role:$r){ ok } }`,
+    { e: `sec-inv-${run}@test.local`, r: 'EMPLOYEE' }, freshOwner);
+  const stored = await prisma.companyInvite.findFirst({ where: { email: `sec-inv-${run}@test.local` } });
+  check('the raw token is not stored, only its hash', !!sent.data?.inviteMember?.ok && /^[0-9a-f]{64}$/.test(stored?.tokenHash ?? ''),
+    JSON.stringify(sent.errors ?? stored?.tokenHash));
+  void hashToken;
 
   console.log('— Finding 10 · registration does not reveal accounts —');
   const dupe = await gql(`mutation($n:String!,$s:String!,$e:String!,$p:String!,$y:String!){

@@ -278,7 +278,8 @@ export const typeDefs = `#graphql
 
   type CompanyInviteResult {
     ok: Boolean!
-    inviteUrl: String!
+    """Only on a local instance with no public address; otherwise the link exists in the invitee's email alone."""
+    inviteUrl: String
   }
 
   type CompanyAuthPayload {
@@ -739,6 +740,8 @@ export const typeDefs = `#graphql
     companyLogin(email: String!, password: String!, turnstileToken: String, totp: String): CompanyAuthPayload!
     inviteMember(email: String!, role: CompanyRole!): CompanyInviteResult!
     acceptInvite(token: String!, name: String!, password: String!): CompanyAuthPayload!
+    """An existing account joins a company it was invited to, from inside its own signed-in session."""
+    acceptInviteSignedIn(token: String!): CompanyAuthPayload!
     """Always returns true — whether an account exists is not disclosed here."""
     requestPasswordReset(email: String!, turnstileToken: String): Boolean!
     resetPassword(token: String!, password: String!): Boolean!
@@ -767,6 +770,9 @@ export const typeDefs = `#graphql
     have one instead of an authenticator app.
     """
     startRevealWithPasskey(id: ID!): PasskeyChallenge!
+    """A passkey challenge for one sensitive step; finishStepUp returns a one-time token that counts as a code."""
+    startStepUp: PasskeyChallenge!
+    finishStepUp(ticket: String!, responseJson: String!): String!
     finishRevealWithPasskey(id: ID!, ticket: String!, responseJson: String!): RevealedDocument!
     """Marks the given notifications read, or every one of them when no ids are given."""
     markNotificationsRead(ids: [ID!]): Int!
@@ -776,7 +782,7 @@ export const typeDefs = `#graphql
     Step one of enrolling a passkey. The browser turns the options into a
     credential; finishPasskeyRegistration stores it.
     """
-    startPasskeyRegistration: PasskeyChallenge!
+    startPasskeyRegistration(proof: String): PasskeyChallenge!
     finishPasskeyRegistration(ticket: String!, responseJson: String!, name: String!): PasskeyInfo!
     removePasskey(id: ID!): Boolean!
     """
@@ -786,16 +792,18 @@ export const typeDefs = `#graphql
     beginPasskeyLogin(email: String!, password: String!, turnstileToken: String): PasskeyChallenge!
     """Step two: the signed assertion, in exchange for a session."""
     finishPasskeyLogin(ticket: String!, responseJson: String!): CompanyAuthPayload!
-    startMfaEnrolment: MfaEnrolment!
+    startMfaEnrolment(proof: String): MfaEnrolment!
     confirmMfaEnrolment(code: String!): MfaActivation!
     disableMfa(password: String!, code: String!): Boolean!
     regenerateRecoveryCodes(code: String!): RecoveryCodes!
-    startAdminPasskeyRegistration: PasskeyChallenge!
+    startAdminPasskeyRegistration(proof: String): PasskeyChallenge!
     finishAdminPasskeyRegistration(ticket: String!, responseJson: String!, name: String!): PasskeyInfo!
     removeAdminPasskey(id: ID!): Boolean!
     beginAdminPasskeyLogin(username: String!, password: String!, turnstileToken: String): PasskeyChallenge!
     finishAdminPasskeyLogin(ticket: String!, responseJson: String!): AuthPayload!
-    startAdminMfaEnrolment: MfaEnrolment!
+    startAdminStepUp: PasskeyChallenge!
+    finishAdminStepUp(ticket: String!, responseJson: String!): String!
+    startAdminMfaEnrolment(proof: String): MfaEnrolment!
     confirmAdminMfaEnrolment(code: String!): MfaActivation!
     disableAdminMfa(password: String!, code: String!): Boolean!
     regenerateAdminRecoveryCodes(code: String!): RecoveryCodes!

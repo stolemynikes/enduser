@@ -68,7 +68,9 @@ services:
       # One hop: Caddy. Two if Cloudflare is also in front. Too high and
       # X-Forwarded-For is forgeable, so every IP-keyed limit is evaded; too low
       # and every client looks like the proxy and shares one bucket.
-      TRUST_PROXY_HOPS: ${TRUST_PROXY_HOPS:-1}
+      # No default: the right value depends on what is in front, and a wrong one
+      # fails silently in one of the two ways above.
+      TRUST_PROXY_HOPS: ${TRUST_PROXY_HOPS:?set TRUST_PROXY_HOPS (2 behind Cloudflare + Caddy)}
 
       # Set to 1 only after you and the admin account have enrolled a factor.
       # Earlier and it locks you out of your own product.
@@ -79,12 +81,12 @@ services:
       SMTP_USER: ${SMTP_USER:?set SMTP_USER}
       SMTP_PASS: ${SMTP_PASS:?set SMTP_PASS}
       SMTP_FROM: ${SMTP_FROM}
-      ADMIN_EMAIL: ${ADMIN_EMAIL}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:?set ADMIN_EMAIL — access requests and alerts go there}
 
       # Without these the anti-robot check is inert and the public form is free
       # to script. The site key is served to the browser by the API.
-      TURNSTILE_SECRET: ${TURNSTILE_SECRET}
-      TURNSTILE_SITE_KEY: ${TURNSTILE_SITE_KEY}
+      TURNSTILE_SECRET: ${TURNSTILE_SECRET:?set TURNSTILE_SECRET — without it the public form is free to script}
+      TURNSTILE_SITE_KEY: ${TURNSTILE_SITE_KEY:?set TURNSTILE_SITE_KEY}
 
       DIDIT_API_KEY: ${DIDIT_API_KEY}
       DIDIT_WORKFLOW_ID: ${DIDIT_WORKFLOW_ID}

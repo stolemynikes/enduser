@@ -76,16 +76,19 @@ type Ticket = {
 const TICKET_TTL_SECONDS = 120;
 
 function issueTicket(t: Ticket): string {
+  // An audience of its own, so a ticket can never be read as a session token
+  // signed with the same secret (verifyCompanyToken refuses any audience).
   return jwt.sign(t, process.env.COMPANY_JWT_SECRET!, {
     expiresIn: TICKET_TTL_SECONDS,
     algorithm: 'HS256',
+    audience: 'passkey-ticket',
   });
 }
 
 function readTicket(token: string, purpose: TicketPurpose): Ticket | null {
   try {
     const claims = jwt.verify(token, process.env.COMPANY_JWT_SECRET!, {
-      algorithms: ['HS256'],
+      algorithms: ['HS256'], audience: 'passkey-ticket',
     }) as Ticket;
     // A ticket for one ceremony must never be accepted for the other, and
     // neither may stand in for a session.

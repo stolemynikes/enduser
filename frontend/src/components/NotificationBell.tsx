@@ -362,6 +362,10 @@ export function ActivityFeed({ onOpenSubmission, showTeam = false }: {
   // the click did nothing; say so instead.
   const failed = (what: string) => () => toast.error(`Could not ${what}. Check your connection and try again.`);
 
+  // Platform support looks at the activity but does not change it: reading or
+  // clearing it here would hide the notice that support opened the account.
+  const support = (() => { try { return localStorage.getItem('supportMode') === '1'; } catch { return false; } })();
+
   const markAll = async () => {
     setBusy('read');
     try { await markRead({ variables: { ids: null } }); }
@@ -398,7 +402,7 @@ export function ActivityFeed({ onOpenSubmission, showTeam = false }: {
   const openRow = async (n: Notification) => {
     // Not awaited: the statement opens either way, and an unread dot that
     // survives a failed request is harmless.
-    if (!n.read) markRead({ variables: { ids: [n.id] } }).catch(() => {});
+    if (!n.read && !support) markRead({ variables: { ids: [n.id] } }).catch(() => {});
     if (n.submissionId && onOpenSubmission) onOpenSubmission(n.submissionId);
   };
 
@@ -424,12 +428,12 @@ export function ActivityFeed({ onOpenSubmission, showTeam = false }: {
           </p>
         </div>
         <div className="nb-page-actions">
-          {unread > 0 && (
+          {unread > 0 && !support && (
             <button className="nb-action" onClick={() => void markAll()} disabled={busy !== ''}>
               {busy === 'read' ? 'Marking…' : 'Mark all read'}
             </button>
           )}
-          {items.length > 0 && (
+          {items.length > 0 && !support && (
             <button className="nb-action nb-action-quiet" onClick={() => void clearAll()} disabled={busy !== ''}>
               {busy === 'clear' ? 'Clearing…' : 'Clear all'}
             </button>
@@ -495,11 +499,11 @@ export function ActivityFeed({ onOpenSubmission, showTeam = false }: {
                       </svg>
                     )}
                   </button>
-                  <button className="nb-row-clear" onClick={() => void clearOne(n)} aria-label={`Clear “${n.title}”`} title="Clear">
+                  {!support && <button className="nb-row-clear" onClick={() => void clearOne(n)} aria-label={`Clear “${n.title}”`} title="Clear">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                       <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
                     </svg>
-                  </button>
+                  </button>}
                 </div>
               );
             })}

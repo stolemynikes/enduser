@@ -16,7 +16,10 @@
 //   - every async action has a pending, a success and a specific failure state
 import { useState } from 'react';
 import { gql } from '@apollo/client';
-import { useMutation, useQuery } from '@apollo/client/react';
+import { useApolloClient, useMutation, useQuery } from '@apollo/client/react';
+import { passkeyProof, stepUpNeeded } from '../lib/stepUp.ts';
+import { secondFactorMessage } from '../lib/mfaError.ts';
+import { TotpInput } from './TotpInput.tsx';
 import { startRegistration } from '@simplewebauthn/browser';
 import { useConfirm } from './ConfirmDialog.tsx';
 
@@ -25,7 +28,7 @@ import { useConfirm } from './ConfirmDialog.tsx';
 const OPS = {
   company: {
     LIST: gql`query MyPasskeys { myPasskeys { id name createdAt lastUsedAt } }`,
-    START: gql`mutation StartPasskeyRegistration { startPasskeyRegistration { optionsJson ticket } }`,
+    START: gql`mutation StartPasskeyRegistration($proof: String) { startPasskeyRegistration(proof: $proof) { optionsJson ticket } }`,
     FINISH: gql`
       mutation FinishPasskeyRegistration($ticket: String!, $responseJson: String!, $name: String!) {
         finishPasskeyRegistration(ticket: $ticket, responseJson: $responseJson, name: $name) { id name }
@@ -35,7 +38,7 @@ const OPS = {
   },
   admin: {
     LIST: gql`query AdminPasskeys { adminPasskeys { id name createdAt lastUsedAt } }`,
-    START: gql`mutation StartAdminPasskeyRegistration { startAdminPasskeyRegistration { optionsJson ticket } }`,
+    START: gql`mutation StartAdminPasskeyRegistration($proof: String) { startAdminPasskeyRegistration(proof: $proof) { optionsJson ticket } }`,
     FINISH: gql`
       mutation FinishAdminPasskeyRegistration($ticket: String!, $responseJson: String!, $name: String!) {
         finishAdminPasskeyRegistration(ticket: $ticket, responseJson: $responseJson, name: $name) { id name }
@@ -79,15 +82,34 @@ export function PasskeySettings({ onChanged, account = 'company' }: {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [added, setAdded] = useState('');
+  // Adding a factor to an account that has one asks for that one first. A
+  // passkey is asked for by the browser; a code is typed here.
+  const client = useApolloClient();
+  const [codeProof, setCodeProof] = useState<string | null>(null);
 
   const passkeys: Passkey[] = data?.[ops.listed] ?? [];
 
-  const enrol = async () => {
+  const enrol = async (proof?: string) => {
     setError('');
     setAdded('');
     setBusy(true);
     try {
-      const { data: began } = await start();
+      let began: any;
+      try {
+        ({ data: began } = await start({ variables: { proof: proof ?? null } }));
+      } catch (err) {
+        const need = stepUpNeeded(err);
+        if (need === 'passkey' && !proof) {
+          const p = await passkeyProof(client, account);
+          ({ data: began } = await start({ variables: { proof: p } }));
+        } else if (need === 'code' && !proof) {
+          setCodeProof('');
+          return;
+        } else {
+          throw err;
+        }
+      }
+      setCodeProof(null);
       const { optionsJson, ticket } = began[ops.started];
       // The browser does the ceremony; we never see a private key.
       const credential = await startRegistration({ optionsJSON: JSON.parse(optionsJson) });
@@ -109,6 +131,8 @@ export function PasskeySettings({ onChanged, account = 'company' }: {
         setError('');
       } else if (name === 'InvalidStateError') {
         setError('This device already has a passkey for your account.');
+      } else if (proof !== undefined) {
+        setError(secondFactorMessage(err));
       } else {
         setError(err?.message ?? 'The browser could not create a passkey.');
       }
@@ -184,6 +208,19 @@ export function PasskeySettings({ onChanged, account = 'company' }: {
       )}
       {error && <p className="pk-error" role="alert">{error}</p>}
 
+      {codeProof !== null && (
+        <form className="pk-proof" onSubmit={e => { e.preventDefault(); const c = codeProof; void enrol(c); }}>
+          <label className="pk-lede" htmlFor="pk-proof-code">
+            Enter a code from your authenticator app first — a new sign-in method is only added by someone who can use the existing one.
+          </label>
+          <TotpInput id="pk-proof-code" className="pk-proof-input" value={codeProof} onChange={setCodeProof} disabled={busy} />
+          <div className="pk-actions">
+            <button type="button" className="pk-btn" onClick={() => { setCodeProof(null); setError(''); }} disabled={busy}>Cancel</button>
+            <button type="submit" className="pk-btn pk-btn--primary" disabled={busy || !codeProof}>Continue</button>
+          </div>
+        </form>
+      )}
+
       {supported === false ? (
         <p className="pk-lede">
           This browser cannot create passkeys. Use an authenticator app below, or try a current
@@ -252,5 +289,12 @@ const styles = `
   .pk-btn--danger { color: var(--cd-accent); border-color: rgba(240,78,94,0.3); flex: 0 0 auto; }
   .pk-btn--danger:hover:not(:disabled) { color: #fff; background: var(--cd-accent); border-color: var(--cd-accent); }
 
+  .pk-proof { display: flex; flex-direction: column; gap: 9px; max-width: 420px; margin-top: 10px; }
+  .pk-proof-input {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 14px; letter-spacing: 0.12em;
+    background: var(--cd-surface3, #232326); color: var(--cd-text, #f0f2f8);
+    border: 1px solid var(--cd-border2, rgba(255,255,255,0.14)); border-radius: 8px; padding: 11px 12px; width: 100%;
+  }
+  .pk-proof-input:focus-visible { outline: 2px solid var(--cd-blue, #5b9cf6); outline-offset: 1px; }
   @media (prefers-reduced-motion: reduce) { .pk-btn { transition: none; } }
 `;

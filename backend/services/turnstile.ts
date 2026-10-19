@@ -10,6 +10,12 @@ import 'dotenv/config';
 import { buyerError } from '../lib/buyerError.ts';
 
 const SECRET = process.env.TURNSTILE_SECRET;
+
+// In production the check is not optional: an inert one looks exactly like a
+// working one from the outside. Refusing to start is louder than a log line.
+if (!SECRET && process.env.NODE_ENV === 'production') {
+  throw new Error('TURNSTILE_SECRET must be set in production — without it the public form and sign-in are free to script.');
+}
 const VERIFY_URL = 'https://challenges.cloudflare.com/turnstile/v0/siteverify';
 const TIMEOUT_MS = 5000;
 

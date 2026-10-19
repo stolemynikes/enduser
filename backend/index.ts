@@ -36,7 +36,7 @@ import { WEBHOOK_CONFIGURED, claimEvent, pruneEvents, verifyWebhook } from './se
 import { recordDecision, reconcileOpenVerifications } from './lib/diditReconcile.ts';
 import { deleteSubmissions } from './lib/submissionDelete.ts';
 import { purgeDeletedCompanies, pruneSupportAccess, DELETION_GRACE_DAYS, RETENTION_MONTHS } from './lib/retention.ts';
-import { accessStatus } from './lib/access.ts';
+import { accessStatus, formOpen } from './lib/access.ts';
 import { pruneAuthTokens } from './lib/authTokens.ts';
 import { mailBudgetAllows, pruneMailBudget } from './lib/mailBudget.ts';
 import { errorSpikes } from './lib/opsAlerts.ts';
@@ -54,19 +54,8 @@ import { pseudonym } from './lib/tokens.ts';
 // backend's own CSP switched off. The deployment answers that question better
 // than the environment name does: if the public URL is not a loopback address,
 // the hardening is on regardless of NODE_ENV.
-function publiclyReachable(): boolean {
-  const url = process.env.FRONTEND_URL;
-  if (!url) return false;
-  try {
-    const { hostname } = new URL(url);
-    return !/^(localhost|127\.0\.0\.1|\[::1\]|0\.0\.0\.0)$/i.test(hostname) && !hostname.endsWith('.local');
-  } catch {
-    return false;
-  }
-}
-
-const IS_PROD = process.env.NODE_ENV === 'production';
-const IS_EXPOSED = IS_PROD || publiclyReachable();
+import { IS_EXPOSED, IS_PROD } from './lib/exposure.ts';
+import { assertSupportMayRun } from './lib/supportGuard.ts';
 // Everything that leaks schema or internals keys off this, not off NODE_ENV.
 const HARDENED = IS_EXPOSED;
 
@@ -183,6 +172,16 @@ const server = new ApolloServer({
   // Without the second, aliases multiplied both work and side effects while the
   // per-request rate limiters saw one request.
   validationRules: [depthLimit(8), costLimit()],
+  plugins: [{
+    // Default-deny for support sessions, before any resolver runs.
+    async requestDidStart() {
+      return {
+        async didResolveOperation({ operation, contextValue }) {
+          assertSupportMayRun(operation, (contextValue as { support?: boolean }).support);
+        },
+      };
+    },
+  }],
   includeStacktraceInErrorResponses: !HARDENED,
   formatError: (formatted) => {
     if (!HARDENED) return formatted;
@@ -191,7 +190,10 @@ const server = new ApolloServer({
     if (INTERNAL_ERROR.test(message)) {
       return { message: 'Internal server error', extensions: { code: 'INTERNAL_SERVER_ERROR' } };
     }
-    return { ...formatted, message, extensions: { code: formatted.extensions?.code } };
+    // Only the code survives — plus `method` on a step-up request, which the
+    // client needs to know whether to ask for a code or the passkey.
+    const method = formatted.extensions?.code === 'STEP_UP_REQUIRED' ? formatted.extensions?.method : undefined;
+    return { ...formatted, message, extensions: { code: formatted.extensions?.code, ...(method ? { method } : {}) } };
   },
 });
 await server.start();
@@ -277,6 +279,18 @@ app.post('/verification-session', extractLimiter, async (req, res) => {
   if (slug) {
     const company = await prisma.company.findUnique({ where: { slug }, select: { id: true } });
     companyId = company?.id ?? null;
+  }
+  // A paid session is started only for a form that is open: an approved,
+  // confirmed, not-closed company. Without one, only the platform admin may
+  // start one (the Test tools), so a stranger cannot spend the allowance on
+  // made-up or closed forms.
+  if (!(companyId && await formOpen(companyId))) {
+    const ctx = await contextFor(req.headers.authorization, 'verification-session');
+    if (!ctx.admin || ctx.needsEnrolment) {
+      res.status(404).json({ error: 'This form is not accepting submissions.' });
+      return;
+    }
+    companyId = null;
   }
 
   // Budgets are per caller and per tenant. The previous single global bucket
@@ -398,14 +412,14 @@ app.get('/health', async (_req, res) => {
 // (any login/registration path) and the public submit mutation get their own
 // tighter budgets than the general API limit.
 const CREDENTIAL_OPS =
-  /adminLogin|companyLogin|registerCompany|acceptInvite|requestPasswordReset|resetPassword|verifyEmail/;
+  /adminLogin|companyLogin|registerCompany|acceptInvite|requestPasswordReset|resetPassword|verifyEmail|beginPasskeyLogin|finishPasskeyLogin|beginAdminPasskeyLogin|finishAdminPasskeyLogin|disableMfa|disableAdminMfa/;
 // Mutations that make this server send mail to an address the caller chose.
 // Signing up is free, so "authenticated" is not a budget — an owner who has
 // just registered could otherwise push 120 invitations a minute at arbitrary
 // inboxes, carrying their own wording, from our sending domain.
 const MAIL_OPS = /inviteMember|resendEmailVerification/;
 // Second-factor-gated reads and deletions of many statements at once.
-const SENSITIVE_OPS = /exportBuyerData|eraseBuyerData|exportDecisions|revealDocumentNumber|legalAcceptanceRecord/;
+const SENSITIVE_OPS = /exportBuyerData|eraseBuyerData|exportDecisions|revealDocumentNumber|revealSubmissionDocumentNumber|RevealWithPasskey|StepUp|MfaEnrolment|PasskeyRegistration|legalAcceptanceRecord/;
 app.use('/graphql', (req, res, next) => {
   // GraphQL over GET carries the document in the query string. Apollo refuses
   // mutations there, but reading both keeps the routing honest if that changes.

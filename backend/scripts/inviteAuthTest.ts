@@ -58,22 +58,29 @@ async function main() {
 
   console.log('— Host invites the existing account —');
   const invited = await gql(INVITE, { email: guestEmail, role: 'EMPLOYEE' }, hostToken);
-  const inviteToken = String(invited.data?.inviteMember?.inviteUrl ?? '').split('/invite/')[1] ?? '';
-  check('invite created', !!inviteToken, JSON.stringify(invited.errors));
+  check('invite created', invited.data?.inviteMember?.ok === true, JSON.stringify(invited.errors));
+  // The link exists only in the guest's email; the test plants its own.
+  const { randomToken, hashToken } = await import('../lib/tokens.ts');
+  const inviteToken = randomToken();
+  const hostCompany = await prisma.company.findUnique({ where: { slug: `invtest-host-${run}` } });
+  await prisma.companyInvite.create({ data: {
+    companyId: hostCompany!.id, email: guestEmail, role: 'EMPLOYEE',
+    tokenHash: hashToken(inviteToken), expiresAt: new Date(Date.now() + 86_400_000),
+  } });
 
-  console.log('— Accepting with the wrong password —');
-  const wrong = await gql(ACCEPT, { token: inviteToken, name: 'Impostor', password: 'not-the-password' });
-  check('refused without the account password', !wrong.data?.acceptInvite && !!wrong.errors?.length,
-    wrong.errors?.[0]?.message ?? 'a session was issued');
+  console.log('— The link and a password are not a sign-in —');
+  for (const [label, password] of [['a wrong password', 'not-the-password'], ['even the right one', GUEST_PASSWORD]]) {
+    const r = await gql(ACCEPT, { token: inviteToken, name: 'Guest Owner', password });
+    check(`with ${label}, no session is issued — sign in first`,
+      !r.data?.acceptInvite && (r.errors?.[0] as any)?.extensions?.code === 'SIGN_IN_TO_ACCEPT', JSON.stringify(r.errors?.[0] ?? r.data));
+  }
+  const stillOne = await prisma.companyMember.count({ where: { user: { email: guestEmail } } });
+  check('no membership was created by trying', stillOne === 1, `memberships=${stillOne}`);
 
-  const stillOne = await prisma.companyMember.count({
-    where: { user: { email: guestEmail } },
-  });
-  check('no membership was created by the failed attempt', stillOne === 1, `memberships=${stillOne}`);
-
-  console.log('— Accepting with the right password —');
-  const right = await gql(ACCEPT, { token: inviteToken, name: 'Guest Owner', password: GUEST_PASSWORD });
-  check('accepted with the account password', !!right.data?.acceptInvite?.token, right.errors?.[0]?.message);
+  console.log('— Signed in, the guest accepts —');
+  const guestToken = guest.data.registerCompany.token;
+  const joined = await gql(`mutation($t:String!){ acceptInviteSignedIn(token:$t){ token role } }`, { t: inviteToken }, guestToken);
+  check('accepted from the guest\'s own session', joined.data?.acceptInviteSignedIn?.role === 'EMPLOYEE', JSON.stringify(joined.errors));
 
   console.log('— Cleanup —');
   const slugs = [`invtest-host-${run}`, `invtest-guest-${run}`];

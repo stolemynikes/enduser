@@ -7,7 +7,8 @@
 // the panel says so before it shows them.
 import { useState } from 'react';
 import { gql } from '@apollo/client';
-import { useMutation } from '@apollo/client/react';
+import { useApolloClient, useMutation } from '@apollo/client/react';
+import { passkeyProof, stepUpNeeded } from '../lib/stepUp.ts';
 import { TotpInput } from './TotpInput.tsx';
 import { mfaSignal } from '../lib/mfaError.ts';
 
@@ -15,7 +16,7 @@ import { mfaSignal } from '../lib/mfaError.ts';
 // the operations and where the renewed token is kept differ.
 const OPS = {
   company: {
-    START: gql`mutation StartMfa { startMfaEnrolment { secret otpauthUri qrSvg } }`,
+    START: gql`mutation StartMfa($proof: String) { startMfaEnrolment(proof: $proof) { secret otpauthUri qrSvg } }`,
     CONFIRM: gql`mutation ConfirmMfa($code: String!) { confirmMfaEnrolment(code: $code) { recoveryCodes token } }`,
     DISABLE: gql`mutation DisableMfa($password: String!, $code: String!) { disableMfa(password: $password, code: $code) }`,
     REGENERATE: gql`mutation RegenerateCodes($code: String!) { regenerateRecoveryCodes(code: $code) { recoveryCodes } }`,
@@ -24,7 +25,7 @@ const OPS = {
     signOutKeys: ['companyToken', 'companyRole', 'companyName', 'companySlug', 'supportMode'],
   },
   admin: {
-    START: gql`mutation StartAdminMfa { startAdminMfaEnrolment { secret otpauthUri qrSvg } }`,
+    START: gql`mutation StartAdminMfa($proof: String) { startAdminMfaEnrolment(proof: $proof) { secret otpauthUri qrSvg } }`,
     CONFIRM: gql`mutation ConfirmAdminMfa($code: String!) { confirmAdminMfaEnrolment(code: $code) { recoveryCodes token } }`,
     DISABLE: gql`mutation DisableAdminMfa($password: String!, $code: String!) { disableAdminMfa(password: $password, code: $code) }`,
     REGENERATE: gql`mutation RegenerateAdminCodes($code: String!) { regenerateAdminRecoveryCodes(code: $code) { recoveryCodes } }`,
@@ -57,6 +58,7 @@ export function MfaSettings({
   const [copied, setCopied] = useState(false);
 
   const ops = OPS[account];
+  const client = useApolloClient();
   const [start, { loading: starting }] = useMutation<any>(ops.START);
   const [confirm, { loading: confirming }] = useMutation<any>(ops.CONFIRM);
   const [disable, { loading: disabling }] = useMutation<any>(ops.DISABLE);
@@ -77,10 +79,22 @@ export function MfaSettings({
   const begin = async () => {
     setError('');
     try {
-      const { data } = await start();
+      let data: any;
+      try {
+        ({ data } = await start({ variables: { proof: null } }));
+      } catch (err) {
+        // An account that already signs in with a passkey proves it with that
+        // passkey before an app is added (lib/stepUp.ts).
+        if (stepUpNeeded(err) !== 'passkey') throw err;
+        const proof = await passkeyProof(client, account);
+        ({ data } = await start({ variables: { proof } }));
+      }
       setEnrolment(data[ops.started]);
       setCode('');
-    } catch (err) { setError(describe(err, 'Could not start the set-up.')); }
+    } catch (err: any) {
+      if (err?.name === 'NotAllowedError' || err?.name === 'AbortError') return;
+      setError(describe(err, 'Could not start the set-up.'));
+    }
   };
 
   const finish = async (e: React.FormEvent) => {

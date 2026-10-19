@@ -1794,8 +1794,11 @@ function TestToolsTab({ toast, onSubmissionCreated }: {
     if (verifyPoll.current) clearInterval(verifyPoll.current);
     setVerifyId(null); setVerifyStatus(null); setVerifyLoading(true);
     try {
+      // Without a form, only the platform admin may start a session.
       const res = await fetch('/verification-session', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('adminToken') ?? ''}` },
+        body: '{}',
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error ?? 'Could not start verification');

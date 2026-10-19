@@ -24,15 +24,20 @@ export function lockedFor(account: Account | null): number {
 }
 
 export async function recordFailure(model: 'companyUser' | 'admin', account: Account): Promise<void> {
-  const failures = account.failedLogins + 1;
-  const locked = failures >= MAX_FAILURES;
-  await (prisma[model] as any).update({
+  // Incremented in the database, not written from the value read earlier:
+  // guesses sent in parallel all read the same count, and writing count + 1
+  // back from each let them through without the lock ever closing.
+  const after = await (prisma[model] as any).update({
     where: { id: account.id },
-    data: {
-      failedLogins: locked ? 0 : failures,
-      lockedUntil: locked ? new Date(Date.now() + LOCK_MINUTES * 60_000) : account.lockedUntil,
-    },
+    data: { failedLogins: { increment: 1 } },
+    select: { failedLogins: true },
   });
+  if (after.failedLogins >= MAX_FAILURES) {
+    await (prisma[model] as any).update({
+      where: { id: account.id },
+      data: { failedLogins: 0, lockedUntil: new Date(Date.now() + LOCK_MINUTES * 60_000) },
+    });
+  }
 }
 
 export async function recordSuccess(model: 'companyUser' | 'admin', id: string): Promise<void> {

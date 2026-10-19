@@ -18,6 +18,12 @@ const ACCEPT_INVITE = gql`
   }
 `;
 
+const ACCEPT_SIGNED_IN = gql`
+  mutation AcceptInviteSignedIn($token: String!) {
+    acceptInviteSignedIn(token: $token) { token role company { id name slug } }
+  }
+`;
+
 export default function AcceptInvite() {
   const { formProps } = useFieldValidation();
   const { token } = useParams<{ token: string }>();
@@ -27,6 +33,32 @@ export default function AcceptInvite() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [accept, { loading }] = useMutation<any>(ACCEPT_INVITE);
+  // An existing account joins from its own session, after a normal sign-in.
+  const [ignoreSession, setIgnoreSession] = useState(false);
+  const stored = typeof window !== 'undefined' ? localStorage.getItem('companyToken') : null;
+  const signedIn = ignoreSession ? null : stored;
+  const [needsSignIn, setNeedsSignIn] = useState(false);
+  const [acceptSignedIn, { loading: joining }] = useMutation<any>(ACCEPT_SIGNED_IN, {
+    context: { headers: { authorization: signedIn ? `Bearer ${signedIn}` : '' } },
+  });
+
+  const land = (payload: { token: string; role: string; company: { name: string; slug: string } }) => {
+    localStorage.setItem('companyToken', payload.token);
+    localStorage.setItem('companyRole', payload.role);
+    localStorage.setItem('companyName', payload.company.name);
+    localStorage.setItem('companySlug', payload.company.slug);
+    navigate('/company/dashboard');
+  };
+
+  const joinSignedIn = async () => {
+    setError('');
+    try {
+      const { data } = await acceptSignedIn({ variables: { token } });
+      land(data.acceptInviteSignedIn);
+    } catch (err: any) {
+      setError(err?.message ?? 'Could not accept the invitation.');
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -34,12 +66,10 @@ export default function AcceptInvite() {
     if (password.length < 8) { setError('Password must be at least 8 characters.'); return; }
     try {
       const { data } = await accept({ variables: { token, name, password } });
-      localStorage.setItem('companyToken', data.acceptInvite.token);
-      localStorage.setItem('companyRole', data.acceptInvite.role);
-      localStorage.setItem('companyName', data.acceptInvite.company.name);
-      localStorage.setItem('companySlug', data.acceptInvite.company.slug);
-      navigate('/company/dashboard');
+      land(data.acceptInvite);
     } catch (err: any) {
+      const code = err?.errors?.[0]?.extensions?.code;
+      if (code === 'SIGN_IN_TO_ACCEPT') { setNeedsSignIn(true); setPassword(''); return; }
       setError(err?.message ?? 'Could not accept invite');
     }
   };
@@ -55,6 +85,30 @@ export default function AcceptInvite() {
             <span className="ai-logo-tag">INVITATION</span>
           </div>
           <h1 className="ai-title">Accept invitation</h1>
+          {(needsSignIn || signedIn) ? (
+            <div className="ai-form">
+              <p className="ai-sub" style={{ marginBottom: 0 }}>
+                {signedIn
+                  ? 'Join with the account you are signed in to. The invitation must be for that account’s email address.'
+                  : 'You already have an account with this email address. Sign in with it — including your second factor — and you will come back here to join.'}
+              </p>
+              {error && <div className="ai-error" role="alert">{error}</div>}
+              {signedIn ? (
+                <>
+                  <button className="ai-btn" type="button" disabled={joining} onClick={() => void joinSignedIn()}>
+                    {joining ? 'Joining…' : 'Join team'}
+                  </button>
+                  <button className="ai-link" type="button" onClick={() => { setIgnoreSession(true); setError(''); }}>
+                    The invitation is for another address — create an account for it instead
+                  </button>
+                </>
+              ) : (
+                <button className="ai-btn" type="button" onClick={() => navigate(`/login?next=${encodeURIComponent(`/invite/${token}`)}`)}>
+                  Sign in to accept
+                </button>
+              )}
+            </div>
+          ) : (<>
           <p className="ai-sub">Set up your account to join your team's dashboard.</p>
           <form {...formProps} onSubmit={handleSubmit} className="ai-form">
             <div className="ai-field">
@@ -73,6 +127,7 @@ export default function AcceptInvite() {
               {loading ? 'Joining…' : 'Join team'}
             </button>
           </form>
+          </>)}
         </div>
       </div>
     </>
@@ -104,6 +159,8 @@ const styles = `
   .ai-form { display: flex; flex-direction: column; gap: 1rem; }
   .ai-field { display: flex; flex-direction: column; gap: 6px; }
   .ai-label { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #8a8a8f; }
+  .ai-link { background: none; border: 0; padding: 6px 0; color: #8fbcff; font: inherit; font-size: 12.5px; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; text-align: left; }
+  .ai-link:focus-visible { outline: 2px solid #5b9cf6; outline-offset: 2px; }
   .ai-hint { font-size: 11px; color: #5e5e63; font-style: italic; }
   .ai-input {
     font-family: inherit; font-size: 13px; color: #f0f2f8;
