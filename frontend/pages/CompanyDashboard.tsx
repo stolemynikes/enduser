@@ -15,6 +15,7 @@ import { PriorApprovals } from '../src/components/PriorApprovals.tsx';
 import { MfaSettings } from '../src/components/MfaSettings.tsx';
 import { RevealDocumentNumber } from '../src/components/RevealDocumentNumber.tsx';
 import { BuyerDataRequest } from '../src/components/BuyerDataRequest.tsx';
+import { LegalAgreementsPanel, LegalBanner } from '../src/components/LegalAgreements.tsx';
 import { RevealLog } from '../src/components/RevealLog.tsx';
 import { PasskeySettings } from '../src/components/PasskeySettings.tsx';
 import { EnrolmentRequired } from '../src/components/EnrolmentRequired.tsx';
@@ -940,6 +941,7 @@ export default function CompanyDashboard() {
         </nav>
 
         <main className="cd-main">
+          <LegalBanner isOwner={isOwner} support={supportMode} />
           {account && !account.emailVerified && !verificationDismissed && (
             <div className="cd-banner">
               <span>
@@ -1284,6 +1286,8 @@ export default function CompanyDashboard() {
               />
 
               {isOwner && <RevealLog onOpenSubmission={openSubmissionById} />}
+
+              {isOwner && <LegalAgreementsPanel />}
 
               {myCompanies.length > 1 && (
                 <div className="cd-embed">
@@ -1905,6 +1909,8 @@ const styles = `
     border-radius: 50%; width: 20px; height: 20px; font-size: 10px; color: var(--cd-text-dim);
     cursor: pointer; display: flex; align-items: center; justify-content: center;
   }
+  .cd-banner a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
+  .cd-banner a:focus-visible { outline: 2px solid var(--cd-blue); outline-offset: 2px; border-radius: 2px; }
   .cd-banner {
     display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;
     background: rgba(232,181,74,0.08); border: 1px solid rgba(232,181,74,0.3);

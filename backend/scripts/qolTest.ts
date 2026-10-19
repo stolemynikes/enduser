@@ -6,6 +6,7 @@
 // travelling with queries altogether.
 //
 // Run: npx tsx scripts/qolTest.ts   (backend must be running on :3000)
+import { LEGAL_VERSION } from '../lib/legal.ts';
 import { prisma } from '../lib/prisma.ts';
 import { issueToken } from '../lib/authTokens.ts';
 
@@ -26,7 +27,7 @@ async function gql(query: string, variables?: object, token?: string) {
 }
 
 const REGISTER = `mutation($name:String!,$slug:String!,$email:String!,$password:String!,$yourName:String!){
-  registerCompany(name:$name,slug:$slug,email:$email,password:$password,yourName:$yourName){ token company{ id slug } }
+  registerCompany(name:$name,slug:$slug,email:$email,password:$password,yourName:$yourName,legalVersion:"${LEGAL_VERSION}"){ token company{ id slug } }
 }`;
 const LOGIN = `mutation($email:String!,$password:String!){ companyLogin(email:$email,password:$password){ token role company{ slug } } }`;
 

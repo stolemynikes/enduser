@@ -6,6 +6,7 @@
 // hardening (query depth limit, batched-request rejection).
 //
 // Run: npx tsx scripts/crossTenantTest.ts   (backend must be running on :3000)
+import { LEGAL_VERSION } from '../lib/legal.ts';
 import { prisma } from '../lib/prisma.ts';
 
 const API = 'http://localhost:3000/graphql';
@@ -28,7 +29,7 @@ async function gql(query: string, variables?: object, token?: string) {
 
 const run = Date.now();
 const REGISTER = `mutation($name:String!,$slug:String!,$email:String!,$password:String!,$yourName:String!){
-  registerCompany(name:$name,slug:$slug,email:$email,password:$password,yourName:$yourName){ token company{ id slug } }
+  registerCompany(name:$name,slug:$slug,email:$email,password:$password,yourName:$yourName,legalVersion:"${LEGAL_VERSION}"){ token company{ id slug } }
 }`;
 
 async function main() {
@@ -103,7 +104,7 @@ async function main() {
 
     console.log('— Password policy (server-side) —');
     const REGISTER_PW = `mutation($name:String!,$slug:String!,$email:String!,$password:String!,$yourName:String!){
-      registerCompany(name:$name,slug:$slug,email:$email,password:$password,yourName:$yourName){ token }
+      registerCompany(name:$name,slug:$slug,email:$email,password:$password,yourName:$yourName,legalVersion:"${LEGAL_VERSION}"){ token }
     }`;
     const shortPw = await gql(REGISTER_PW, {
       name: `PwTest ${run}`, slug: `pwtest-${run}`, email: `pw-${run}@test.local`,

@@ -6,6 +6,7 @@
 // would mint a session for someone else.
 //
 // Run: npx tsx scripts/inviteAuthTest.ts   (backend must be running on :3000)
+import { LEGAL_VERSION } from '../lib/legal.ts';
 import { prisma } from '../lib/prisma.ts';
 
 const API = 'http://localhost:3000/graphql';
@@ -25,7 +26,7 @@ async function gql(query: string, variables?: object, token?: string) {
 }
 
 const REGISTER = `mutation($name:String!,$slug:String!,$email:String!,$password:String!,$yourName:String!){
-  registerCompany(name:$name,slug:$slug,email:$email,password:$password,yourName:$yourName){ token company{ id slug } }
+  registerCompany(name:$name,slug:$slug,email:$email,password:$password,yourName:$yourName,legalVersion:"${LEGAL_VERSION}"){ token company{ id slug } }
 }`;
 const INVITE = `mutation($email:String!,$role:CompanyRole!){ inviteMember(email:$email,role:$role){ ok inviteUrl } }`;
 const ACCEPT = `mutation($token:String!,$name:String!,$password:String!){

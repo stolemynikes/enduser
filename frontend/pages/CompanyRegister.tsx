@@ -8,10 +8,11 @@ import { useDocumentTitle } from '../src/lib/useDocumentTitle.ts';
 import { Wordmark } from '../src/components/Mark.tsx';
 import { BackHome } from '../src/components/BackHome.tsx';
 import { Turnstile } from '../src/components/Turnstile.tsx';
+import { LAST_UPDATED, lastUpdatedLabel } from '../src/lib/legal.ts';
 
 const REGISTER_COMPANY = gql`
-  mutation RegisterCompany($name: String!, $slug: String!, $email: String!, $password: String!, $yourName: String!, $turnstileToken: String, $requestNote: String) {
-    registerCompany(name: $name, slug: $slug, email: $email, password: $password, yourName: $yourName, turnstileToken: $turnstileToken, requestNote: $requestNote) {
+  mutation RegisterCompany($name: String!, $slug: String!, $email: String!, $password: String!, $yourName: String!, $turnstileToken: String, $requestNote: String, $legalVersion: String) {
+    registerCompany(name: $name, slug: $slug, email: $email, password: $password, yourName: $yourName, turnstileToken: $turnstileToken, requestNote: $requestNote, legalVersion: $legalVersion) {
       token
       role
       company { id name slug }
@@ -42,6 +43,7 @@ export default function CompanyRegister() {
   const [about, setAbout] = useState('');
   const [botToken, setBotToken] = useState('');
   const [error, setError] = useState('');
+  const [agreed, setAgreed] = useState(false);
   const [register, { loading }] = useMutation<any>(REGISTER_COMPANY);
 
   // The form URL is derived from the company name and not editable; the
@@ -60,8 +62,9 @@ export default function CompanyRegister() {
     setError('');
     if (password.length < 8) { setError('Password must be at least 8 characters.'); return; }
     if (password2 !== password) { setError('Passwords don’t match.'); return; }
+    if (!agreed) { setError('Agree to the Terms, the Data Processing Agreement and the Privacy Policy to continue.'); return; }
     try {
-      const { data } = await register({ variables: { name: companyName, slug, email, password, yourName, turnstileToken: botToken || undefined, requestNote: about.trim() || undefined } });
+      const { data } = await register({ variables: { name: companyName, slug, email, password, yourName, turnstileToken: botToken || undefined, requestNote: about.trim() || undefined, legalVersion: LAST_UPDATED } });
       localStorage.setItem('companyToken', data.registerCompany.token);
       localStorage.setItem('companyRole', data.registerCompany.role);
       localStorage.setItem('companyName', data.registerCompany.company.name);
@@ -156,14 +159,20 @@ export default function CompanyRegister() {
             </div>
             <Turnstile onToken={setBotToken} theme="dark" />
                 {error && <div className="cr-error" role="alert">{error}</div>}
-            <button className="cr-btn" type="submit" disabled={loading || !slug || !passwordOk}>
+            {/* An explicit tick rather than "by clicking you agree": the record
+                says which version was agreed to, and this is the agreeing. */}
+            <label className="cr-agree">
+              <input type="checkbox" checked={agreed} onChange={e => setAgreed(e.target.checked)} required />
+              <span>
+                I agree to the <Link to="/terms" target="_blank">Terms</Link>,
+                the <Link to="/dpa" target="_blank">Data Processing Agreement</Link> and
+                the <Link to="/privacy" target="_blank">Privacy Policy</Link> on behalf of this company.
+              </span>
+            </label>
+            <button className="cr-btn" type="submit" disabled={loading || !slug || !passwordOk || !agreed}>
               {loading ? 'Sending request…' : 'Request access'}
             </button>
-            <p className="cr-legal">
-              By requesting access you agree to the <Link to="/terms" target="_blank">Terms</Link>,
-              the <Link to="/dpa" target="_blank">Data Processing Agreement</Link> and
-              the <Link to="/privacy" target="_blank">Privacy Policy</Link>.
-            </p>
+            <p className="cr-legal">Version of {lastUpdatedLabel()}. Your agreement is recorded with your name and the date.</p>
           </form>
           <p className="cr-footer-link">
             Already have an account? <Link to="/login">Sign in</Link>
@@ -218,6 +227,10 @@ const styles = `
   .cr-input:focus { border-color: #5b9cf6; box-shadow: 0 0 0 3px rgba(91,156,246,0.15); }
   .cr-textarea { resize: vertical; min-height: 76px; line-height: 1.5; }
   .cr-optional { font-weight: 400; text-transform: none; letter-spacing: 0; opacity: 0.6; }
+  .cr-agree { display: flex; gap: 10px; align-items: flex-start; font-size: 12.5px; line-height: 1.55; color: rgba(240,242,248,0.8); cursor: pointer; }
+  .cr-agree input { width: 18px; height: 18px; margin-top: 1px; flex: none; accent-color: #5b9cf6; }
+  .cr-agree a { color: #f0f2f8; text-decoration: underline; text-underline-offset: 2px; }
+  .cr-agree a:hover { color: #5b9cf6; }
   .cr-legal { font-size: 11.5px; line-height: 1.6; color: rgba(240,242,248,0.5); text-align: center; }
   .cr-legal a { color: rgba(240,242,248,0.75); text-decoration: underline; text-underline-offset: 2px; }
   .cr-legal a:hover { color: #5b9cf6; }

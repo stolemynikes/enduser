@@ -4,6 +4,7 @@
 // re-opens one, this is what says so.
 //
 // Run: npx tsx scripts/securityRegressionTest.ts   (backend must be running on :3000)
+import { LEGAL_VERSION } from '../lib/legal.ts';
 import { prisma } from '../lib/prisma.ts';
 import { signCompanyToken } from '../services/companyAuth.ts';
 import { issueToken } from '../lib/authTokens.ts';
@@ -114,7 +115,7 @@ async function gql(query: string, variables?: object, token?: string) {
 
   console.log('— Finding 10 · registration does not reveal accounts —');
   const dupe = await gql(`mutation($n:String!,$s:String!,$e:String!,$p:String!,$y:String!){
-    registerCompany(name:$n,slug:$s,email:$e,password:$p,yourName:$y){ token } }`,
+    registerCompany(name:$n,slug:$s,email:$e,password:$p,yourName:$y,legalVersion:"${LEGAL_VERSION}"){ token } }`,
     { n: 'X', s: `sec-dupe-${run}`, e: `sec-own-${run}@test.local`, p: 'some-password-1', y: 'X' });
   check('the message does not confirm the address exists',
     !/already exists/i.test(dupe.errors?.[0]?.message ?? ''), dupe.errors?.[0]?.message);

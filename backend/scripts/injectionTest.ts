@@ -5,6 +5,7 @@
 // at a running server and the database is inspected afterwards.
 //
 // Run: npx tsx scripts/injectionTest.ts   (backend must be running on :3000)
+import { LEGAL_VERSION } from '../lib/legal.ts';
 import { prisma } from '../lib/prisma.ts';
 
 const API = 'http://localhost:3000/graphql';
@@ -93,7 +94,7 @@ const PAYLOADS = [
   await prisma.rateLimitHit.deleteMany({});
   const victim = `victim-${run}@example.test`;
   const squat = await gql(`mutation($n:String!,$s:String!,$e:String!,$p:String!,$y:String!){
-    registerCompany(name:$n,slug:$s,email:$e,password:$p,yourName:$y){ token } }`,
+    registerCompany(name:$n,slug:$s,email:$e,password:$p,yourName:$y,legalVersion:"${LEGAL_VERSION}"){ token } }`,
     { n: 'BigCorp Chemicals', s: `squat-${run}`, e: victim, p: 'attacker-password-1', y: 'Not The Owner' });
   const squatToken = squat.data?.registerCompany?.token;
   check('an account can still be opened (the address owner is emailed)', !!squatToken);

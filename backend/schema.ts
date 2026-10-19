@@ -383,6 +383,20 @@ export const typeDefs = `#graphql
     statements: Int!
   }
 
+  type LegalAcceptanceEntry {
+    version: String!
+    acceptedAt: String!
+    acceptedBy: String!
+  }
+
+  """Which version of the Terms, DPA and Privacy Policy this company has accepted."""
+  type CompanyLegal {
+    currentVersion: String!
+    acceptedVersion: String
+    needsAcceptance: Boolean!
+    history: [LegalAcceptanceEntry!]!
+  }
+
   type AdminInsights {
     totalCompanies: Int!
     totalSubmissions: Int!
@@ -618,6 +632,9 @@ export const typeDefs = `#graphql
     """Undecided access requests first, then the most recent decisions."""
     accessRequests: [AccessRequest!]!
     adminInsights: AdminInsights!
+    companyLegal: CompanyLegal!
+    """A PDF record of every acceptance, base64. Owner only."""
+    legalAcceptanceRecord: String!
     """Platform health over the last \`days\` days (1–365). Platform admin only."""
     adminHealth(days: Int!): AdminHealth!
     adminMfaStatus: MfaStatus!
@@ -639,7 +656,8 @@ export const typeDefs = `#graphql
     overrideSubmissionCheck(id: ID!, category: OverrideCategory!, reason: String!): Submission!
     clearSubmissionCheckOverride(id: ID!, category: OverrideCategory!): Submission!
     adminLogin(username: String!, password: String!, turnstileToken: String, totp: String): AuthPayload!
-    registerCompany(name: String!, slug: String!, email: String!, password: String!, yourName: String!, turnstileToken: String, requestNote: String): CompanyAuthPayload!
+    """\`legalVersion\` is the version of the Terms, DPA and Privacy Policy the applicant was shown and agreed to; it must be the current one."""
+    registerCompany(name: String!, slug: String!, email: String!, password: String!, yourName: String!, turnstileToken: String, requestNote: String, legalVersion: String): CompanyAuthPayload!
     """Opens a company's form. Platform admin only."""
     approveCompanyAccess(id: ID!): AccessRequest!
     """Declines an access request with a reason the applicant is told. Platform admin only."""
@@ -660,6 +678,8 @@ export const typeDefs = `#graphql
     revealDocumentNumber(id: ID!, credential: String!): RevealedDocument!
     """Everything held about the buyer of this statement, for a GDPR access request. Owner or reviewer, with a current second-factor code; logged."""
     exportBuyerData(id: ID!, credential: String!): BuyerExport!
+    """The owner accepts the current Terms, DPA and Privacy Policy; \`version\` must be the current one."""
+    acceptLegal(version: String!): CompanyLegal!
     """Deletes every statement of the buyer of this statement, for a GDPR erasure request. Owner only, with a current second-factor code; logged. Returns how many were deleted."""
     eraseBuyerData(id: ID!, credential: String!): Int!
     """

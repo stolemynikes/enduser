@@ -552,3 +552,20 @@ enum BuyerDataKind {
   EXPORT
   ERASURE
 }
+
+/// A company owner accepting the Terms, the Data Processing Agreement and the
+/// Privacy Policy, at one version (the date on the legal pages). One row per
+/// acceptance, so a company's history reads back: accepted on registration,
+/// accepted again after each change.
+model LegalAcceptance {
+  id         String   @id @default(cuid())
+  companyId  String
+  userId     String
+  /// Copied in, so the record still reads after the member leaves.
+  userName   String
+  userEmail  String
+  version    String
+  acceptedAt DateTime @default(now())
+
+  @@index([companyId, acceptedAt])
+}

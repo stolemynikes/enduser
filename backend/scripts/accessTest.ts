@@ -7,6 +7,7 @@
 // applicant is shown.
 //
 // Needs a running server. Run: npx tsx scripts/accessTest.ts
+import { LEGAL_VERSION } from '../lib/legal.ts';
 import 'dotenv/config';
 import jwt from 'jsonwebtoken';
 import { prisma } from '../lib/prisma.ts';
@@ -34,7 +35,7 @@ const email = `access-${run}@test.local`;
 
 console.log('— Requesting access —');
 const reg = await gql(`mutation($n:String!,$s:String!,$e:String!,$p:String!,$y:String!,$note:String){
-  registerCompany(name:$n,slug:$s,email:$e,password:$p,yourName:$y,requestNote:$note){ token company{ id } } }`,
+  registerCompany(name:$n,slug:$s,email:$e,password:$p,yourName:$y,requestNote:$note,legalVersion:"${LEGAL_VERSION}"){ token company{ id } } }`,
   { n: `Access Lab ${run}`, s: slug, e: email, p: 'access-password-1', y: 'Applicant', note: 'Lab supplier, 40 orders a month.' });
 check('registration succeeds', !!reg.data, JSON.stringify(reg.errors));
 const companyToken: string = reg.data.registerCompany.token;

@@ -35,6 +35,7 @@ export async function purgeDeletedCompanies(
     if (sessionFailures) onSessionFailures?.(sessionFailures);
     await prisma.revealLog.deleteMany({ where: { companyId: company.id } });
     await prisma.buyerDataAction.deleteMany({ where: { companyId: company.id } });
+    await prisma.legalAcceptance.deleteMany({ where: { companyId: company.id } });
     await prisma.supportAccess.deleteMany({ where: { companyId: company.id } });
     await prisma.company.delete({ where: { id: company.id } });
     // A member who was only ever part of this company has no account left to

@@ -31,6 +31,7 @@ import { secondFactorError, mfaSetupRequiredError } from './auth.ts';
 import { GraphQLError } from 'graphql';
 import { checkCredential, revealDocumentNumber, revealHistory, revealsToday } from '../lib/reveal.ts';
 import { buildBuyerExport, buyerStatementIds } from '../lib/buyerData.ts';
+import { LEGAL_VERSION, acceptanceRecordPdf, legalStatus, recordAcceptance } from '../lib/legal.ts';
 import { deleteSubmissions } from '../lib/submissionDelete.ts';
 import {
   countPasskeys, finishAuthentication, finishRegistration, listPasskeys,
@@ -519,15 +520,30 @@ export const companyResolvers = {
         joinedAt: m.createdAt.toISOString(),
       }));
     },
+
+    companyLegal: async (_: unknown, __: unknown, ctx: Ctx) => {
+      const { companyId } = requireCompany(ctx);
+      return legalStatus(companyId);
+    },
+
+    legalAcceptanceRecord: async (_: unknown, __: unknown, ctx: Ctx) => {
+      const { companyId } = requireOwner(ctx);
+      return acceptanceRecordPdf(companyId, APP_URL());
+    },
   },
 
   Mutation: {
     registerCompany: async (
       _: unknown,
-      { name, slug, email, password, yourName, turnstileToken, requestNote }:
-        { name: string; slug: string; email: string; password: string; yourName: string; turnstileToken?: string; requestNote?: string }
+      { name, slug, email, password, yourName, turnstileToken, requestNote, legalVersion }:
+        { name: string; slug: string; email: string; password: string; yourName: string; turnstileToken?: string; requestNote?: string; legalVersion?: string }
     ) => {
       await verifyHumanOrThrow(turnstileToken);
+      // Agreement is to a specific text. A page left open across an update
+      // showed the old one, so the applicant is asked to look again.
+      if (legalVersion !== LEGAL_VERSION) {
+        throw new GraphQLError('Our terms were updated while this page was open. Reload it, read them, and agree again.', { extensions: { code: 'LEGAL_VERSION' } });
+      }
       // The company name is shown on a public form and inside every email this
       // tenant causes to be sent, so it is bounded here rather than wherever it
       // is rendered.
@@ -569,6 +585,7 @@ export const companyResolvers = {
       });
 
       const member = await prisma.companyMember.findFirst({ where: { companyId: company.id }, include: { user: true } });
+      await recordAcceptance(company.id, member!.user);
       void sendVerification(member!.user);
       if (!REGISTRATION_OPEN) {
         // One message per request to the platform admin. Budgeted per recipient
@@ -1046,6 +1063,18 @@ export const companyResolvers = {
           : secondFactorError(outcome.reason);
       }
       return { submissionId: id, documentNumber: outcome.documentNumber };
+    },
+
+    acceptLegal: async (_: unknown, { version }: { version: string }, ctx: Ctx) => {
+      const { companyId, companyUserId } = requireOwner(ctx);
+      // Platform staff cannot agree to a contract on a seller's behalf.
+      if (ctx.support) throw new GraphQLError('Not available in a support session.', { extensions: { code: 'FORBIDDEN' } });
+      if (version !== LEGAL_VERSION) {
+        throw new GraphQLError('The terms changed again since this page loaded. Reload it and review the latest version.', { extensions: { code: 'LEGAL_VERSION' } });
+      }
+      const m = await membershipOrThrow(companyId, companyUserId);
+      await recordAcceptance(companyId, m.user);
+      return legalStatus(companyId);
     },
 
     exportBuyerData: async (_: unknown, { id, credential }: { id: string; credential: string }, ctx: Ctx) => {
