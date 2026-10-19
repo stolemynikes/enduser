@@ -429,6 +429,14 @@ export const typeDefs = `#graphql
     effectiveDate: String!
   }
 
+  type DecisionExport {
+    filename: String!
+    csv: String!
+    rows: Int!
+    """True when the period held more decisions than one export carries; choose a shorter one."""
+    truncated: Boolean!
+  }
+
   type AdminInsights {
     totalCompanies: Int!
     totalSubmissions: Int!
@@ -715,6 +723,8 @@ export const typeDefs = `#graphql
     exportBuyerData(id: ID!, credential: String!): BuyerExport!
     """The owner accepts the current Terms, DPA and Privacy Policy; \`version\` must be the current one."""
     acceptLegal(version: String!): CompanyLegal!
+    """Every approval and denial between two dates (YYYY-MM-DD, inclusive) as CSV. Owner only, with a current second-factor code; logged."""
+    exportDecisions(from: String!, to: String!, credential: String!): DecisionExport!
     """Announces a sub-processor to every company owner by email and on the dashboard. Platform admin only."""
     announceSubprocessor(input: SubprocessorNoticeInput!): SubprocessorNoticeRecord!
     """Deletes every statement of the buyer of this statement, for a GDPR erasure request. Owner only, with a current second-factor code; logged. Returns how many were deleted."""

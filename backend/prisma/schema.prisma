@@ -551,6 +551,8 @@ model BuyerDataAction {
 enum BuyerDataKind {
   EXPORT
   ERASURE
+  /// The decision log for a period, for an auditor or an inspection.
+  DECISION_EXPORT
 }
 
 /// A company owner accepting the Terms, the Data Processing Agreement and the

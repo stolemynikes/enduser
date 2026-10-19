@@ -33,6 +33,7 @@ import { checkCredential, revealDocumentNumber, revealHistory, revealsToday } fr
 import { buildBuyerExport, buyerStatementIds } from '../lib/buyerData.ts';
 import { LEGAL_VERSION, acceptanceRecordPdf, legalStatus, recordAcceptance } from '../lib/legal.ts';
 import { activeNotices } from '../lib/subprocessors.ts';
+import { decisionLogCsv } from '../lib/decisionExport.ts';
 import { deleteSubmissions } from '../lib/submissionDelete.ts';
 import {
   countPasskeys, finishAuthentication, finishRegistration, listPasskeys,
@@ -93,13 +94,19 @@ function requireOwner(ctx: Ctx) {
 async function buyerRequestGate(ctx: Ctx, companyId: string, companyUserId: string, id: string, credential: string) {
   if (ctx.support) throw new GraphQLError('Not available in a support session.', { extensions: { code: 'FORBIDDEN' } });
   const anchor = await tenantSubmissions(companyId).getOwned(id);
-  const m = await membershipOrThrow(companyId, companyUserId);
-  const check = await checkCredential('companyUser', companyUserId, typeof credential === 'string' ? credential : '');
-  if (!check.ok) throw check.reason === 'no-credential' ? mfaSetupRequiredError() : secondFactorError(check.reason);
+  const m = await freshFactor(companyId, companyUserId, credential);
   return { anchor, m };
 }
 
-async function recordBuyerAction(companyId: string, userId: string, userName: string, kind: 'EXPORT' | 'ERASURE', statements: number) {
+/** The member, after a current second-factor code. */
+async function freshFactor(companyId: string, companyUserId: string, credential: string) {
+  const m = await membershipOrThrow(companyId, companyUserId);
+  const check = await checkCredential('companyUser', companyUserId, typeof credential === 'string' ? credential : '');
+  if (!check.ok) throw check.reason === 'no-credential' ? mfaSetupRequiredError() : secondFactorError(check.reason);
+  return m;
+}
+
+async function recordBuyerAction(companyId: string, userId: string, userName: string, kind: 'EXPORT' | 'ERASURE' | 'DECISION_EXPORT', statements: number) {
   // Not caught: an export or erasure that cannot be written down is refused
   // after the fact by surfacing the error, rather than going unrecorded.
   await prisma.buyerDataAction.create({
@@ -1085,6 +1092,21 @@ export const companyResolvers = {
       const m = await membershipOrThrow(companyId, companyUserId);
       await recordAcceptance(companyId, m.user);
       return legalStatus(companyId);
+    },
+
+    exportDecisions: async (
+      _: unknown, { from, to, credential }: { from: string; to: string; credential: string }, ctx: Ctx,
+    ) => {
+      const { companyId, companyUserId } = requireOwner(ctx);
+      if (ctx.support) throw new GraphQLError('Not available in a support session.', { extensions: { code: 'FORBIDDEN' } });
+      const isDay = (d: unknown) => typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d) && !Number.isNaN(Date.parse(d));
+      if (!isDay(from) || !isDay(to) || from > to) {
+        throw new GraphQLError('Choose a start and an end date, the start first.', { extensions: { code: 'BAD_USER_INPUT' } });
+      }
+      const m = await freshFactor(companyId, companyUserId, credential);
+      const out = await decisionLogCsv(companyId, from, to);
+      await recordBuyerAction(companyId, companyUserId, m.user.name, 'DECISION_EXPORT', out.rows);
+      return { filename: `decisions-${from}-to-${to}.csv`, ...out };
     },
 
     exportBuyerData: async (_: unknown, { id, credential }: { id: string; credential: string }, ctx: Ctx) => {

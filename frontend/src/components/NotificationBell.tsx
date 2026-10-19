@@ -14,6 +14,7 @@ import { useConfirm } from './ConfirmDialog.tsx';
 import { useToast } from './Toast.tsx';
 import { Select } from './Select.tsx';
 import { DatePicker } from './DatePicker.tsx';
+import { DecisionExport } from './DecisionExport.tsx';
 
 const NOTIFICATIONS = gql`
   query Notifications {
@@ -225,6 +226,7 @@ function TeamDecisions({ onOpenSubmission }: { onOpenSubmission?: (id: string) =
           <p className="nb-page-sub">Who approved or denied which statement. Only you, as owner, see this.</p>
         </div>
       </div>
+      <DecisionExport defaultFrom={from || undefined} defaultTo={to || undefined} />
 
       <div className="nb-tools">
         <label className="nb-search">
