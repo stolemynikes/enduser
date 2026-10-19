@@ -73,6 +73,7 @@ export const sceneStyles = `
 .lp-art .t-chip { font-size: 7.5px; font-weight: 800; letter-spacing: 0.08em; }
 .lp-art .t-pill { font-size: 10px; font-weight: 600; fill: var(--text); }
 .lp-art .t-dark { fill: var(--bg); }
+.lp-art .t-white { fill: #fff; }
 .lp-art .t-green { fill: var(--green); }
 .lp-art .t-acc { fill: var(--accent); }
 .lp-art .t-amber { fill: var(--amber); }

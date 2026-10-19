@@ -284,7 +284,7 @@ const styles = `
   .lp-nav-link { font-size: 15px; font-weight: 500; color: var(--mid); text-decoration: none; transition: color 0.15s; }
   .lp-nav-link:hover { color: var(--text); }
   .lp-nav-cta {
-    font-size: 14px; font-weight: 700; color: var(--bg); text-decoration: none;
+    font-size: 14px; font-weight: 700; color: #fff; text-decoration: none;
     background: var(--accent); padding: 10px 18px; border-radius: 8px; transition: background 0.2s;
   }
   .lp-nav-cta:hover { background: #74abf8; }
@@ -334,7 +334,7 @@ const styles = `
   .lp-hero-sub { font-size: 18px; color: var(--mid); max-width: 500px; line-height: 1.7; margin-bottom: 2.25rem; }
   .lp-hero-actions { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
   .lp-btn-primary {
-    font-size: 15px; font-weight: 700; color: var(--bg); text-decoration: none;
+    font-size: 15px; font-weight: 700; color: #fff; text-decoration: none;
     background: var(--accent); border-radius: 10px; padding: 14px 26px;
     border: 1px solid transparent;
     box-shadow: 0 8px 24px rgba(91,156,246,0.18);

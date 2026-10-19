@@ -252,7 +252,7 @@ const styles = `
     border-radius: 8px; padding: 10px 14px; font-size: 12px; color: #f04e5e;
   }
   .cr-btn {
-    font-family: inherit; font-size: 13px; font-weight: 600; color: #0f0f10;
+    font-family: inherit; font-size: 13px; font-weight: 600; color: #fff;
     background: #5b9cf6; border: none; border-radius: 10px; padding: 12px;
     cursor: pointer; transition: transform 0.15s, box-shadow 0.2s;
     box-shadow: 0 8px 24px rgba(91,156,246,0.18);

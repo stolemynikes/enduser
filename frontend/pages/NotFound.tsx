@@ -114,7 +114,7 @@ const styles = `
   .nf-note { margin: 0 0 2rem; font-size: 15px; line-height: 1.6; color: #8a8a8f; max-width: 460px; }
   .nf-btn {
     display: inline-flex; align-items: center; min-height: 48px;
-    font-size: 15px; font-weight: 700; color: var(--bg); text-decoration: none;
+    font-size: 15px; font-weight: 700; color: #fff; text-decoration: none;
     background: var(--accent); border-radius: 10px; padding: 0 26px;
     box-shadow: 0 8px 24px rgba(91,156,246,0.18);
     transition: transform 0.15s, box-shadow 0.2s, background 0.2s;

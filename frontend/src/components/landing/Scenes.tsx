@@ -98,7 +98,7 @@ export function HeroScene() {
 
         <g className="pop h-press">
           <rect x="224" y="318" width="214" height="26" rx="8" className="f-acc"/>
-          <text x="331" y="335" textAnchor="middle" className="t-lab t-dark" style={{ fontSize: "10.5px", fontWeight: 700 }}>Send statement →</text>
+          <text x="331" y="335" textAnchor="middle" className="t-lab t-white" style={{ fontSize: "10.5px", fontWeight: 700 }}>Send statement →</text>
         </g>
       </g>
       <mask id="lp-h-mask" maskUnits="userSpaceOnUse" x="0" y="0" width="520" height="420">
@@ -223,7 +223,7 @@ export function RouteScene() {
         <rect x="636" y="136" width="74" height="60" rx="8" className="f-s2 s-line"/>
         <g className="r-pending"><rect x="644" y="145" width="58" height="13" rx="6.5" className="f-amber"/><text x="673" y="154" textAnchor="middle" className="t-chip t-dark" style={{ fontSize: "6.5px" }}>PENDING</text></g>
         <g className="r-approved"><rect x="644" y="145" width="58" height="13" rx="6.5" className="f-green"/><text x="673" y="154" textAnchor="middle" className="t-chip t-dark" style={{ fontSize: "6.5px" }}>APPROVED</text></g>
-        <g className="pop r-btn"><rect x="644" y="166" width="58" height="20" rx="6" className="f-green"/><text x="673" y="179" textAnchor="middle" className="t-chip t-dark">APPROVE</text></g>
+        <g className="pop r-btn"><rect x="644" y="166" width="58" height="20" rx="6" className="f-green"/><text x="673" y="179" textAnchor="middle" className="t-chip t-white">APPROVE</text></g>
         </g>
         <g className="r-cursor"><path d="M0 0 L0 15 L4 11 L7 17 L9.5 16 L6.5 10 L12 10 Z" className="f-paper" stroke="var(--bg)" strokeWidth="1"/></g>
         <rect x="545" y="236" width="160" height="8" rx="3" className="f-line"/>
@@ -444,7 +444,7 @@ export function DecisionScene() {
       {/* her queue, shown large */}
       <g className="pop d-card">
       <rect x="150" y="30" width="212" height="104" rx="12" className="f-s2 s-line"/>
-      <g className="pop d-btn"><rect x="168" y="102" width="64" height="20" rx="6" className="f-green"/><text x="200" y="115" textAnchor="middle" className="t-chip t-dark">APPROVE</text></g>
+      <g className="pop d-btn"><rect x="168" y="102" width="64" height="20" rx="6" className="f-green"/><text x="200" y="115" textAnchor="middle" className="t-chip t-white">APPROVE</text></g>
       <rect x="240" y="102" width="52" height="20" rx="6" fill="none" className="s-line"/><text x="266" y="115" textAnchor="middle" className="t-chip" fill="var(--mid)">DENY</text>
       <text x="168" y="52" className="t-cap">REVIEW QUEUE</text>
       <rect x="168" y="60" width="176" height="1.5" className="f-line"/>
