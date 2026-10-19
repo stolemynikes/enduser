@@ -81,6 +81,10 @@ try {
   const rec = await gql('{ legalAcceptanceRecord }', {}, ownerToken);
   check('the owner downloads a PDF', Buffer.from(rec.data?.legalAcceptanceRecord ?? '', 'base64').subarray(0, 4).toString() === '%PDF', JSON.stringify(rec.errors));
   check('a reviewer cannot', !!(await gql('{ legalAcceptanceRecord }', {}, revToken)).errors?.length);
+  if (admin) {
+    const support = signCompanyToken({ companyUserId: owner!.userId, companyId, role: 'OWNER', support: true, adminId: admin.id });
+    check('platform support cannot download it', !!(await gql('{ legalAcceptanceRecord }', {}, support)).errors?.length);
+  }
   check('a visitor cannot read the status', !!(await gql(STATUS)).errors?.length);
 } finally {
   for (const c of companies) {

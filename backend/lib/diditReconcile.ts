@@ -52,9 +52,16 @@ export type ReconcileResult = {
   stuck: number;
 };
 
-/** `only` limits the pass to these submissions; for tests, which share the database. */
+/**
+ * `only` limits the pass to these submissions and `batch` the Didit calls;
+ * both for tests, which share the database.
+ *
+ * Least-recently-tried first, and every try is stamped: a check that never
+ * resolves moves to the back instead of holding the front of the queue, so
+ * newer lost webhooks are still reached. A stuck check is reported once.
+ */
 export async function reconcileOpenVerifications(
-  { now = Date.now(), only }: { now?: number; only?: string[] } = {},
+  { now = Date.now(), only, batch = BATCH }: { now?: number; only?: string[]; batch?: number } = {},
 ): Promise<ReconcileResult> {
   const result: ReconcileResult = { resolved: 0, repurged: 0, stuck: 0 };
   const rows = await prisma.submission.findMany({
@@ -67,41 +74,48 @@ export async function reconcileOpenVerifications(
       idVerificationStatus: { not: 'NOT_CHECKED' },
       ...(only ? { id: { in: only } } : {}),
     },
-    select: { id: true, idVerificationSessionId: true, idVerificationStatus: true, createdAt: true },
-    orderBy: { createdAt: 'asc' },
-    take: BATCH,
+    select: { id: true, idVerificationSessionId: true, idVerificationStatus: true, createdAt: true, idStuckReportedAt: true },
+    orderBy: [{ idReconciledAt: { sort: 'asc', nulls: 'first' } }, { createdAt: 'asc' }],
+    take: batch,
   });
 
   for (const row of rows) {
     const sessionId = row.idVerificationSessionId as string;
     const old = now - row.createdAt.getTime() > STUCK_MS;
+    let done = false;
 
     if (FINAL.has(row.idVerificationStatus)) {
       // Decided, but the deletion at Didit failed when it was recorded.
       if (await deleteSession(sessionId)) {
         await prisma.submission.update({ where: { id: row.id }, data: { idVerificationPurged: true } });
         result.repurged++;
-      } else if (old) {
-        console.error(`[didit] session ${sessionId} (submission ${row.id}) is decided but still not deleted at Didit`);
-        result.stuck++;
+        done = true;
       }
-      continue;
+    } else {
+      try {
+        const decision = await retrieveDecision(sessionId);
+        if (FINAL.has(decision.status)) {
+          await recordDecision(row.id, sessionId, decision);
+          result.resolved++;
+          done = true;
+        }
+      } catch (err: any) {
+        console.error(`[didit] reconcile could not fetch session ${sessionId}: ${err?.message ?? 'unknown error'}`);
+      }
     }
+    if (done) continue;
 
-    try {
-      const decision = await retrieveDecision(sessionId);
-      if (FINAL.has(decision.status)) {
-        await recordDecision(row.id, sessionId, decision);
-        result.resolved++;
-        continue;
-      }
-    } catch (err: any) {
-      console.error(`[didit] reconcile could not fetch session ${sessionId}: ${err?.message ?? 'unknown error'}`);
-    }
-    if (old) {
-      console.error(`[didit] identity check for submission ${row.id} is still undecided after 7 days`);
+    const report = old && !row.idStuckReportedAt;
+    if (report) {
+      console.error(FINAL.has(row.idVerificationStatus)
+        ? `[didit] session ${sessionId} (submission ${row.id}) is decided but still not deleted at Didit`
+        : `[didit] identity check for submission ${row.id} is still undecided after 7 days`);
       result.stuck++;
     }
+    await prisma.submission.update({
+      where: { id: row.id },
+      data: { idReconciledAt: new Date(now), ...(report ? { idStuckReportedAt: new Date(now) } : {}) },
+    });
   }
   return result;
 }

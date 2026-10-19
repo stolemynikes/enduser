@@ -14,12 +14,22 @@ process.env.DIDIT_WORKFLOW_ID = 'test-workflow';
 
 const deleted: string[] = [];
 const failing = new Set<string>();
+/** Already gone at Didit: the delete answers 404, and so does its decision. */
+const gone = new Set<string>();
+/** Delete answers 404 but the session is still there (e.g. a wrong path). */
+const misrouted = new Set<string>();
 globalThis.fetch = (async (input: any, init?: any) => {
   const url = String(input);
-  const m = url.match(/\/v3\/session\/([^/]+)\/delete\/$/);
-  if (!m || init?.method !== 'DELETE') throw new Error(`unexpected request in test: ${url}`);
-  const id = decodeURIComponent(m[1]);
+  const del = url.match(/\/v3\/session\/([^/]+)\/delete\/$/);
+  const dec = url.match(/\/v3\/session\/([^/]+)\/decision\/$/);
+  if (dec) {
+    const id = decodeURIComponent(dec[1]);
+    return gone.has(id) ? new Response('not found', { status: 404 }) : new Response('{"status":"Approved"}', { status: 200 });
+  }
+  if (!del || init?.method !== 'DELETE') throw new Error(`unexpected request in test: ${url}`);
+  const id = decodeURIComponent(del[1]);
   deleted.push(id);
+  if (gone.has(id) || misrouted.has(id)) return new Response('not found', { status: 404 });
   return failing.has(id) ? new Response('error', { status: 500 }) : new Response(null, { status: 204 });
 }) as typeof fetch;
 
@@ -48,7 +58,11 @@ const rows = {
   submitted: { expiresAt: ago(2 * HOUR), consumedAt: ago(3 * HOUR) },
   spentNoSubmission: { expiresAt: ago(2 * HOUR), consumedAt: ago(3 * HOUR) },
   stale: { expiresAt: ago(31 * DAY) },
+  alreadyGone: { expiresAt: ago(2 * HOUR) },
+  misrouted: { expiresAt: ago(2 * HOUR) },
 };
+gone.add(id('alreadyGone'));
+misrouted.add(id('misrouted'));
 failing.add(id('failing'));
 failing.add(id('stale'));
 
@@ -85,6 +99,8 @@ try {
   console.log('— Failures —');
   check('a failed purge keeps the row for the next night', called('failing') && left.has(id('failing')));
   check('past the retry window a failing purge is dropped', called('stale') && !left.has(id('stale')));
+  check('a session Didit no longer has counts as deleted', called('alreadyGone') && !left.has(id('alreadyGone')));
+  check('a 404 while the session still exists does not', called('misrouted') && left.has(id('misrouted')));
 } finally {
   await prisma.submission.delete({ where: { id: submission.id } });
   await prisma.verificationSession.deleteMany({ where: { sessionId: { startsWith: `purgetest-${run}-` } } });

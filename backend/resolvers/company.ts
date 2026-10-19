@@ -545,6 +545,8 @@ export const companyResolvers = {
 
     legalAcceptanceRecord: async (_: unknown, __: unknown, ctx: Ctx) => {
       const { companyId } = requireOwner(ctx);
+      // It lists owners' names and email addresses; the company's own file.
+      if (ctx.support) throw new GraphQLError('Not available in a support session.', { extensions: { code: 'FORBIDDEN' } });
       return acceptanceRecordPdf(companyId, APP_URL());
     },
   },

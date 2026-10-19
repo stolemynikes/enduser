@@ -412,12 +412,22 @@ app.use('/graphql', (req, res, next) => {
   const query = (req.body as { query?: string })?.query
     ?? (typeof req.query?.query === 'string' ? req.query.query : undefined);
   if (typeof query !== 'string') return next();
-  if (CREDENTIAL_OPS.test(query)) return loginLimiter(req, res, next);
-  if (MAIL_OPS.test(query)) return mailLimiter(req, res, next);
-  if (query.includes('submitEndUserStatement')) return submitLimiter(req, res, next);
-  if (query.includes('checkStatement')) return checkLimiter(req, res, next);
-  if (SENSITIVE_OPS.test(query)) return sensitiveLimiter(req, res, next);
-  return next();
+  // Every matching budget applies, one after the other. Taking only the first
+  // match let a request carry a decoy (a comment naming a cheaper operation)
+  // to be counted against a looser budget than the one it really spends.
+  const apply = [
+    CREDENTIAL_OPS.test(query) && loginLimiter,
+    MAIL_OPS.test(query) && mailLimiter,
+    query.includes('submitEndUserStatement') && submitLimiter,
+    query.includes('checkStatement') && checkLimiter,
+    SENSITIVE_OPS.test(query) && sensitiveLimiter,
+  ].filter(Boolean) as ((rq: typeof req, rs: typeof res, nx: (err?: unknown) => void) => void)[];
+  const run = (i: number) => (err?: unknown) => {
+    if (err) return next(err);
+    if (i === apply.length) return next();
+    apply[i](req, res, run(i + 1));
+  };
+  run(0)();
 });
 
 app.use(

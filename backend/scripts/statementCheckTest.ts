@@ -72,8 +72,19 @@ try {
   let limited = false;
   for (let i = 0; i < 30 && !limited; i++) limited = (await ask(s.id, flipped)).status === 429;
   check('repeated guesses are rate-limited', limited);
+
+  console.log('— Decoys —');
+  // Spend the budget for second-factor operations, then send one more that
+  // also names the public check in a comment: it must still be refused.
+  await prisma.rateLimitHit.deleteMany({ where: { OR: [{ key: { contains: 'sensitive' } }, { key: { contains: 'statement-check' } }] } });
+  const sensitive = (q: string) => fetch(API, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'apollo-require-preflight': '1' },
+    body: JSON.stringify({ query: q }),
+  }).then(r => r.status);
+  for (let i = 0; i < 30; i++) await sensitive('{ legalAcceptanceRecord }');
+  check('a comment naming a cheaper operation does not escape the budget', (await sensitive('{ legalAcceptanceRecord } # checkStatement')) === 429);
 } finally {
-  await prisma.rateLimitHit.deleteMany({ where: { key: { contains: 'statement-check' } } });
+  await prisma.rateLimitHit.deleteMany({ where: { OR: [{ key: { contains: 'statement-check' } }, { key: { contains: 'sensitive' } }] } });
   await prisma.submission.deleteMany({ where: { companyId: company.id } });
   await prisma.company.delete({ where: { id: company.id } });
   await prisma.$disconnect();

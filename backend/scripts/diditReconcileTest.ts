@@ -91,6 +91,21 @@ try {
   check('a check younger than an hour is left to its webhook', !fetched.includes(sid('recent')) && !deleted.includes(sid('recent')));
   check('an already purged check is not contacted', !fetched.includes(sid('purged')) && !deleted.includes(sid('purged')));
   check('the counts add up', r.resolved === 1 && r.repurged === 1, JSON.stringify(r));
+
+  console.log('— Never stuck at the front —');
+  const again = await reconcileOpenVerifications({ only: Object.values(ids) });
+  check('a stuck check is reported once, not every night', again.stuck === 0, JSON.stringify(again));
+  // Two rows left open: the stuck one (old) and one still in review. With
+  // room for one call a night, both must still be reached in turn.
+  answers[sid('reviewing')] = 'Approved';
+  const seen = new Set<string>();
+  for (let night = 0; night < 2; night++) {
+    const before = fetched.length;
+    await reconcileOpenVerifications({ only: Object.values(ids), batch: 1 });
+    fetched.slice(before).forEach(f => seen.add(f));
+  }
+  check('with one call a night, the newer check is still reached', seen.has(sid('reviewing')), [...seen].join(','));
+  check('and recorded', (await get('reviewing'))?.idVerificationStatus === 'APPROVED');
 } finally {
   await prisma.submission.deleteMany({ where: { id: { in: Object.values(ids) } } });
   await prisma.$disconnect();

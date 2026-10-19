@@ -123,6 +123,8 @@ try {
   const licence = await submit(sid('licence'));
   check('a driving licence is refused', licence.errors?.[0]?.extensions?.code === 'ID_DOCUMENT_TYPE', JSON.stringify(licence.errors ?? licence.data));
   check('…and its session is deleted at Didit right away', deleted.includes(sid('licence')));
+  check('the refused sessions are not left for the nightly prune to delete again',
+    (await prisma.verificationSession.count({ where: { sessionId: { in: [sid('minor'), sid('licence')] } } })) === 0);
 
   const refused = await prisma.submission.count({ where: { idVerificationSessionId: { in: [sid('minor'), sid('licence')] } } });
   check('no submission was stored for either', refused === 0);

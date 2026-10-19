@@ -307,7 +307,12 @@ export const submissionResolvers = {
         // Didit now rather than by the nightly prune — for an under-age buyer
         // especially, a day is too long to keep them.
         const refuse = async (code: BuyerErrorCode, message: string): Promise<never> => {
-          if (await deleteSession(diditSessionId)) recordEvent('didit-purge-refused');
+          if (await deleteSession(diditSessionId)) {
+            recordEvent('didit-purge-refused');
+            // Done with it: left in place, the nightly prune would see a spent
+            // session no submission owns and try to delete it a second time.
+            await prisma.verificationSession.deleteMany({ where: { sessionId: diditSessionId } }).catch(() => {});
+          }
           throw buyerError(code, message);
         };
 

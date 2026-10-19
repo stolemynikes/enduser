@@ -78,7 +78,7 @@ async function call(path: string, init: RequestInit = {}): Promise<any> {
   if (!res.ok) {
     // Body may carry provider detail we do not want to surface to the buyer.
     console.error(`[didit] ${init.method ?? 'GET'} ${path} → ${res.status}: ${text.slice(0, 500)}`);
-    throw new Error(`Didit request failed (${res.status})`);
+    throw Object.assign(new Error(`Didit request failed (${res.status})`), { status: res.status });
   }
   return text ? JSON.parse(text) : {};
 }
@@ -118,10 +118,22 @@ export async function retrieveDecision(sessionId: string): Promise<DiditDecision
  * can be reconciled.
  */
 export async function deleteSession(sessionId: string): Promise<boolean> {
+  const id = encodeURIComponent(sessionId);
   try {
-    await call(`/v3/session/${encodeURIComponent(sessionId)}/delete/`, { method: 'DELETE' });
+    await call(`/v3/session/${id}/delete/`, { method: 'DELETE' });
     return true;
   } catch (err: any) {
+    // A 404 usually means it is already gone — deleted earlier, or never
+    // created. Not taken on trust: a wrong path also answers 404 (the delete
+    // route was once wrong and every purge "failed" that way). Only when the
+    // session's own decision is gone as well does it count as deleted.
+    if (err?.status === 404) {
+      try {
+        await call(`/v3/session/${id}/decision/`);
+      } catch (check: any) {
+        if (check?.status === 404) return true;
+      }
+    }
     console.error(`[didit] purge failed for session ${sessionId}: ${err?.message ?? 'unknown error'}`);
     return false;
   }

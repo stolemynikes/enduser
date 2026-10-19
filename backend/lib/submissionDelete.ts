@@ -20,8 +20,14 @@ export type DeleteResult = {
 };
 
 export async function deleteSubmissions(where: Prisma.SubmissionWhereInput): Promise<DeleteResult> {
-  const sessionFailures = await purgeSessionsOf(where);
+  // The set is fixed first and everything acts on exactly it, so a row that
+  // starts matching in between is neither deleted nor left with its session
+  // purged and the row kept.
   const ids = (await prisma.submission.findMany({ where, select: { id: true } })).map(r => r.id);
+  let sessionFailures = 0;
+  for (let i = 0; i < ids.length; i += CHUNK) {
+    sessionFailures += await purgeSessionsOf({ id: { in: ids.slice(i, i + CHUNK) } });
+  }
   let count = 0;
   for (let i = 0; i < ids.length; i += CHUNK) {
     const chunk = ids.slice(i, i + CHUNK);

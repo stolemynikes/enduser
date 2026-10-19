@@ -19,13 +19,12 @@ import PDFDocument from 'pdfkit';
 import { prisma } from './prisma.ts';
 import { RETENTION_MONTHS } from './retention.ts';
 
-/** Far beyond what one seller holds in the 18 months a statement is kept. */
-const SCAN_CAP = 50_000;
+const PAGE = 5_000;
 
 const normEmail = (e: string | null | undefined) => String(e ?? '').trim().toLowerCase();
 
 /**
- * Ids of this buyer's statements at this seller, oldest first. The anchor must
+ * Ids of this buyer's statements at this seller. The anchor must
  * already be proved to belong to `companyId`.
  */
 export async function buyerStatementIds(
@@ -33,12 +32,21 @@ export async function buyerStatementIds(
   anchor: { id: string; email: string; idDocumentNumberHash: string | null },
 ): Promise<string[]> {
   const email = normEmail(anchor.email);
-  const rows = await prisma.submission.findMany({
-    where: { companyId, isTest: false },
-    select: { id: true, email: true, idDocumentNumberHash: true, createdAt: true },
-    orderBy: { createdAt: 'asc' },
-    take: SCAN_CAP,
-  });
+  // Every statement of the seller is read, in pages — an erasure that stopped
+  // at a cap would report success and leave the newest statements behind.
+  const rows: { id: string; email: string; idDocumentNumberHash: string | null }[] = [];
+  let after = '';
+  for (;;) {
+    const page = await prisma.submission.findMany({
+      where: { companyId, isTest: false, id: { gt: after } },
+      select: { id: true, email: true, idDocumentNumberHash: true },
+      orderBy: { id: 'asc' },
+      take: PAGE,
+    });
+    rows.push(...page);
+    if (page.length < PAGE) break;
+    after = page[page.length - 1].id;
+  }
   const ids = rows
     .filter(r => r.id === anchor.id
       || (email && normEmail(r.email) === email)

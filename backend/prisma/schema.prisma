@@ -45,6 +45,12 @@ model Submission {
   idVerificationCheckedAt DateTime?
   /// True once the Didit-side session (including the document images) has been purged.
   idVerificationPurged    Boolean               @default(false)
+  /// When the nightly reconcile last tried this check. It works through open
+  /// checks least-recently-tried first, so ones that never resolve cannot
+  /// hold the front of the queue for good.
+  idReconciledAt          DateTime?
+  /// When this check was reported as stuck, so the admin is told once.
+  idStuckReportedAt       DateTime?
   /// Deterministic fingerprints, so equal values can be found without storing a
   /// readable one. Everything above is encrypted with a random IV, which means
   /// the same passport number twice produces two unrelated ciphertexts and no
