@@ -225,8 +225,8 @@ function TeamDecisions({ onOpenSubmission }: { onOpenSubmission?: (id: string) =
           <h3 id="nb-team-h" className="nb-col-title">Team decisions</h3>
           <p className="nb-page-sub">Who approved or denied which statement. Only you, as owner, see this.</p>
         </div>
+        <DecisionExport />
       </div>
-      <DecisionExport defaultFrom={from || undefined} defaultTo={to || undefined} />
 
       <div className="nb-tools">
         <label className="nb-search">
