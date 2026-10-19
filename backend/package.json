@@ -7,7 +7,7 @@
     "start": "node index.ts",
     "migrate": "prisma migrate deploy",
     "test": "tsx scripts/cipherTest.ts && tsx scripts/matchKeysTest.ts && tsx scripts/totpTest.ts && tsx scripts/statementPdfTest.ts && tsx scripts/precursorNamesTest.ts && tsx scripts/substanceCheckTest.ts && tsx scripts/diditWebhookTest.ts && tsx scripts/securityRegressionTest.ts && tsx scripts/injectionTest.ts && tsx scripts/crossTenantTest.ts && tsx scripts/inviteAuthTest.ts && tsx scripts/qolTest.ts && tsx scripts/mfaTest.ts && tsx scripts/revealTest.ts && tsx scripts/passkeyTest.ts && tsx scripts/mfaRequiredTest.ts && tsx scripts/hardeningTest.ts && tsx scripts/buyerErrorTest.ts && tsx scripts/translateTest.ts && tsx scripts/statementScreenTest.ts && tsx scripts/accessTest.ts",
-    "dev": "nodemon --exec tsx index.ts",
+    "dev": "tsx watch index.ts",
     "typecheck": "tsc --noEmit",
     "test:offline": "tsx scripts/cipherTest.ts && tsx scripts/matchKeysTest.ts && tsx scripts/totpTest.ts && tsx scripts/statementPdfTest.ts && tsx scripts/precursorNamesTest.ts && tsx scripts/translateTest.ts && tsx scripts/statementScreenTest.ts && tsx scripts/accessTest.ts",
     "email:preview": "MAIL_PREVIEW=1 tsx scripts/emailPreview.ts"
@@ -49,7 +49,6 @@
     "@types/pdfkit": "^0.17.6",
     "@types/pg": "^8.20.0",
     "@types/qrcode": "^1.5.6",
-    "nodemon": "^3.1.10",
     "prisma": "^7.8.0",
     "tsx": "^4.22.4",
     "typescript": "^7.0.2"
