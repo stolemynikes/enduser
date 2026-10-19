@@ -29,6 +29,7 @@ const VerifyEmail = lazy(() => import('../pages/VerifyEmail.tsx'));
 const HowItWorks = lazy(() => import('../pages/HowItWorks.tsx'));
 const Docs = lazy(() => import('../pages/legal/Docs.tsx'));
 const Security = lazy(() => import('../pages/legal/Security.tsx'));
+const StatementCheck = lazy(() => import('../pages/StatementCheck.tsx'));
 const Privacy = lazy(() => import('../pages/legal/Privacy.tsx'));
 const Terms = lazy(() => import('../pages/legal/Terms.tsx'));
 const Dpa = lazy(() => import('../pages/legal/Dpa.tsx'));
@@ -95,6 +96,8 @@ export default function App() {
       <Route path="/terms" element={<Terms />} />
       <Route path="/dpa" element={<Dpa />} />
       <Route path="/security" element={<Security />} />
+      <Route path="/statement-check" element={<StatementCheck />} />
+      <Route path="/statement-check/:reference" element={<StatementCheck />} />
       {/* Embeddable form: the same form, chrome-free, for an iframe on the
           seller's own website. Kept above the /:slug catch-all. */}
       <Route path="/embed/:slug" element={<Form embed />} />

@@ -89,6 +89,7 @@ import { statementCopy } from '../lib/statementCopy.ts';
 import { matchKeys } from '../lib/matchKeys.ts';
 import { buyerError, type BuyerErrorCode } from '../lib/buyerError.ts';
 import { recordEvent } from '../lib/ops.ts';
+import { checkStatement } from '../lib/statementCheck.ts';
 import { revealDocumentNumber } from '../lib/reveal.ts';
 import { secondFactorError, mfaSetupRequiredError } from './auth.ts';
 import { notifySubmission, notify } from '../lib/notifications.ts';
@@ -102,6 +103,9 @@ const RECHECK_COOLDOWN_MS = 30_000;
 
 export const submissionResolvers = {
   Query: {
+    checkStatement: (_: unknown, { reference, code }: { reference: string; code: string }) =>
+      checkStatement(reference, code),
+
     /**
      * The platform-wide queue. Paged: unbounded, this decrypted every
      * submission in the database into one response, so a single click turned

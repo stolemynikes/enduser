@@ -140,7 +140,7 @@ const RESERVED_SLUGS = new Set([
   // The other public pages, and the account routes that were missing here: a
   // company called "Reset" would otherwise have taken /reset/... from everyone.
   'docs', 'privacy', 'terms', 'dpa', 'how-it-works', 'legal', 'help', 'contact',
-  'security', 'about', 'pricing', 'status',
+  'security', 'about', 'pricing', 'status', 'statement-check',
   'forgot', 'reset', 'verify', 'health', 'robots.txt', 'security-policy.txt',
   // Retired in-house OCR routes — still reserved so an old link can never be
   // shadowed by a company form.

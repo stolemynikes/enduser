@@ -44,6 +44,7 @@ export default function Security() {
           <li>A strict Content-Security-Policy, framing denied except for the embeddable form, and no third-party scripts besides the anti-robot check and the identity-verification window. Fonts are served from our own origin.</li>
           <li>Public forms and sign-in are protected by an anti-robot check and per-address rate limits.</li>
           <li>Incoming webhooks from the verification provider are checked by signature, and their content is never trusted: the result is fetched again from the provider.</li>
+          <li>Each statement PDF carries a reference and a code that anyone holding it can check at <a href="/statement-check">/statement-check</a>. The check shows only the date, the seller and the status; the code cannot be derived without the server, and guesses are rate-limited.</li>
         </ul>
       </Clause>
 

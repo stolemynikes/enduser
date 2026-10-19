@@ -49,7 +49,7 @@ const STATUS_TEXT: Record<string, string> = {
 
 export function buildStatementPdf(
   submission: StatementForPdf,
-  { sellerName, termsText, termsUrl }: { sellerName?: string; termsText?: string; termsUrl?: string },
+  { sellerName, termsText, termsUrl, checkUrl, checkCode }: { sellerName?: string; termsText?: string; termsUrl?: string; checkUrl?: string; checkCode?: string },
 ): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ size: 'A4', margin: 56, info: {
@@ -149,6 +149,12 @@ export function buildStatementPdf(
       + 'identity document details and the supplier\'s verification results are not included.',
       { align: 'left' },
     );
+    if (checkUrl && checkCode) {
+      doc.moveDown(0.6);
+      doc.font('Helvetica').fontSize(7.5).fillColor(MUTED)
+        .text(`To check this copy is genuine: reference ${submission.id}, code ${checkCode.replace(/(.{5})(?=.)/g, '$1-')}, at `, { continued: true })
+        .fillColor(NAVY).text(checkUrl, { link: checkUrl, underline: true });
+    }
 
     doc.end();
   });

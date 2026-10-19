@@ -456,6 +456,15 @@ export const typeDefs = `#graphql
     slugs: [String!]
   }
 
+  """Whether a statement PDF is genuine. Shows nothing about the buyer."""
+  type StatementCheck {
+    """GENUINE, GENUINE_NOT_HELD (the code is right but the statement has been deleted), or UNKNOWN."""
+    result: String!
+    submittedAt: String
+    sellerName: String
+    status: String
+  }
+
   type AdminInsights {
     totalCompanies: Int!
     totalSubmissions: Int!
@@ -692,6 +701,8 @@ export const typeDefs = `#graphql
     accessRequests: [AccessRequest!]!
     adminInsights: AdminInsights!
     companyLegal: CompanyLegal!
+    """Public: check the reference and code printed on a statement PDF."""
+    checkStatement(reference: String!, code: String!): StatementCheck!
     """Announced sub-processor changes, until a week after they take effect."""
     subprocessorNotices: [SubprocessorAnnouncement!]!
     adminSubprocessorNotices: [SubprocessorNoticeRecord!]!

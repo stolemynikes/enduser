@@ -251,6 +251,14 @@ const webhookLimiter = limiter('webhook', 60 * 1000, 120);
 // re-sends. Low, because no legitimate use needs more.
 const mailLimiter = limiter('mail-out', 60 * 60 * 1000, 20);
 
+// The public statement check: anyone may ask, so guessing codes is bounded
+// here as well as by the code's length.
+const checkLimiter = limiter('statement-check', 60 * 1000, 20);
+
+// Exports and erasures each check a second-factor code and build a file;
+// neither has a reason to be called more than a few times in a row.
+const sensitiveLimiter = limiter('sensitive', 15 * 60 * 1000, 30);
+
 // Start a hosted identity verification. Public and unauthenticated, so it is
 // rate-limited and bounded by the session store's capacity. The document never
 // touches this server — the buyer completes capture, liveness and face match on
@@ -396,6 +404,8 @@ const CREDENTIAL_OPS =
 // just registered could otherwise push 120 invitations a minute at arbitrary
 // inboxes, carrying their own wording, from our sending domain.
 const MAIL_OPS = /inviteMember|resendEmailVerification/;
+// Second-factor-gated reads and deletions of many statements at once.
+const SENSITIVE_OPS = /exportBuyerData|eraseBuyerData|exportDecisions|revealDocumentNumber|legalAcceptanceRecord/;
 app.use('/graphql', (req, res, next) => {
   // GraphQL over GET carries the document in the query string. Apollo refuses
   // mutations there, but reading both keeps the routing honest if that changes.
@@ -405,6 +415,8 @@ app.use('/graphql', (req, res, next) => {
   if (CREDENTIAL_OPS.test(query)) return loginLimiter(req, res, next);
   if (MAIL_OPS.test(query)) return mailLimiter(req, res, next);
   if (query.includes('submitEndUserStatement')) return submitLimiter(req, res, next);
+  if (query.includes('checkStatement')) return checkLimiter(req, res, next);
+  if (SENSITIVE_OPS.test(query)) return sensitiveLimiter(req, res, next);
   return next();
 });
 

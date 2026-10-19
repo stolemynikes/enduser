@@ -4,6 +4,7 @@ import { prisma } from './prisma.ts';
 import { resolveConfig } from './formConfig.ts';
 import { buildStatementPdf, type StatementForPdf } from '../services/statementPdf.ts';
 import type { StatementCopy } from '../services/email.ts';
+import { statementCheckCode, statementCheckUrl } from './statementCheck.ts';
 
 export async function statementCopy(
   submission: StatementForPdf & { companyId?: string | null },
@@ -20,6 +21,8 @@ export async function statementCopy(
       sellerName: company?.name,
       termsText: config.customTermsMode === 'TEXT' ? config.customTermsText : undefined,
       termsUrl: config.customTermsMode === 'LINK' ? config.customTermsUrl : undefined,
+      checkUrl: statementCheckUrl(process.env.FRONTEND_URL ?? 'http://localhost:5173', submission.id),
+      checkCode: statementCheckCode(submission.id),
     });
     return { filename: `end-user-statement-${submission.id.slice(0, 8)}.pdf`, content };
   } catch (err: any) {
