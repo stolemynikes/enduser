@@ -647,6 +647,11 @@ export const typeDefs = `#graphql
     name: String!
     createdAt: String!
     lastUsedAt: String
+    """
+    Set only when finishing the account's first sign-in method: that ends every
+    other session, and this replaces the caller's own.
+    """
+    token: String
   }
 
   type PublicConfig {
@@ -817,7 +822,7 @@ export const typeDefs = `#graphql
     cancelCompanyDeletion: Boolean!
     removeMember(userId: ID!): Boolean!
     changeMemberRole(userId: ID!, role: CompanyRole!): CompanyMember!
-    deleteCompanySubmission(id: ID!): Boolean!
+    deleteCompanySubmission(id: ID!, credential: String!): Boolean!
     approveCompanySubmission(id: ID!): Submission!
     denyCompanySubmission(id: ID!, reason: String!): Submission!
     reopenCompanySubmission(id: ID!): Submission!

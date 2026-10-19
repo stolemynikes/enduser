@@ -236,7 +236,12 @@ export const authResolvers = {
         );
       }
       const all = await listPasskeys('admin', adminId);
-      return all.find(p => p.id === result.passkeyId) ?? all[all.length - 1];
+      const added = all.find(p => p.id === result.passkeyId) ?? all[all.length - 1];
+      // The first factor ended every earlier session, this one included.
+      return {
+        ...added,
+        token: result.firstFactor ? jwt.sign({ adminId }, process.env.JWT_SECRET!, { expiresIn: '8h', algorithm: 'HS256' }) : null,
+      };
     },
 
     removeAdminPasskey: async (_: unknown, { id, proof }: { id: string; proof?: string }, ctx: AdminCtx) => {

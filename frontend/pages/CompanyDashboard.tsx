@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { gql } from '@apollo/client';
-import { useQuery, useMutation, useLazyQuery } from '@apollo/client/react';
+import { useQuery, useMutation, useLazyQuery, useApolloClient } from '@apollo/client/react';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from '../src/components/Toast.tsx';
 import { useConfirm } from '../src/components/ConfirmDialog.tsx';
@@ -20,7 +20,9 @@ import { RecordOfProcessing } from '../src/components/RecordOfProcessing.tsx';
 import { RevealLog } from '../src/components/RevealLog.tsx';
 import { PasskeySettings } from '../src/components/PasskeySettings.tsx';
 import { EnrolmentRequired } from '../src/components/EnrolmentRequired.tsx';
-import { mfaEnrolmentRequired } from '../src/lib/mfaError.ts';
+import { mfaEnrolmentRequired, mfaSignal, needsMfaSetup } from '../src/lib/mfaError.ts';
+import { passkeyProof, stepUpNeeded } from '../src/lib/stepUp.ts';
+import { TotpInput } from '../src/components/TotpInput.tsx';
 import {
   type FormConfigT, CONFIG_KEYS, CONFIG_ROWS, TERMS_MODES, modeLabels,
   BUYER_TYPE_OPTIONS, BUYER_TYPE_LABEL, BUYER_TYPE_DESC,
@@ -115,7 +117,7 @@ const DENY = gql`
   mutation DenyCompany($id: ID!, $reason: String!) { denyCompanySubmission(id: $id, reason: $reason) { id status adminNote } }
 `;
 const DELETE_SUB = gql`
-  mutation DeleteCompanySub($id: ID!) { deleteCompanySubmission(id: $id) }
+  mutation DeleteCompanySub($id: ID!, $credential: String!) { deleteCompanySubmission(id: $id, credential: $credential) }
 `;
 const REOPEN_SUB = gql`
   mutation ReopenCompanySub($id: ID!) { reopenCompanySubmission(id: $id) { id status adminNote } }
@@ -351,10 +353,13 @@ export default function CompanyDashboard() {
     onCompleted: () => { refetch(); setSelected(null); setDenyReason(''); toast.success('Submission denied'); },
     onError: e => toast.error(e.message),
   });
-  const [deleteSub, { loading: deleting }] = useMutation<any>(DELETE_SUB, {
-    onCompleted: () => { refetch(); setSelected(null); toast.success('Submission deleted'); },
-    onError: e => toast.error(e.message),
-  });
+  const [deleteSub, { loading: deleting }] = useMutation<any>(DELETE_SUB);
+  const apollo = useApolloClient();
+  // Deleting asks for a current code (or the passkey). Kept with the id it was
+  // asked for, so opening another submission does not carry the prompt over.
+  const [deleteAsk, setDeleteAsk] = useState<{ id: string; code: string } | null>(null);
+  const deleteCode = deleteAsk && deleteAsk.id === selected?.id ? deleteAsk.code : null;
+  const setDeleteCode = (c: string | null) => setDeleteAsk(c === null || !selected ? null : { id: selected.id, code: c });
   const [reopenSub, { loading: reopening }] = useMutation<any>(REOPEN_SUB, {
     onCompleted: () => {
       refetch();
@@ -496,7 +501,33 @@ export default function CompanyDashboard() {
       message: 'Permanently delete this submission? This cannot be undone.',
       confirmLabel: 'Delete', danger: true,
     });
-    if (ok) deleteSub({ variables: { id: selected.id } });
+    if (ok) void attemptDelete('');
+  };
+
+  /**
+   * Tries the deletion with what is in hand. The server says what it needs:
+   * a code (the field opens), the passkey (the browser asks), or a factor set
+   * up first.
+   */
+  const attemptDelete = async (credential: string) => {
+    if (!selected) return;
+    try {
+      await deleteSub({ variables: { id: selected.id, credential } });
+      setDeleteCode(null);
+      refetch(); setSelected(null); toast.success('Submission deleted');
+    } catch (err: any) {
+      if (err?.name === 'NotAllowedError' || err?.name === 'AbortError') return;
+      if (stepUpNeeded(err) === 'passkey' && credential === '') {
+        try { await attemptDelete(await passkeyProof(apollo, 'company')); }
+        catch (e: any) { if (e?.name !== 'NotAllowedError' && e?.name !== 'AbortError') toast.error('That passkey could not be used.'); }
+        return;
+      }
+      const signal = mfaSignal(err);
+      if (signal === 'required') { setDeleteCode(''); return; }
+      if (signal === 'invalid') { setDeleteCode(''); toast.error('That code is not valid. Try the next one your app shows.'); return; }
+      if (needsMfaSetup(err)) { toast.error('Set up two-factor authentication under Account first.'); return; }
+      toast.error(err?.message ?? 'Could not delete the submission.');
+    }
   };
 
   const handleReopen = async () => {
@@ -1573,6 +1604,21 @@ export default function CompanyDashboard() {
                       </button>
                     )}
                   </div>
+                  {isOwner && deleteCode !== null && (
+                    <form className="cd-delete-proof" onSubmit={e => { e.preventDefault(); void attemptDelete(deleteCode); }}>
+                      <label className="cd-delete-proof-label" htmlFor="cd-delete-code">
+                        Enter a code from your authenticator app to delete this submission. It cannot be undone.
+                      </label>
+                      <div className="cd-delete-proof-row">
+                        <TotpInput id="cd-delete-code" className="cd-delete-proof-input" value={deleteCode}
+                          onChange={setDeleteCode} autoFocus disabled={deleting} />
+                        <button type="button" className="cd-btn-view cd-btn-lg" onClick={() => setDeleteCode(null)} disabled={deleting}>Cancel</button>
+                        <button type="submit" className="cd-btn-deny cd-btn-lg" disabled={deleting || !deleteCode}>
+                          {deleting ? 'Deleting…' : 'Delete'}
+                        </button>
+                      </div>
+                    </form>
+                  )}
                   <BuyerDataRequest
                     key={selected.id}
                     submissionId={selected.id}
@@ -2035,6 +2081,17 @@ const styles = `
   .cd-btn-report { color: var(--cd-amber); background: rgba(245,166,35,0.08); border-color: rgba(245,166,35,0.22); }
   .cd-btn-report:hover { background: rgba(245,166,35,0.16); border-color: rgba(245,166,35,0.4); }
   .cd-btn-lg { padding: 10px 24px; font-size: 12px; }
+  .cd-delete-proof {
+    display: flex; flex-direction: column; gap: 8px; margin-top: 12px; padding: 14px 16px;
+    border: 1px solid var(--cd-border); border-radius: var(--cd-r); background: var(--cd-surface2);
+  }
+  .cd-delete-proof-label { font-size: 12px; line-height: 1.5; color: var(--cd-text-mid); }
+  .cd-delete-proof-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .cd-delete-proof-input {
+    flex: 1 1 140px; min-width: 0; min-height: 40px; padding: 8px 12px; font-size: 14px;
+    color: var(--cd-text); background: var(--cd-surface); border: 1px solid var(--cd-border); border-radius: var(--cd-r-sm);
+  }
+  .cd-delete-proof-input:focus-visible { outline: 2px solid var(--cd-blue); outline-offset: 1px; }
 
   /* MODAL */
   .cd-modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: ${Z.MODAL}; display: flex; align-items: center; justify-content: center; padding: 1.5rem; backdrop-filter: blur(6px); animation: fadeIn 0.15s ease; }

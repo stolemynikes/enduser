@@ -31,20 +31,22 @@ const OPS = {
     START: gql`mutation StartPasskeyRegistration($proof: String) { startPasskeyRegistration(proof: $proof) { optionsJson ticket } }`,
     FINISH: gql`
       mutation FinishPasskeyRegistration($ticket: String!, $responseJson: String!, $name: String!) {
-        finishPasskeyRegistration(ticket: $ticket, responseJson: $responseJson, name: $name) { id name }
+        finishPasskeyRegistration(ticket: $ticket, responseJson: $responseJson, name: $name) { id name token }
       }`,
     REMOVE: gql`mutation RemovePasskey($id: ID!, $proof: String) { removePasskey(id: $id, proof: $proof) }`,
     listed: 'myPasskeys', started: 'startPasskeyRegistration', finished: 'finishPasskeyRegistration',
+    tokenKey: 'companyToken',
   },
   admin: {
     LIST: gql`query AdminPasskeys { adminPasskeys { id name createdAt lastUsedAt } }`,
     START: gql`mutation StartAdminPasskeyRegistration($proof: String) { startAdminPasskeyRegistration(proof: $proof) { optionsJson ticket } }`,
     FINISH: gql`
       mutation FinishAdminPasskeyRegistration($ticket: String!, $responseJson: String!, $name: String!) {
-        finishAdminPasskeyRegistration(ticket: $ticket, responseJson: $responseJson, name: $name) { id name }
+        finishAdminPasskeyRegistration(ticket: $ticket, responseJson: $responseJson, name: $name) { id name token }
       }`,
     REMOVE: gql`mutation RemoveAdminPasskey($id: ID!, $proof: String) { removeAdminPasskey(id: $id, proof: $proof) }`,
     listed: 'adminPasskeys', started: 'startAdminPasskeyRegistration', finished: 'finishAdminPasskeyRegistration',
+    tokenKey: 'adminToken',
   },
 } as const;
 
@@ -124,6 +126,9 @@ export function PasskeySettings({ onChanged, account = 'company' }: {
           name: guessDeviceName(),
         },
       });
+      // A first sign-in method signs out every other session, this one too;
+      // the server hands back a replacement for this tab.
+      if (done[ops.finished].token) localStorage.setItem(ops.tokenKey, done[ops.finished].token);
       setAdded(done[ops.finished].name);
       await refetch();
       onChanged?.();

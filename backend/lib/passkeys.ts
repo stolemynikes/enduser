@@ -181,7 +181,7 @@ export async function startRegistration(
 }
 
 export type RegistrationOutcome =
-  | { ok: true; passkeyId: string }
+  | { ok: true; passkeyId: string; firstFactor: boolean }
   | { ok: false; reason: 'bad-ticket' | 'rejected' | 'duplicate' };
 
 export async function finishRegistration({
@@ -222,6 +222,14 @@ export async function finishRegistration({
     return { ok: false, reason: 'duplicate' };
   }
 
+  // Whether this is the account's first sign-in method, read before it is
+  // stored. Turning on the first factor ends the sessions that came before it,
+  // as switching on an authenticator app does (lib/mfa.ts confirmEnrolment):
+  // someone securing an account because they fear it is compromised must not
+  // leave the intruder's session working.
+  const had = await (prisma[kind] as any).findUnique({ where: { id }, select: { totpEnabledAt: true } });
+  const firstFactor = !had?.totpEnabledAt && (await prisma.passkey.count({ where: owner(kind, id) })) === 0;
+
   const created = await prisma.passkey.create({
     data: {
       ...owner(kind, id),
@@ -233,7 +241,10 @@ export async function finishRegistration({
     },
     select: { id: true },
   });
-  return { ok: true, passkeyId: created.id };
+  if (firstFactor) {
+    await (prisma[kind] as any).update({ where: { id }, data: { sessionsValidFrom: new Date() } });
+  }
+  return { ok: true, passkeyId: created.id, firstFactor };
 }
 
 export async function removePasskey(kind: AccountKind, id: string, passkeyId: string): Promise<boolean> {

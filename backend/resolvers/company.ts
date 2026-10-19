@@ -104,7 +104,13 @@ async function buyerRequestGate(ctx: Ctx, companyId: string, companyUserId: stri
 async function freshFactor(companyId: string, companyUserId: string, credential: string) {
   const m = await membershipOrThrow(companyId, companyUserId);
   const check = await checkCredential('companyUser', companyUserId, typeof credential === 'string' ? credential : '');
-  if (!check.ok) throw check.reason === 'no-credential' ? mfaSetupRequiredError() : secondFactorError(check.reason);
+  if (!check.ok) {
+    // No app, but a passkey: the passkey answers this (as a step-up token).
+    if (check.reason === 'no-credential' && (await countPasskeys('companyUser', companyUserId)) > 0) {
+      throw new GraphQLError('Confirm with your passkey to continue.', { extensions: { code: 'STEP_UP_REQUIRED', method: 'passkey' } });
+    }
+    throw check.reason === 'no-credential' ? mfaSetupRequiredError() : secondFactorError(check.reason);
+  }
   return m;
 }
 
@@ -939,7 +945,7 @@ export const companyResolvers = {
       { ticket, responseJson, name }: { ticket: string; responseJson: string; name: string },
       ctx: Ctx,
     ) => {
-      const { companyUserId } = requireCompanyEnrolling(ctx);
+      const { companyUserId, companyId, role } = requireCompanyEnrolling(ctx);
       const result = await finishRegistration({
         kind: 'companyUser', id: companyUserId, ticket, responseJson,
         name: boundedText(name, 60, 'A name for this passkey'),
@@ -952,7 +958,9 @@ export const companyResolvers = {
         );
       }
       const all = await listPasskeys('companyUser', companyUserId);
-      return all.find(p => p.id === result.passkeyId) ?? all[all.length - 1];
+      const added = all.find(p => p.id === result.passkeyId) ?? all[all.length - 1];
+      // The first factor ended every earlier session, this one included.
+      return { ...added, token: result.firstFactor ? signCompanyToken({ companyUserId, companyId, role }) : null };
     },
 
     /**
@@ -1427,9 +1435,19 @@ export const companyResolvers = {
       };
     },
 
-    deleteCompanySubmission: async (_: unknown, { id }: { id: string }, ctx: Ctx) => {
-      const { companyId } = requireOwner(ctx);
-      await tenantSubmissions(companyId).delete(id);
+    /**
+     * Deleting a statement cannot be undone, and the statements are the
+     * seller's compliance record — so, like erasing a buyer's data, it takes a
+     * current second factor, not the session alone. A stolen session could
+     * otherwise empty the record one statement at a time.
+     */
+    deleteCompanySubmission: async (_: unknown, { id, credential }: { id: string; credential: string }, ctx: Ctx) => {
+      const { companyId, companyUserId } = requireOwner(ctx);
+      if (ctx.support) throw new GraphQLError('Not available in a support session.', { extensions: { code: 'FORBIDDEN' } });
+      const scoped = tenantSubmissions(companyId);
+      await scoped.getOwned(id);
+      await freshFactor(companyId, companyUserId, credential);
+      await scoped.delete(id);
       return true;
     },
 

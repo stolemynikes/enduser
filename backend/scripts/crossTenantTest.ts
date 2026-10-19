@@ -74,7 +74,7 @@ async function main() {
       ['approve', `mutation{ approveCompanySubmission(id:"${sub.id}"){ id } }`],
       ['deny', `mutation{ denyCompanySubmission(id:"${sub.id}",reason:"x"){ id } }`],
       ['reopen', `mutation{ reopenCompanySubmission(id:"${sub.id}"){ id } }`],
-      ['delete', `mutation{ deleteCompanySubmission(id:"${sub.id}") }`],
+      ['delete', `mutation{ deleteCompanySubmission(id:"${sub.id}", credential:"123456") }`],
       ['override', `mutation{ overrideCompanySubmissionCheck(id:"${sub.id}",category:VIES,reason:"x"){ id } }`],
       ['clear override', `mutation{ clearCompanySubmissionCheckOverride(id:"${sub.id}",category:VIES){ id } }`],
       ['recheck substance', `mutation{ recheckCompanySubmissionSubstance(id:"${sub.id}"){ id } }`],
