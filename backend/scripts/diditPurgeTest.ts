@@ -64,7 +64,7 @@ const submission = await prisma.submission.create({
 });
 
 try {
-  await pruneSessions();
+  await pruneSessions({ only: Object.keys(rows).map(id) });
   const left = new Set((await prisma.verificationSession.findMany({
     where: { sessionId: { startsWith: `purgetest-${run}-` } }, select: { sessionId: true },
   })).map(r => r.sessionId));

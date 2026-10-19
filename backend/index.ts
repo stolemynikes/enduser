@@ -22,7 +22,6 @@ import {
   DIDIT_ENABLED,
   createVerificationSession,
   retrieveDecision,
-  deleteSession,
 } from './services/didit.ts';
 import {
   checkCapacity,
@@ -34,6 +33,7 @@ import {
   shouldRefresh,
 } from './services/diditSessionStore.ts';
 import { WEBHOOK_CONFIGURED, claimEvent, pruneEvents, verifyWebhook } from './services/diditWebhook.ts';
+import { recordDecision, reconcileOpenVerifications } from './lib/diditReconcile.ts';
 import { purgeDeletedCompanies, pruneSupportAccess, DELETION_GRACE_DAYS, RETENTION_MONTHS } from './lib/retention.ts';
 import { accessStatus } from './lib/access.ts';
 import { pruneAuthTokens } from './lib/authTokens.ts';
@@ -355,24 +355,7 @@ app.post('/didit-webhook', webhookLimiter, express.raw({ type: '*/*', limit: '25
     const decision = await retrieveDecision(sessionId);
     if (decision.status === 'PENDING') return;
 
-    const purged =
-      decision.status === 'APPROVED' || decision.status === 'DECLINED' || decision.status === 'EXPIRED'
-        ? await deleteSession(sessionId)
-        : false;
-
-    await prisma.submission.update({
-      where: { id: submission.id },
-      data: {
-        idVerificationStatus: decision.status,
-        idLivenessPassed: decision.livenessPassed,
-        idFaceMatch: decision.faceMatch,
-        idVerificationWarnings: decision.warnings,
-        idVerificationCheckedAt: new Date(),
-        idVerificationPurged: purged,
-        ...(decision.documentType ? { idDocumentType: decision.documentType } : {}),
-        ...(decision.expiryDate ? { idDocumentExpiry: new Date(decision.expiryDate) } : {}),
-      },
-    });
+    await recordDecision(submission.id, sessionId, decision);
   } catch (err: any) {
     console.error(`[didit] webhook processing failed for ${sessionId}: ${err?.message ?? 'unknown error'}`);
   }
@@ -449,6 +432,15 @@ cron.schedule('0 2 * * *', async () => {
   if (revealRows > 0) console.log(`Retention: deleted ${revealRows} reveal-log row(s)`);
   const supportRows = await pruneSupportAccess(RETENTION_MONTHS);
   if (supportRows > 0) console.log(`Retention: deleted ${supportRows} support-access row(s)`);
+
+  // Before the session prune, so a decision a lost webhook never delivered is
+  // recorded (and its photos deleted) by the same nightly run.
+  if (DIDIT_ENABLED) {
+    const r = await reconcileOpenVerifications();
+    if (r.resolved || r.repurged || r.stuck) {
+      console.log(`Didit: recorded ${r.resolved} late decision(s), purged ${r.repurged} leftover session(s), ${r.stuck} stuck`);
+    }
+  }
 
   const sessions = await pruneSessions();
   const events = await pruneEvents();

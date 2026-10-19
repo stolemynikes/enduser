@@ -134,18 +134,20 @@ const MAX_PURGES_PER_RUN = 1000;
 const PAGE = 500;
 
 /**
+ * `only` limits the run to these sessions; for tests, which share the database.
+ *
  * Drops expired rows. An expired session no submission took over is deleted at
  * Didit first, and its row is only dropped once that worked, so a failed purge
  * is retried the next night. Called from the nightly maintenance job.
  */
-export async function pruneSessions(): Promise<number> {
+export async function pruneSessions({ only }: { only?: string[] } = {}): Promise<number> {
   const now = Date.now();
   let pruned = 0;
   let purges = 0;
   let after = '';
   for (;;) {
     const rows = await prisma.verificationSession.findMany({
-      where: { expiresAt: { lt: new Date(now) }, sessionId: { gt: after } },
+      where: { expiresAt: { lt: new Date(now) }, sessionId: { gt: after, ...(only ? { in: only } : {}) } },
       select: { sessionId: true, expiresAt: true },
       orderBy: { sessionId: 'asc' },
       take: PAGE,
