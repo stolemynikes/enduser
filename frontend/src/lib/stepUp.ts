@@ -4,18 +4,22 @@
 // that already has a factor until that factor is used (STEP_UP_REQUIRED). It
 // says which: a code from the app, or the passkey. For a passkey the browser
 // signs a challenge and the server returns a one-time token that is sent as
-// the proof; a code is typed by the person.
+// the proof; a code is typed by the person. An account with no factor yet
+// proves itself with its password before adding the first.
 import { gql, type ApolloClient } from '@apollo/client';
 import { CombinedGraphQLErrors } from '@apollo/client';
 import { startAuthentication } from '@simplewebauthn/browser';
 
-export type ProofMethod = 'code' | 'passkey';
+export type ProofMethod = 'code' | 'passkey' | 'password';
 
 /** The factor the server is asking for, or null when this is another error. */
 export function stepUpNeeded(err: unknown): ProofMethod | null {
   if (!CombinedGraphQLErrors.is(err)) return null;
   for (const e of err.errors) {
-    if (e.extensions?.code === 'STEP_UP_REQUIRED') return e.extensions?.method === 'code' ? 'code' : 'passkey';
+    if (e.extensions?.code === 'STEP_UP_REQUIRED') {
+      const m = e.extensions?.method;
+      return m === 'code' || m === 'password' ? m : 'passkey';
+    }
   }
   return null;
 }

@@ -35,7 +35,7 @@ async function gql(query: string, variables?: object, token?: string): Promise<R
 const LOGIN = `mutation($e:String!,$p:String!,$t:String){
   companyLogin(email:$e,password:$p,totp:$t){ token role }
 }`;
-const START = `mutation{ startMfaEnrolment{ secret otpauthUri qrSvg } }`;
+const START = `mutation($p:String){ startMfaEnrolment(proof:$p){ secret otpauthUri qrSvg } }`;
 const CONFIRM = `mutation($c:String!){ confirmMfaEnrolment(code:$c){ recoveryCodes token } }`;
 const DISABLE = `mutation($p:String!,$c:String!){ disableMfa(password:$p,code:$c) }`;
 const REGEN = `mutation($c:String!){ regenerateRecoveryCodes(code:$c){ recoveryCodes } }`;
@@ -94,7 +94,7 @@ async function freshSlate(userId: string) {
   // be between the sign-in and the cut-off, not between the cut-off and the
   // check.
   await new Promise(r => setTimeout(r, 2200));
-  const started = await gql(START, undefined, token);
+  const started = await gql(START, { p: PASSWORD }, token);
   check('starting returns a secret, a URI and a QR',
     /^[A-Z2-7 ]+$/.test(started.data?.startMfaEnrolment?.secret ?? '')
     && (started.data?.startMfaEnrolment?.otpauthUri ?? '').startsWith('otpauth://totp/')

@@ -136,10 +136,10 @@ const code = (r: Result) => r.errors?.[0]?.extensions?.code ?? null;
     const r = await gql(q, undefined, bareToken);
     check(`it can ${label}`, !r.errors?.length, JSON.stringify(r.errors));
   }
-  const startApp = await gql('mutation{ startMfaEnrolment{ secret } }', undefined, bareToken);
+  const startApp = await gql('mutation($p:String){ startMfaEnrolment(proof:$p){ secret } }', { p: PASSWORD }, bareToken);
   check('it can start app enrolment', !!startApp.data?.startMfaEnrolment?.secret,
     JSON.stringify(startApp.errors));
-  const startKey = await gql('mutation{ startPasskeyRegistration{ ticket } }', undefined, bareToken);
+  const startKey = await gql('mutation($p:String){ startPasskeyRegistration(proof:$p){ ticket } }', { p: PASSWORD }, bareToken);
   check('it can start passkey enrolment', !!startKey.data?.startPasskeyRegistration?.ticket,
     JSON.stringify(startKey.errors));
 

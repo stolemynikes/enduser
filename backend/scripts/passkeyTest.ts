@@ -67,7 +67,7 @@ async function gql(query: string, variables?: object, token?: string): Promise<R
     rpId());
 
   console.log('— Registration options —');
-  const start = await gql('mutation{ startPasskeyRegistration{ optionsJson ticket } }', undefined, ownerToken);
+  const start = await gql('mutation($p:String){ startPasskeyRegistration(proof:$p){ optionsJson ticket } }', { p: PASSWORD }, ownerToken);
   const opts = start.data?.startPasskeyRegistration;
   check('starting registration returns options and a ticket', !!opts?.optionsJson && !!opts?.ticket,
     JSON.stringify(start.errors));
@@ -79,7 +79,7 @@ async function gql(query: string, variables?: object, token?: string): Promise<R
       || String(parsed?.user?.id ?? '') === owner.id,
     String(parsed?.user?.id));
   check('two ceremonies get different challenges', await (async () => {
-    const again = await gql('mutation{ startPasskeyRegistration{ optionsJson } }', undefined, ownerToken);
+    const again = await gql('mutation($p:String){ startPasskeyRegistration(proof:$p){ optionsJson } }', { p: PASSWORD }, ownerToken);
     const other2 = JSON.parse(again.data?.startPasskeyRegistration?.optionsJson ?? '{}');
     return other2?.challenge !== parsed?.challenge;
   })());

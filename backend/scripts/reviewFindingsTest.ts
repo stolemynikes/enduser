@@ -145,7 +145,14 @@ try {
   const fresh = await user('fresh');
   const freshCo = await company('fresh', fresh.u.id);
   const freshToken = signCompanyToken({ companyUserId: fresh.u.id, companyId: freshCo.id, role: 'OWNER' });
-  check('an account with no factor yet sets up its first freely', !!(await gql('mutation{ startMfaEnrolment { secret } }', {}, freshToken)).data?.startMfaEnrolment?.secret);
+  // The first factor needs the password: the session alone is what a thief has.
+  const f1 = await gql('mutation{ startMfaEnrolment { secret } }', {}, freshToken);
+  check('an account with no factor yet is asked for its password first', code(f1) === 'STEP_UP_REQUIRED' && f1.errors[0].extensions.method === 'password', JSON.stringify(f1.errors?.[0]));
+  const f2 = await gql('mutation($p:String){ startMfaEnrolment(proof:$p){ secret } }', { p: 'not-the-password' }, freshToken);
+  check('a wrong password adds nothing', !f2.data?.startMfaEnrolment && code(f2) === 'PASSWORD_INVALID', JSON.stringify(f2.errors?.[0]));
+  const f3 = await gql('mutation($p:String){ startPasskeyRegistration(proof:$p){ ticket } }', { p: 'not-the-password' }, freshToken);
+  check('nor a passkey', !f3.data?.startPasskeyRegistration);
+  check('with the password it sets up its first', !!(await gql('mutation($p:String){ startMfaEnrolment(proof:$p){ secret } }', { p: PASSWORD }, freshToken)).data?.startMfaEnrolment?.secret);
 
   console.log('— Lockout —');
   await prisma.companyUser.update({ where: { id: victim.u.id }, data: { failedLogins: 0, lockedUntil: null } });

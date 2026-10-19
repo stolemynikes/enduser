@@ -12,7 +12,9 @@
 import crypto from 'node:crypto';
 import jwt from 'jsonwebtoken';
 import { prisma } from './prisma.ts';
-import { checkSecondFactorLimited } from './loginGuard.ts';
+import bcrypt from 'bcrypt';
+import { GraphQLError } from 'graphql';
+import { LOCKED_MESSAGE, checkSecondFactorLimited, recordFailure, refundAttempt, reserveAttempt } from './loginGuard.ts';
 import { MFA_SELECT, mfaEnabled } from './mfa.ts';
 
 type Kind = 'companyUser' | 'admin';
@@ -52,26 +54,44 @@ export function consumeStepUp(token: string, kind: Kind, accountId: string): boo
 
 async function factors(kind: Kind, id: string) {
   const account = kind === 'admin'
-    ? await prisma.admin.findUnique({ where: { id }, select: { id: true, failedLogins: true, lockedUntil: true, ...MFA_SELECT } })
-    : await prisma.companyUser.findUnique({ where: { id }, select: { id: true, failedLogins: true, lockedUntil: true, ...MFA_SELECT } });
+    ? await prisma.admin.findUnique({ where: { id }, select: { id: true, failedLogins: true, lockedUntil: true, password: true, ...MFA_SELECT } })
+      .then(a => a && { ...a, passwordHash: a.password })
+    : await prisma.companyUser.findUnique({ where: { id }, select: { id: true, failedLogins: true, lockedUntil: true, passwordHash: true, ...MFA_SELECT } });
   const passkeys = await prisma.passkey.count({ where: kind === 'admin' ? { adminId: id } : { userId: id } });
   return { account, totp: !!account && mfaEnabled(account), passkeys };
 }
 
-export type ProofResult = { ok: true } | { ok: false; reason: 'needed'; method: 'code' | 'passkey' } | { ok: false; reason: 'invalid' };
+export type ProofMethod = 'code' | 'passkey' | 'password';
+export type ProofResult = { ok: true } | { ok: false; reason: 'needed' | 'invalid'; method: ProofMethod };
 
 /**
  * Before a factor is added: an account that already has one must use it.
- * An account with none yet is enrolling its first, and passes.
+ *
+ * An account with none yet proves itself with its password. Passing it on the
+ * session alone let a stolen session — including one held in the
+ * enrol-only state while two-factor is required — attach the thief's own
+ * authenticator, which then cleared that state and counted as the account's
+ * fresh second factor everywhere after.
  */
 export async function proveExistingFactor(kind: Kind, id: string, proof: unknown): Promise<ProofResult> {
   const f = await factors(kind, id);
-  if (!f.account) return { ok: false, reason: 'invalid' };
-  if (!f.totp && f.passkeys === 0) return { ok: true };
+  if (!f.account) return { ok: false, reason: 'invalid', method: 'password' };
+  if (!f.totp && f.passkeys === 0) {
+    if (typeof proof !== 'string' || !proof) return { ok: false, reason: 'needed', method: 'password' };
+    // Counted like a sign-in, so this is not an unlimited password oracle.
+    const minutes = await reserveAttempt(kind, id);
+    if (minutes > 0) throw new GraphQLError(LOCKED_MESSAGE(minutes), { extensions: { code: 'ACCOUNT_LOCKED' } });
+    if (!(await bcrypt.compare(proof, f.account.passwordHash))) {
+      await recordFailure(kind, f.account);
+      return { ok: false, reason: 'invalid', method: 'password' };
+    }
+    await refundAttempt(kind, id);
+    return { ok: true };
+  }
   const method = f.totp ? 'code' : 'passkey';
   if (typeof proof !== 'string' || !proof.trim()) return { ok: false, reason: 'needed', method };
-  if (isStepUpToken(proof)) return consumeStepUp(proof, kind, id) ? { ok: true } : { ok: false, reason: 'invalid' };
+  if (isStepUpToken(proof)) return consumeStepUp(proof, kind, id) ? { ok: true } : { ok: false, reason: 'invalid', method };
   if (!f.totp) return { ok: false, reason: 'needed', method };
   const second = await checkSecondFactorLimited(kind, f.account, proof);
-  return second.ok ? { ok: true } : { ok: false, reason: 'invalid' };
+  return second.ok ? { ok: true } : { ok: false, reason: 'invalid', method };
 }

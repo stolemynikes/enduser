@@ -116,9 +116,14 @@ async function requireExistingFactor(kind: 'companyUser' | 'admin', id: string, 
     throw new GraphQLError(
       r.method === 'code'
         ? 'Enter a code from your authenticator app to change your sign-in methods.'
-        : 'Confirm with your passkey to change your sign-in methods.',
+        : r.method === 'password'
+          ? 'Enter your password to set up a sign-in method.'
+          : 'Confirm with your passkey to change your sign-in methods.',
       { extensions: { code: 'STEP_UP_REQUIRED', method: r.method } },
     );
+  }
+  if (r.method === 'password') {
+    throw new GraphQLError('That password is not correct.', { extensions: { code: 'PASSWORD_INVALID' } });
   }
   throw secondFactorError('invalid');
 }

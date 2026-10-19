@@ -9,6 +9,7 @@ import { Wordmark } from '../src/components/Mark.tsx';
 import { Turnstile } from '../src/components/Turnstile.tsx';
 import { TotpInput } from '../src/components/TotpInput.tsx';
 import { mfaSignal } from '../src/lib/mfaError.ts';
+import { startAuthentication } from '@simplewebauthn/browser';
 import '@fontsource/inter/400.css';
 import '@fontsource/inter/500.css';
 import '@fontsource/inter/600.css';
@@ -17,6 +18,23 @@ import '@fontsource/inter/700.css';
 const ADMIN_LOGIN = gql`
   mutation AdminLogin($username: String!, $password: String!, $turnstileToken: String, $totp: String) {
     adminLogin(username: $username, password: $password, turnstileToken: $turnstileToken, totp: $totp) {
+      token
+    }
+  }
+`;
+
+const BEGIN_PASSKEY = gql`
+  mutation BeginAdminPasskeyLogin($username: String!, $password: String!, $turnstileToken: String) {
+    beginAdminPasskeyLogin(username: $username, password: $password, turnstileToken: $turnstileToken) {
+      optionsJson
+      ticket
+    }
+  }
+`;
+
+const FINISH_PASSKEY = gql`
+  mutation FinishAdminPasskeyLogin($ticket: String!, $responseJson: String!) {
+    finishAdminPasskeyLogin(ticket: $ticket, responseJson: $responseJson) {
       token
     }
   }
@@ -32,6 +50,8 @@ export default function AdminLogin() {
   // so the form never reveals which accounts have a second factor.
   const [totp, setTotp] = useState('');
   const [needsTotp, setNeedsTotp] = useState(false);
+  // The password was right and this account's factor is a passkey.
+  const [needsPasskey, setNeedsPasskey] = useState(false);
   const [error, setError] = useState(
     new URLSearchParams(window.location.search).has('expired')
       ? 'Your session expired — please sign in again.'
@@ -39,6 +59,34 @@ export default function AdminLogin() {
   );
   const navigate = useNavigate();
   const [login, { loading }] = useMutation<any>(ADMIN_LOGIN);
+  const [beginPasskey] = useMutation<any>(BEGIN_PASSKEY);
+  const [finishPasskey] = useMutation<any>(FINISH_PASSKEY);
+  const [passkeyBusy, setPasskeyBusy] = useState(false);
+
+  /** Password first, then the passkey signs the server's challenge. */
+  const signInWithPasskey = async () => {
+    setError('');
+    setPasskeyBusy(true);
+    try {
+      const { data: began } = await beginPasskey({
+        variables: { username, password, turnstileToken: botToken || undefined },
+      });
+      const { optionsJson, ticket } = began.beginAdminPasskeyLogin;
+      const assertion = await startAuthentication({ optionsJSON: JSON.parse(optionsJson) });
+      const { data } = await finishPasskey({
+        variables: { ticket, responseJson: JSON.stringify(assertion) },
+      });
+      localStorage.setItem('adminToken', data.finishAdminPasskeyLogin.token);
+      navigate('/admin/dashboard');
+    } catch (err: any) {
+      const name = err?.name ?? '';
+      // Cancelling the system prompt is a choice, not a failure.
+      if (name === 'NotAllowedError' || name === 'AbortError') setError('');
+      else setError('That passkey could not be used.');
+    } finally {
+      setPasskeyBusy(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -51,14 +99,22 @@ export default function AdminLogin() {
       navigate('/admin/dashboard');
     } catch (err: any) {
       const signal = mfaSignal(err);
+      if (signal === 'passkey') {
+        setNeedsTotp(false);
+        setNeedsPasskey(true);
+        setError('');
+        return;
+      }
       if (signal) {
         // The password was accepted; only the code is outstanding.
+        setNeedsPasskey(false);
         setNeedsTotp(true);
         setTotp('');
         setError(signal === 'required' ? '' : 'That code is not valid. Try the next one your app shows.');
         return;
       }
       setNeedsTotp(false);
+      setNeedsPasskey(false);
       // Everything that is not a code problem stays one message, so a wrong
       // username and a wrong password cannot be told apart from out here.
       setError('Invalid username or password.');
@@ -84,12 +140,12 @@ export default function AdminLogin() {
             <div className="al-field">
               <label className="al-label" htmlFor="username">Username</label>
               <input className="al-input" id="username" type="text" value={username}
-                onChange={e => setUsername(e.target.value)} required autoFocus autoComplete="username" />
+                onChange={e => { setUsername(e.target.value); setNeedsPasskey(false); }} required autoFocus autoComplete="username" />
             </div>
             <div className="al-field">
               <label className="al-label" htmlFor="password">Password</label>
               <PasswordInput className="al-input" id="password" value={password}
-                onChange={setPassword} required autoComplete="current-password" />
+                onChange={v => { setPassword(v); setNeedsPasskey(false); }} required autoComplete="current-password" />
             </div>
             {needsTotp && (
               <div className="al-field">
@@ -100,11 +156,32 @@ export default function AdminLogin() {
                 </p>
               </div>
             )}
+            {(needsTotp || needsPasskey) && (
+              <>
+                {needsPasskey && (
+                  <p className="al-hint" role="status">
+                    This account signs in with a passkey. Confirm with your device to continue.
+                  </p>
+                )}
+                {/* Offered alongside the code too: an account may have both. */}
+                <button className="al-passkey" type="button"
+                  onClick={() => void signInWithPasskey()} disabled={passkeyBusy}>
+                  <svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor"
+                    strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <circle cx="7.5" cy="8" r="3.5" /><path d="M11 8h6M14.5 8v3" />
+                    <path d="M2.5 17c0-2.6 2.2-4.5 5-4.5s5 1.9 5 4.5" />
+                  </svg>
+                  {passkeyBusy ? 'Waiting for your device…' : needsPasskey ? 'Sign in with your passkey' : 'Use a passkey instead'}
+                </button>
+              </>
+            )}
             <Turnstile onToken={setBotToken} theme="dark" />
             {error && <div className="al-error" role="alert">{error}</div>}
-            <button className="al-btn" type="submit" disabled={loading}>
-              {loading ? 'Signing in…' : needsTotp ? 'Verify and sign in' : 'Sign In'}
-            </button>
+            {!needsPasskey && (
+              <button className="al-btn" type="submit" disabled={loading}>
+                {loading ? 'Signing in…' : needsTotp ? 'Verify and sign in' : 'Sign In'}
+              </button>
+            )}
           </form>
         </div>
       </div>
@@ -174,4 +251,14 @@ const loginStyles = `
   .al-btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 12px 32px rgba(91,156,246,0.26); }
   .al-btn:active:not(:disabled) { transform: scale(0.99); }
   .al-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+  .al-passkey {
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    font-family: 'Inter', sans-serif; font-size: 13px; font-weight: 600; color: var(--blue);
+    background: rgba(91,156,246,0.08); border: 1px solid rgba(91,156,246,0.3); border-radius: 10px;
+    padding: 12px; min-height: 44px; cursor: pointer; transition: background 0.2s var(--ease);
+  }
+  .al-passkey:hover:not(:disabled) { background: rgba(91,156,246,0.16); }
+  .al-passkey:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+  .al-passkey:disabled { opacity: 0.5; cursor: not-allowed; }
+  @media (prefers-reduced-motion: reduce) { .al-passkey { transition: none; } }
 `;

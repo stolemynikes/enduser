@@ -56,6 +56,9 @@ export function MfaSettings({
   const [mode, setMode] = useState<'idle' | 'disabling' | 'regenerating'>('idle');
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
+  // The first factor on an account is added only after its password: a
+  // session alone is exactly what a stolen one is.
+  const [askPassword, setAskPassword] = useState(false);
 
   const ops = OPS[account];
   const client = useApolloClient();
@@ -76,19 +79,24 @@ export function MfaSettings({
       ? 'That code is not valid. Try the next one your app shows.'
       : ((err as { message?: string })?.message ?? fallback);
 
-  const begin = async () => {
+  const begin = async (withPassword?: string) => {
     setError('');
     try {
       let data: any;
       try {
-        ({ data } = await start({ variables: { proof: null } }));
+        ({ data } = await start({ variables: { proof: withPassword ?? null } }));
       } catch (err) {
         // An account that already signs in with a passkey proves it with that
-        // passkey before an app is added (lib/stepUp.ts).
-        if (stepUpNeeded(err) !== 'passkey') throw err;
+        // passkey before an app is added (lib/stepUp.ts); an account with no
+        // factor yet, with its password.
+        const need = stepUpNeeded(err);
+        if (need === 'password' && withPassword === undefined) { setPassword(''); setAskPassword(true); return; }
+        if (need !== 'passkey') throw err;
         const proof = await passkeyProof(client, account);
         ({ data } = await start({ variables: { proof } }));
       }
+      setAskPassword(false);
+      setPassword('');
       setEnrolment(data[ops.started]);
       setCode('');
     } catch (err: any) {
@@ -295,12 +303,29 @@ export function MfaSettings({
         read every buyer&rsquo;s details {account === 'admin' ? 'on the whole platform' : 'in this company'}, so a
         password on its own is the one thing between a phishing email and all of it.
       </p>
-      {error && <p className="mfa-error" role="alert">{error}</p>}
-      <div className="mfa-actions">
-        <button className="mfa-btn mfa-btn--primary" onClick={() => void begin()} disabled={busy}>
-          {starting ? 'Preparing…' : 'Set it up'}
-        </button>
-      </div>
+      {askPassword ? (
+        <form className="mfa-form" onSubmit={e => { e.preventDefault(); void begin(password); }}>
+          <label className="mfa-label" htmlFor="mfa-first-pw">Your password</label>
+          <input id="mfa-first-pw" className="mfa-input" type="password" value={password}
+            onChange={e => setPassword(e.target.value)} autoComplete="current-password" autoFocus disabled={busy} />
+          {error && <p className="mfa-error" role="alert">{error}</p>}
+          <div className="mfa-actions">
+            <button className="mfa-btn" type="button" onClick={() => { setAskPassword(false); setPassword(''); setError(''); }} disabled={busy}>Cancel</button>
+            <button className="mfa-btn mfa-btn--primary" type="submit" disabled={busy || !password}>
+              {starting ? 'Checking…' : 'Continue'}
+            </button>
+          </div>
+        </form>
+      ) : (
+        <>
+          {error && <p className="mfa-error" role="alert">{error}</p>}
+          <div className="mfa-actions">
+            <button className="mfa-btn mfa-btn--primary" onClick={() => void begin()} disabled={busy}>
+              {starting ? 'Preparing…' : 'Set it up'}
+            </button>
+          </div>
+        </>
+      )}
     </div>
   );
 }

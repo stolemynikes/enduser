@@ -102,6 +102,10 @@ export const LOCKED_MESSAGE = (minutes: number) =>
 export async function checkSecondFactorLimited(
   model: 'companyUser' | 'admin', account: MfaAccount & Account, code: string | null | undefined,
 ): Promise<SecondFactorResult> {
+  // Nothing typed is not a guess, so it takes nothing from the budget — and
+  // never needs a refund, which could otherwise land on another request's
+  // reservation.
+  if (!String(code ?? '').trim()) return checkSecondFactor(model, account, code);
   const minutes = await reserveAttempt(model, account.id);
   if (minutes > 0) {
     throw new GraphQLError(LOCKED_MESSAGE(minutes), { extensions: { code: 'ACCOUNT_LOCKED' } });

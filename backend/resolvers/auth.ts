@@ -30,9 +30,14 @@ async function requireExistingFactor(kind: 'companyUser' | 'admin', id: string, 
     throw new GraphQLError(
       r.method === 'code'
         ? 'Enter a code from your authenticator app to change your sign-in methods.'
-        : 'Confirm with your passkey to change your sign-in methods.',
+        : r.method === 'password'
+          ? 'Enter your password to set up a sign-in method.'
+          : 'Confirm with your passkey to change your sign-in methods.',
       { extensions: { code: 'STEP_UP_REQUIRED', method: r.method } },
     );
+  }
+  if (r.method === 'password') {
+    throw new GraphQLError('That password is not correct.', { extensions: { code: 'PASSWORD_INVALID' } });
   }
   throw secondFactorError('invalid');
 }
@@ -48,7 +53,13 @@ function requireAdminId(ctx: AdminCtx): string {
  * "that code was wrong" — and a human-readable string is not something a UI
  * should have to match on.
  */
-export function secondFactorError(reason: 'missing' | 'invalid'): GraphQLError {
+export function secondFactorError(reason: 'missing' | 'invalid' | 'passkey'): GraphQLError {
+  // The account's factor is a passkey: the form switches to that ceremony.
+  if (reason === 'passkey') {
+    return new GraphQLError('This account signs in with a passkey.', {
+      extensions: { code: 'PASSKEY_REQUIRED' },
+    });
+  }
   return reason === 'missing'
     ? new GraphQLError('Enter the code from your authenticator app.', {
         extensions: { code: 'MFA_REQUIRED' },

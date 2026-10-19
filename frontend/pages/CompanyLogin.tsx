@@ -52,6 +52,9 @@ export default function CompanyLogin() {
   // so the form never reveals which accounts have a second factor.
   const [totp, setTotp] = useState('');
   const [needsTotp, setNeedsTotp] = useState(false);
+  // The password was right and the account's factor is a passkey: only the
+  // passkey button is offered.
+  const [needsPasskey, setNeedsPasskey] = useState(false);
   // ?expired=1 is set when a lapsed token bounced the user out of the dashboard.
   const [error, setError] = useState(
     new URLSearchParams(window.location.search).has('expired')
@@ -112,15 +115,23 @@ export default function CompanyLogin() {
       land(data.companyLogin);
     } catch (err: any) {
       const signal = mfaSignal(err);
+      if (signal === 'passkey') {
+        setNeedsTotp(false);
+        setNeedsPasskey(true);
+        setError('');
+        return;
+      }
       if (signal) {
         // The password was accepted; only the code is outstanding. Keep the
         // form, reveal the field, and say which of the two happened.
+        setNeedsPasskey(false);
         setNeedsTotp(true);
         setTotp('');
         setError(signal === 'required' ? '' : (err?.message ?? 'That code is not valid.'));
         return;
       }
       setNeedsTotp(false);
+      setNeedsPasskey(false);
       setError(err?.message ?? 'Login failed');
     }
   };
@@ -141,13 +152,31 @@ export default function CompanyLogin() {
             <div className="cl-field">
               <label className="cl-label" htmlFor="cl-email">Email</label>
               <input id="cl-email" className="cl-input" type="email" value={email}
-                onChange={e => setEmail(e.target.value)} required autoFocus autoComplete="username" />
+                onChange={e => { setEmail(e.target.value); setNeedsPasskey(false); }} required autoFocus autoComplete="username" />
             </div>
             <div className="cl-field">
               <label className="cl-label" htmlFor="cl-password">Password</label>
               <PasswordInput id="cl-password" className="cl-input" value={password}
-                onChange={setPassword} required autoComplete="current-password" />
+                onChange={v => { setPassword(v); setNeedsPasskey(false); }} required autoComplete="current-password" />
             </div>
+            {needsPasskey && (
+              <>
+                <p className="cl-hint" role="status">
+                  This account signs in with a passkey. Confirm with your device to continue.
+                </p>
+                <button
+                  className="cl-passkey" type="button"
+                  onClick={() => void signInWithPasskey()} disabled={passkeyBusy}
+                >
+                  <svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor"
+                    strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <circle cx="7.5" cy="8" r="3.5" /><path d="M11 8h6M14.5 8v3" />
+                    <path d="M2.5 17c0-2.6 2.2-4.5 5-4.5s5 1.9 5 4.5" />
+                  </svg>
+                  {passkeyBusy ? 'Waiting for your device…' : 'Sign in with your passkey'}
+                </button>
+              </>
+            )}
             {needsTotp && (
               <>
                 <div className="cl-field">
@@ -175,9 +204,9 @@ export default function CompanyLogin() {
             <Turnstile onToken={setBotToken} theme="dark" />
             {error && <div className="cl-error" role="alert">{error}</div>}
             <p className="cl-forgot"><a href="/forgot">Forgotten your password?</a></p>
-            <button className="cl-btn" type="submit" disabled={loading}>
+            {!needsPasskey && <button className="cl-btn" type="submit" disabled={loading}>
               {loading ? 'Signing in…' : needsTotp ? 'Verify and sign in' : 'Sign in'}
-            </button>
+            </button>}
           </form>
           <p className="cl-footer-link">
             Don't have an account? <Link to="/register">Register your company</Link>

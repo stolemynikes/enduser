@@ -88,6 +88,8 @@ export function PasskeySettings({ onChanged, account = 'company' }: {
   const [codeProof, setCodeProof] = useState<string | null>(null);
   // What the typed code is for: adding a passkey, or removing this one.
   const [codeFor, setCodeFor] = useState<Passkey | null>(null);
+  // An account with no factor yet proves itself with its password instead.
+  const [proofKind, setProofKind] = useState<'code' | 'password'>('code');
 
   const passkeys: Passkey[] = data?.[ops.listed] ?? [];
 
@@ -104,8 +106,8 @@ export function PasskeySettings({ onChanged, account = 'company' }: {
         if (need === 'passkey' && !proof) {
           const p = await passkeyProof(client, account);
           ({ data: began } = await start({ variables: { proof: p } }));
-        } else if (need === 'code' && !proof) {
-          setCodeFor(null); setCodeProof('');
+        } else if ((need === 'code' || need === 'password') && !proof) {
+          setCodeFor(null); setProofKind(need); setCodeProof('');
           return;
         } else {
           throw err;
@@ -133,6 +135,8 @@ export function PasskeySettings({ onChanged, account = 'company' }: {
         setError('');
       } else if (name === 'InvalidStateError') {
         setError('This device already has a passkey for your account.');
+      } else if (proof !== undefined && proofKind === 'password') {
+        setError(err?.message ?? 'That password is not correct.');
       } else if (proof !== undefined) {
         setError(secondFactorMessage(err));
       } else {
@@ -163,7 +167,7 @@ export function PasskeySettings({ onChanged, account = 'company' }: {
         if (need === 'passkey' && proof === undefined) {
           await remove({ variables: { id: key.id, proof: await passkeyProof(client, account) } });
         } else if (need === 'code' && proof === undefined) {
-          setCodeFor(key); setCodeProof('');
+          setCodeFor(key); setProofKind('code'); setCodeProof('');
           return;
         } else {
           throw err;
@@ -233,11 +237,16 @@ export function PasskeySettings({ onChanged, account = 'company' }: {
       {codeProof !== null && (
         <form className="pk-proof" onSubmit={e => { e.preventDefault(); const c = codeProof; void (codeFor ? drop(codeFor, c) : enrol(c)); }}>
           <label className="pk-lede" htmlFor="pk-proof-code">
-            {codeFor
-              ? <>Enter a code from your authenticator app to remove “{codeFor.name}” — sign-in methods are only changed by someone who can use the existing one.</>
-              : <>Enter a code from your authenticator app first — a new sign-in method is only added by someone who can use the existing one.</>}
+            {proofKind === 'password'
+              ? <>Enter your password first — the first sign-in method is only added by someone who knows it.</>
+              : codeFor
+                ? <>Enter a code from your authenticator app to remove “{codeFor.name}” — sign-in methods are only changed by someone who can use the existing one.</>
+                : <>Enter a code from your authenticator app first — a new sign-in method is only added by someone who can use the existing one.</>}
           </label>
-          <TotpInput id="pk-proof-code" className="pk-proof-input" value={codeProof} onChange={setCodeProof} disabled={busy} />
+          {proofKind === 'password'
+            ? <input id="pk-proof-code" className="pk-proof-input" type="password" value={codeProof}
+                onChange={e => setCodeProof(e.target.value)} autoComplete="current-password" autoFocus disabled={busy} />
+            : <TotpInput id="pk-proof-code" className="pk-proof-input" value={codeProof} onChange={setCodeProof} disabled={busy} />}
           <div className="pk-actions">
             <button type="button" className="pk-btn" onClick={() => { setCodeProof(null); setCodeFor(null); setError(''); }} disabled={busy}>Cancel</button>
             <button type="submit" className="pk-btn pk-btn--primary" disabled={busy || !codeProof}>Continue</button>

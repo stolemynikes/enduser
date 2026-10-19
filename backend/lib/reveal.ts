@@ -48,7 +48,8 @@ export async function checkCredential(
   }
   if (!mfaEnabled(account)) return { ok: false, reason: 'no-credential' };
   const second = await checkSecondFactorLimited(kind, account, credential);
-  return second.ok ? { ok: true } : { ok: false, reason: second.reason };
+  // 'passkey' cannot happen with an app enrolled; refused all the same.
+  return second.ok ? { ok: true } : { ok: false, reason: second.reason === 'passkey' ? 'invalid' : second.reason };
 }
 
 /**

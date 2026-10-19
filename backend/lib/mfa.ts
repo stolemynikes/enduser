@@ -14,6 +14,8 @@ import QRCode from 'qrcode';
 import { prisma } from './prisma.ts';
 import { decryptField, encryptField } from './cipher.ts';
 import { formatSecretForTyping, generateSecret, otpauthUri, verifyTotp } from './totp.ts';
+import { GraphQLError } from 'graphql';
+import { LOCKED_MESSAGE, recordFailure, recordSuccess, reserveAttempt } from './loginGuard.ts';
 
 export type AccountKind = 'companyUser' | 'admin';
 
@@ -204,22 +206,39 @@ export async function confirmEnrolment(
 ): Promise<ConfirmResult> {
   const row = await (prisma[kind] as any).findUnique({
     where: { id },
-    select: { totpSecret: true, totpEnabledAt: true },
+    select: { totpSecret: true, totpEnabledAt: true, totpLastCounter: true, failedLogins: true, lockedUntil: true },
   });
-  if (!row?.totpSecret) return { ok: false, reason: 'not-started' };
+  // Only while an enrolment is pending. The secret stays stored once the
+  // factor is on, so checking for the secret alone let this be called again
+  // afterwards — handing out fresh recovery codes and a fresh session for a
+  // code that might already have been used elsewhere.
+  if (!row?.totpSecret || row.totpEnabledAt) return { ok: false, reason: 'not-started' };
 
+  // Counted against the account like every other code, so guesses spread
+  // over many addresses still run into the lock.
+  const minutes = await reserveAttempt(kind, id);
+  if (minutes > 0) {
+    throw new GraphQLError(LOCKED_MESSAGE(minutes), { extensions: { code: 'ACCOUNT_LOCKED' } });
+  }
   const secret = decryptField(row.totpSecret, 'totpSecret');
-  const check = verifyTotp(secret, code);
-  if (!check.ok) return { ok: false, reason: 'bad-code' };
+  const check = verifyTotp(secret, code, { lastCounter: row.totpLastCounter });
+  if (!check.ok) {
+    await recordFailure(kind, { id, ...row });
+    return { ok: false, reason: 'bad-code' };
+  }
 
-  await (prisma[kind] as any).update({
-    where: { id },
+  // Conditional, so of two confirmations racing on one code only one switches
+  // the factor on and gets the recovery codes.
+  const { count } = await (prisma[kind] as any).updateMany({
+    where: { id, totpEnabledAt: null },
     data: {
-      totpEnabledAt: row.totpEnabledAt ?? new Date(),
+      totpEnabledAt: new Date(),
       totpLastCounter: check.counter,
       sessionsValidFrom: new Date(),
     },
   });
+  if (count !== 1) return { ok: false, reason: 'not-started' };
+  await recordSuccess(kind, id);
   return { ok: true, recoveryCodes: await issueRecoveryCodes(kind, id) };
 }
 
@@ -246,7 +265,7 @@ export async function disableMfa(kind: AccountKind, id: string): Promise<void> {
 
 export type SecondFactorResult =
   | { ok: true; usedRecoveryCode: boolean }
-  | { ok: false; reason: 'missing' | 'invalid' };
+  | { ok: false; reason: 'missing' | 'invalid' | 'passkey' };
 
 /**
  * Checks the second factor for an account that has one.
@@ -263,10 +282,19 @@ export type SecondFactorResult =
 export async function checkSecondFactor(
   kind: AccountKind, account: MfaAccount, code: string | null | undefined,
 ): Promise<SecondFactorResult> {
-  // An account whose only factor is a passkey has no code to check here; the
-  // passkey ceremony is its own path (lib/passkeys.ts) and the sign-in form
-  // routes to it. This function is only about the app.
-  if (!mfaEnabled(account) || !account.totpSecret) return { ok: true, usedRecoveryCode: false };
+  // No authenticator app. An account with no factor at all passes (it is sent
+  // to enrol by authContext when one is required); an account whose factor is
+  // a passkey does not. Its proof is the passkey ceremony (lib/passkeys.ts),
+  // which this function cannot check — so it refuses, and the caller sends the
+  // person there. Passing it here let a password alone sign in to an account
+  // protected by a passkey.
+  if (!mfaEnabled(account) || !account.totpSecret) {
+    const passkey = await prisma.passkey.findFirst({
+      where: kind === 'admin' ? { adminId: account.id } : { userId: account.id },
+      select: { id: true },
+    });
+    return passkey ? { ok: false, reason: 'passkey' } : { ok: true, usedRecoveryCode: false };
+  }
 
   const typed = String(code ?? '').trim();
   if (!typed) return { ok: false, reason: 'missing' };
