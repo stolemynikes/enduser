@@ -1,7 +1,7 @@
 import bcrypt from 'bcrypt';
 import crypto from 'node:crypto';
 import { prisma } from '../lib/prisma.ts';
-import { signCompanyToken } from '../services/companyAuth.ts';
+import { sessionTooOld, signCompanyToken } from '../services/companyAuth.ts';
 import {
   sendCompanyInvite, sendApproved, sendDenied, sendPasswordReset, sendEmailVerification,
   sendAccessRequestToAdmin, ADMIN_INBOX,
@@ -17,7 +17,7 @@ import { statementCopy } from '../lib/statementCopy.ts';
 import { resolveConfig, type FormConfig } from '../lib/formConfig.ts';
 import { runSubstanceCheck } from './submission.ts';
 import { SUBSTANCE_CHECK_ENABLED } from '../services/substanceCheck.ts';
-import { assertApprovable, applyOverride, clearOverride } from '../lib/overrides.ts';
+import { applyOverride, claimSubstanceRecheck, clearOverride, decideSubmission, reopenSubmission } from '../lib/overrides.ts';
 import { type OverrideCategory } from '../lib/approvalGate.ts';
 import { tenantSubmissions } from '../lib/tenant.ts';
 import { stripSensitiveAll } from '../lib/redact.ts';
@@ -35,7 +35,7 @@ import { LEGAL_VERSION, acceptanceRecordPdf, legalStatus, recordAcceptance } fro
 import { activeNotices } from '../lib/subprocessors.ts';
 import { decisionLogCsv } from '../lib/decisionExport.ts';
 import { IS_EXPOSED } from '../lib/exposure.ts';
-import { issueStepUp, proveExistingFactor } from '../lib/stepUp.ts';
+import { isStepUpPurpose, issueStepUp, proveExistingFactor, type StepUpPurpose } from '../lib/stepUp.ts';
 import { deleteSubmissions } from '../lib/submissionDelete.ts';
 import {
   countPasskeys, finishAuthentication, finishRegistration, listPasskeys,
@@ -50,6 +50,7 @@ type Ctx = {
   companyRole?: string;
   /** Session the request came from, so a reveal can be attributed to a browser. */
   sessionId?: string;
+  authTime?: number;
   /** Set when platform staff are acting as this company. */
   support?: boolean;
   adminId?: string;
@@ -80,6 +81,18 @@ function requireCompanyEnrolling(ctx: Ctx) {
   return { companyUserId: ctx.companyUserId, companyId: ctx.companyId, role: ctx.companyRole! };
 }
 
+/**
+ * What a member may read of the statements. A Viewer sees decided ones only —
+ * approved or denied, never pending or test — and that used to be enforced
+ * only by which filters the dashboard offered; the API returned the rest to
+ * anyone who asked.
+ */
+function visibleTo(role: string) {
+  return role === 'EMPLOYEE'
+    ? { status: { in: ['APPROVED', 'DENIED'] as never[] }, isTest: false }
+    : {};
+}
+
 function requireOwner(ctx: Ctx) {
   const m = requireCompany(ctx);
   if (m.role !== 'OWNER') throw new Error('Owner access required');
@@ -96,14 +109,14 @@ function requireOwner(ctx: Ctx) {
 async function buyerRequestGate(ctx: Ctx, companyId: string, companyUserId: string, id: string, credential: string) {
   if (ctx.support) throw new GraphQLError('Not available in a support session.', { extensions: { code: 'FORBIDDEN' } });
   const anchor = await tenantSubmissions(companyId).getOwned(id);
-  const m = await freshFactor(companyId, companyUserId, credential);
+  const m = await freshFactor(companyId, companyUserId, credential, 'buyer-data');
   return { anchor, m };
 }
 
 /** The member, after a current second-factor code. */
-async function freshFactor(companyId: string, companyUserId: string, credential: string) {
+async function freshFactor(companyId: string, companyUserId: string, credential: string, purpose: StepUpPurpose) {
   const m = await membershipOrThrow(companyId, companyUserId);
-  const check = await checkCredential('companyUser', companyUserId, typeof credential === 'string' ? credential : '');
+  const check = await checkCredential('companyUser', companyUserId, typeof credential === 'string' ? credential : '', purpose);
   if (!check.ok) {
     // No app, but a passkey: the passkey answers this (as a step-up token).
     if (check.reason === 'no-credential' && (await countPasskeys('companyUser', companyUserId)) > 0) {
@@ -213,8 +226,6 @@ async function revokeInvites(tx: Pick<typeof prisma, 'companyInvite'>, companyId
 
 const APP_URL = () => (process.env.FRONTEND_URL ?? 'http://localhost:5173').replace(/\/+$/, '');
 
-/** Minimum gap between manual substance re-runs for one submission. */
-const RECHECK_COOLDOWN_MS = 30_000;
 
 /** Emails a fresh confirmation link. Never throws — signup must not fail on mail. */
 async function sendVerification(user: { id: string; email: string; name: string }) {
@@ -289,13 +300,15 @@ export const companyResolvers = {
         { status?: string; includeTest?: boolean; limit?: number; offset?: number },
       ctx: Ctx,
     ) => {
-      const { companyId } = requireCompany(ctx);
+      const { companyId, role } = requireCompany(ctx);
       const rows = await tenantSubmissions(companyId).findMany({
         where: {
-          ...(status ? { status: status as never } : {}),
-          // Test submissions are a rehearsal tool; they stay out of the real
-          // queue unless the dashboard explicitly asks for them.
-          isTest: includeTest === true,
+          AND: [{
+            ...(status ? { status: status as never } : {}),
+            // Test submissions are a rehearsal tool; they stay out of the real
+            // queue unless the dashboard explicitly asks for them.
+            isTest: includeTest === true,
+          }, visibleTo(role)],
         },
         // The id breaks ties, so two rows created in the same millisecond keep
         // one order across pages and none is shown twice or skipped.
@@ -313,15 +326,16 @@ export const companyResolvers = {
       { includeTest }: { includeTest?: boolean },
       ctx: Ctx,
     ) => {
-      const { companyId } = requireCompany(ctx);
+      const { companyId, role } = requireCompany(ctx);
       const scoped = tenantSubmissions(companyId);
       const isTest = includeTest === true;
+      const v = visibleTo(role);
       const [all, pending, approved, denied, tests] = await Promise.all([
-        scoped.count({ isTest }),
-        scoped.count({ isTest, status: 'PENDING_REVIEW' }),
-        scoped.count({ isTest, status: 'APPROVED' }),
-        scoped.count({ isTest, status: 'DENIED' }),
-        scoped.count({ isTest: true }),
+        scoped.count({ AND: [{ isTest }, v] }),
+        scoped.count({ AND: [{ isTest, status: 'PENDING_REVIEW' }, v] }),
+        scoped.count({ AND: [{ isTest, status: 'APPROVED' }, v] }),
+        scoped.count({ AND: [{ isTest, status: 'DENIED' }, v] }),
+        scoped.count({ AND: [{ isTest: true }, v] }),
       ]);
       return { all, pending, approved, denied, tests };
     },
@@ -344,7 +358,7 @@ export const companyResolvers = {
       return rows.map(n => ({
         id: n.id, kind: n.kind, title: n.title, body: n.body,
         submissionId: n.submissionId,
-        read: n.readAt != null,
+        read: n.readAt != null || n.readBy.includes(companyUserId),
         createdAt: n.createdAt.toISOString(),
       }));
     },
@@ -415,9 +429,9 @@ export const companyResolvers = {
     },
 
     companySubmission: async (_: unknown, { id }: { id: string }, ctx: Ctx) => {
-      const { companyId } = requireCompany(ctx);
+      const { companyId, role } = requireCompany(ctx);
       const rows = await tenantSubmissions(companyId).findMany({
-        where: { id }, include: { overrides: true }, take: 1,
+        where: { AND: [{ id }, visibleTo(role)] }, include: { overrides: true }, take: 1,
       });
       return stripSensitiveAll(rows)[0] ?? null;
     },
@@ -429,7 +443,7 @@ export const companyResolvers = {
         where: {
           companyId, readAt: null,
           OR: [{ userId: null }, { userId: companyUserId }],
-          NOT: { dismissedBy: { has: companyUserId } },
+          NOT: [{ dismissedBy: { has: companyUserId } }, { readBy: { has: companyUserId } }],
         },
       });
     },
@@ -440,8 +454,11 @@ export const companyResolvers = {
      * the approve button.
      */
     priorApprovals: async (_: unknown, { id }: { id: string }, ctx: Ctx) => {
-      const { companyId } = requireCompany(ctx);
+      const { companyId, role } = requireCompany(ctx);
       const submission = await tenantSubmissions(companyId).getOwned(id);
+      if (role === 'EMPLOYEE' && (submission.isTest || submission.status === 'PENDING_REVIEW')) {
+        throw new Error('Not found');
+      }
       return findPriorApprovals(submission as Parameters<typeof findPriorApprovals>[0]);
     },
 
@@ -812,7 +829,7 @@ export const companyResolvers = {
         title: 'An invitation was accepted',
         body: `${user.name} joined as ${roleName(invite.role)}.`,
       });
-      const jwtToken = signCompanyToken({ companyUserId: user.id, companyId: invite.companyId, role: invite.role, sid: ctx.sessionId });
+      const jwtToken = signCompanyToken({ companyUserId: user.id, companyId: invite.companyId, role: invite.role, sid: ctx.sessionId, auth: ctx.authTime });
       return buildAuthPayload(jwtToken, invite.company, invite.role);
     },
 
@@ -960,7 +977,7 @@ export const companyResolvers = {
       const all = await listPasskeys('companyUser', companyUserId);
       const added = all.find(p => p.id === result.passkeyId) ?? all[all.length - 1];
       // The first factor ended every earlier session, this one included.
-      return { ...added, token: result.firstFactor ? signCompanyToken({ companyUserId, companyId, role }) : null };
+      return { ...added, token: result.firstFactor ? signCompanyToken({ companyUserId, companyId, role, auth: ctx.authTime }) : null };
     },
 
     /**
@@ -968,7 +985,7 @@ export const companyResolvers = {
      * because the next sign-in would have nothing to offer.
      */
     removePasskey: async (_: unknown, { id, proof }: { id: string; proof?: string }, ctx: Ctx) => {
-      const { companyUserId } = requireCompany(ctx);
+      const { companyUserId, companyId, role } = requireCompany(ctx);
       // Removing one is a downgrade too — to the factor a phishing page can
       // capture — so it needs the same proof as adding one.
       await requireExistingFactor('companyUser', companyUserId, proof);
@@ -981,7 +998,9 @@ export const companyResolvers = {
           'That is your only second factor. Add an authenticator app or another passkey first.',
         );
       }
-      return removePasskey('companyUser', companyUserId, id);
+      const ok = await removePasskey('companyUser', companyUserId, id);
+      // The removal ended every earlier session, this one included.
+      return { ok, token: ok ? signCompanyToken({ companyUserId, companyId, role, auth: ctx.authTime }) : null };
     },
 
     /**
@@ -1058,13 +1077,14 @@ export const companyResolvers = {
       return challenge;
     },
 
-    finishStepUp: async (_: unknown, { ticket, responseJson }: { ticket: string; responseJson: string }, ctx: Ctx) => {
+    finishStepUp: async (_: unknown, { ticket, responseJson, purpose }: { ticket: string; responseJson: string; purpose: string }, ctx: Ctx) => {
       const { companyUserId } = requireCompanyEnrolling(ctx);
       const outcome = await finishAuthentication({ ticket, responseJson, scope: 'step-up' });
       if (!outcome.ok || outcome.kind !== 'companyUser' || outcome.accountId !== companyUserId) {
         throw new Error('That passkey could not be verified. Try again.');
       }
-      return issueStepUp('companyUser', companyUserId);
+      if (!isStepUpPurpose(purpose)) throw new Error('Unknown step-up purpose.');
+      return issueStepUp('companyUser', companyUserId, purpose);
     },
 
     /** A passkey satisfies the reveal as well as a code does. */
@@ -1137,7 +1157,7 @@ export const companyResolvers = {
       // their account is already in the wrong hands.
       return {
         recoveryCodes: result.recoveryCodes,
-        token: signCompanyToken({ companyUserId, companyId, role }),
+        token: signCompanyToken({ companyUserId, companyId, role, auth: ctx.authTime }),
       };
     },
 
@@ -1239,7 +1259,7 @@ export const companyResolvers = {
       if (!isDay(from) || !isDay(to) || from > to) {
         throw new GraphQLError('Choose a start and an end date, the start first.', { extensions: { code: 'BAD_USER_INPUT' } });
       }
-      const m = await freshFactor(companyId, companyUserId, credential);
+      const m = await freshFactor(companyId, companyUserId, credential, 'decision-export');
       const out = await decisionLogCsv(companyId, from, to);
       await recordBuyerAction(companyId, companyUserId, m.user.name, 'DECISION_EXPORT', out.rows);
       return { filename: `decisions-${from}-to-${to}.csv`, ...out };
@@ -1270,15 +1290,17 @@ export const companyResolvers = {
     markNotificationsRead: async (_: unknown, { ids }: { ids?: string[] }, ctx: Ctx) => {
       const { companyId, companyUserId } = requireCompany(ctx);
       // Scoped by tenant and addressee, so an id from another company's stream
-      // marks nothing.
+      // marks nothing; and read for this person only, so a shared notice stays
+      // unread for everyone else.
       const { count } = await prisma.notification.updateMany({
         where: {
           companyId,
           readAt: null,
           OR: [{ userId: null }, { userId: companyUserId }],
+          NOT: { readBy: { has: companyUserId } },
           ...(ids && ids.length > 0 ? { id: { in: ids.slice(0, 200) } } : {}),
         },
-        data: { readAt: new Date() },
+        data: { readBy: { push: companyUserId } },
       });
       return count;
     },
@@ -1335,8 +1357,13 @@ export const companyResolvers = {
       // A support session is deliberately short and is not extendable — that
       // is the point of giving platform staff two hours rather than a day.
       if (ctx.support) throw new Error('Support sessions cannot be extended.');
+      // Renewal resets the idle limit, never the time since sign-in. A token
+      // from before this claim existed counts from now, once.
+      if (sessionTooOld(ctx.authTime)) {
+        throw new GraphQLError('Your session has ended. Sign in again.', { extensions: { code: 'UNAUTHENTICATED' } });
+      }
       const token = signCompanyToken({
-        companyUserId, companyId, role, sid: ctx.sessionId,
+        companyUserId, companyId, role, sid: ctx.sessionId, auth: ctx.authTime,
       });
       return buildAuthPayload(token, membership.company, role);
     },
@@ -1353,7 +1380,7 @@ export const companyResolvers = {
         include: { company: true },
       });
       if (!membership || membership.company.deletedAt) throw new Error('You are not a member of that company.');
-      const token = signCompanyToken({ companyUserId, companyId, role: membership.role });
+      const token = signCompanyToken({ companyUserId, companyId, role: membership.role, auth: ctx.authTime });
       return buildAuthPayload(token, membership.company, membership.role);
     },
 
@@ -1446,22 +1473,17 @@ export const companyResolvers = {
       if (ctx.support) throw new GraphQLError('Not available in a support session.', { extensions: { code: 'FORBIDDEN' } });
       const scoped = tenantSubmissions(companyId);
       await scoped.getOwned(id);
-      await freshFactor(companyId, companyUserId, credential);
+      await freshFactor(companyId, companyUserId, credential, 'delete-statement');
       await scoped.delete(id);
       return true;
     },
 
     approveCompanySubmission: async (_: unknown, { id }: { id: string }, ctx: Ctx) => {
       const { companyId, companyUserId } = requireOwnerOrPlus(ctx);
-      const scoped = tenantSubmissions(companyId);
-      await scoped.getOwned(id);
-      await assertApprovable(id);
       const m = await membershipOrThrow(companyId, companyUserId);
-      const updated = await scoped.update(
-        id,
-        { status: 'APPROVED', reviewedById: companyUserId, reviewedByName: m.user.name, reviewedAt: new Date() },
-        { overrides: true },
-      );
+      const updated = await decideSubmission(id, companyId, 'APPROVED', {
+        reviewedById: companyUserId, reviewedByName: m.user.name, reviewedAt: new Date(),
+      });
       // The buyer used to hear nothing when the seller decided — only the
       // platform-admin path sent mail.
       await sendApproved(
@@ -1474,15 +1496,9 @@ export const companyResolvers = {
     // Re-open an already approved/denied submission back into the review queue.
     // Overrides are invalidated so a later edit can't ride an old bypass.
     reopenCompanySubmission: async (_: unknown, { id }: { id: string }, ctx: Ctx) => {
-      const { companyId } = requireOwnerOrPlus(ctx);
-      const scoped = tenantSubmissions(companyId);
-      await scoped.getOwned(id);
-      await prisma.submissionOverride.deleteMany({ where: { submissionId: id } });
-      return scoped.update(
-        id,
-        { status: 'PENDING_REVIEW', adminNote: null, reviewedById: null, reviewedByName: null, reviewedAt: null },
-        { overrides: true },
-      );
+      const { companyId, companyUserId } = requireOwnerOrPlus(ctx);
+      const m = await membershipOrThrow(companyId, companyUserId);
+      return reopenSubmission(id, companyId, { id: companyUserId, name: m.user.name });
     },
 
     updateFormConfig: async (_: unknown, { config }: { config: FormConfig }, ctx: Ctx) => {
@@ -1498,8 +1514,8 @@ export const companyResolvers = {
       if (config.customTermsMode === 'LINK') {
         const termsUrl = config.customTermsUrl?.trim();
         if (!termsUrl) throw new Error('Please enter a link to your terms page.');
-        if (!/^https?:\/\//i.test(termsUrl)) {
-          throw new Error('Terms & conditions link must start with http:// or https://');
+        if (!/^https:\/\//i.test(termsUrl)) {
+          throw new Error('Terms & conditions link must start with https://');
         }
       }
       const clean = resolveConfig(config); // drops unknown keys / invalid values
@@ -1516,11 +1532,9 @@ export const companyResolvers = {
       // Goes into the buyer's email and the stored note — bound it at the edge.
       const note = boundedText(reason, 1000, 'A reason');
       const m = await membershipOrThrow(companyId, companyUserId);
-      const updated = await tenantSubmissions(companyId).update(
-        id,
-        { status: 'DENIED', adminNote: note, reviewedById: companyUserId, reviewedByName: m.user.name, reviewedAt: new Date() },
-        { overrides: true },
-      );
+      const updated = await decideSubmission(id, companyId, 'DENIED', {
+        adminNote: note, reviewedById: companyUserId, reviewedByName: m.user.name, reviewedAt: new Date(),
+      });
       await sendDenied(
         updated.email, `${updated.firstName} ${updated.lastName}`, note, m.company.name,
       ).catch(() => {});
@@ -1530,24 +1544,13 @@ export const companyResolvers = {
     recheckCompanySubmissionSubstance: async (_: unknown, { id }: { id: string }, ctx: Ctx) => {
       const { companyId } = requireOwnerOrPlus(ctx);
       if (!SUBSTANCE_CHECK_ENABLED) throw new Error('Substance check is not configured.');
-      const scoped = tenantSubmissions(companyId);
-      const current = await scoped.getOwned(id);
       // Each re-run is outbound work against PubChem. A button held down was an
       // unbounded amplifier pointed at them, in this platform's name, so a run
-      // already in flight and a run that just finished both refuse a new one.
-      if (current.substanceCheckStatus === 'PENDING') {
-        throw new Error('The substance check is already running.');
-      }
-      if (current.substanceCheckedAt && Date.now() - current.substanceCheckedAt.getTime() < RECHECK_COOLDOWN_MS) {
-        throw new Error('This check just ran — wait a moment before running it again.');
-      }
-      const updated = await scoped.update(
-        id,
-        { substanceCheckStatus: 'PENDING' },
-        { overrides: true },
-      );
+      // already in flight and a run that just finished both refuse a new one
+      // — decided in one conditional update (lib/overrides.ts).
+      await claimSubstanceRecheck(id, companyId);
       void runSubstanceCheck(id);
-      return updated;
+      return prisma.submission.findFirst({ where: { id, companyId }, include: { overrides: true } });
     },
 
     overrideCompanySubmissionCheck: async (
@@ -1567,9 +1570,10 @@ export const companyResolvers = {
       { id, category }: { id: string; category: OverrideCategory },
       ctx: Ctx
     ) => {
-      const { companyId } = requireOwnerOrPlus(ctx);
+      const { companyId, companyUserId } = requireOwnerOrPlus(ctx);
       await tenantSubmissions(companyId).getOwned(id);
-      return clearOverride(id, category);
+      const m = await membershipOrThrow(companyId, companyUserId);
+      return clearOverride(id, category, { id: companyUserId, name: m.user.name });
     },
   },
 };

@@ -1,5 +1,5 @@
 import { prisma } from '../lib/prisma.ts';
-import { assertApprovable, applyOverride, clearOverride } from '../lib/overrides.ts';
+import { applyOverride, claimSubstanceRecheck, clearOverride, decideSubmission } from '../lib/overrides.ts';
 import { type OverrideCategory, type IdVerificationStatus } from '../lib/approvalGate.ts';
 import { checkVies, matchViesAddress, type ViesAddressMatch } from '../services/vies.ts';
 import { DIDIT_ENABLED, retrieveDecision, deleteSession } from '../services/didit.ts';
@@ -98,10 +98,8 @@ import { notifySubmission, notify } from '../lib/notifications.ts';
 import { findPriorApprovals } from '../lib/duplicates.ts';
 
 /** Nobody under this age may be supplied a listed precursor. */
-const MINIMUM_AGE = 18;
+import { MINIMUM_AGE, nameMatchesDocument } from '../lib/diditReconcile.ts';
 
-/** Minimum gap between manual substance re-runs for one submission. */
-const RECHECK_COOLDOWN_MS = 30_000;
 
 export const submissionResolvers = {
   Query: {
@@ -401,6 +399,12 @@ export const submissionResolvers = {
       // CAS the check identifies the substance by name instead.
       const willCheckSubstance = SUBSTANCE_CHECK_ENABLED && !!(rest.substances as string)?.trim();
 
+      // Compared on the verified document only: a name Didit has not confirmed
+      // has nothing to be checked against.
+      const nameMatch = idVerification.status === 'APPROVED'
+        ? nameMatchesDocument(rest.firstName, rest.lastName, rest.idDocumentName as string | null)
+        : null;
+
       const submission = await prisma.submission.create({
         data: {
           ...rest,
@@ -420,7 +424,14 @@ export const submissionResolvers = {
           idVerificationStatus: idVerification.status,
           idLivenessPassed: idVerification.livenessPassed,
           idFaceMatch: idVerification.faceMatch,
-          idVerificationWarnings: idVerification.warnings,
+          idVerificationWarnings: nameMatch === false
+            ? ['The name on the form does not match the document', idVerification.warnings].filter(Boolean).join('; ').slice(0, 1000)
+            : idVerification.warnings,
+          idNameMatches: nameMatch,
+          // The terms as the buyer saw them, so the PDF and emails keep
+          // showing what was agreed to after the seller edits the form.
+          termsText: config.customTermsMode === 'TEXT' ? config.customTermsText || null : null,
+          termsUrl: config.customTermsMode === 'LINK' ? config.customTermsUrl || null : null,
           idVerificationPurged: idVerification.purged,
           idVerificationCheckedAt: idCollected ? new Date() : null,
           viesStatus,
@@ -487,11 +498,8 @@ export const submissionResolvers = {
     approveSubmission: async (_: unknown, { id }: { id: string }, ctx: { admin?: boolean; adminId?: string }) => {
       requireAdmin(ctx);
 
-      await assertApprovable(id);
-      const submission = await prisma.submission.update({
-        where: { id },
-        data: { status: 'APPROVED', reviewedById: ctx.adminId ?? 'admin', reviewedByName: 'Admin', reviewedAt: new Date() },
-        include: { overrides: true },
+      const submission = await decideSubmission(id, null, 'APPROVED', {
+        reviewedById: ctx.adminId ?? 'admin', reviewedByName: 'Admin', reviewedAt: new Date(),
       });
 
       const name = `${submission.firstName} ${submission.lastName}`;
@@ -511,10 +519,8 @@ export const submissionResolvers = {
 
       const note = typeof reason === 'string' ? reason.trim().slice(0, 1000) : '';
       if (!note) throw new Error('A reason is required.');
-      const submission = await prisma.submission.update({
-        where: { id },
-        data: { status: 'DENIED', adminNote: note, reviewedById: ctx.adminId ?? 'admin', reviewedByName: 'Admin', reviewedAt: new Date() },
-        include: { overrides: true },
+      const submission = await decideSubmission(id, null, 'DENIED', {
+        adminNote: note, reviewedById: ctx.adminId ?? 'admin', reviewedByName: 'Admin', reviewedAt: new Date(),
       });
 
       const name = `${submission.firstName} ${submission.lastName}`;
@@ -535,10 +541,10 @@ export const submissionResolvers = {
     clearSubmissionCheckOverride: async (
       _: unknown,
       { id, category }: { id: string; category: OverrideCategory },
-      ctx: { admin?: boolean }
+      ctx: { admin?: boolean; adminId?: string }
     ) => {
       requireAdmin(ctx);
-      return clearOverride(id, category);
+      return clearOverride(id, category, { id: ctx.adminId ?? 'admin', name: 'Admin' });
     },
 
     /**
@@ -583,22 +589,8 @@ export const submissionResolvers = {
       if (!SUBSTANCE_CHECK_ENABLED) throw new Error('Substance check is not configured.');
       // Every re-run is outbound work against PubChem — see the company-side
       // mutation for why a held-down button must not become an amplifier.
-      const current = await prisma.submission.findUnique({
-        where: { id },
-        select: { substanceCheckStatus: true, substanceCheckedAt: true },
-      });
-      if (!current) throw new Error('Submission not found.');
-      if (current.substanceCheckStatus === 'PENDING') {
-        throw new Error('The substance check is already running.');
-      }
-      if (current.substanceCheckedAt && Date.now() - current.substanceCheckedAt.getTime() < RECHECK_COOLDOWN_MS) {
-        throw new Error('This check just ran — wait a moment before running it again.');
-      }
-      const submission = await prisma.submission.update({
-        where: { id },
-        data: { substanceCheckStatus: 'PENDING' },
-        include: { overrides: true },
-      });
+      await claimSubstanceRecheck(id, null);
+      const submission = await prisma.submission.findUnique({ where: { id }, include: { overrides: true } });
       void runSubstanceCheck(id);
       return submission;
     },

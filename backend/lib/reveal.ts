@@ -14,7 +14,7 @@ import bcrypt from 'bcrypt';
 import { prisma } from './prisma.ts';
 import { MFA_SELECT, mfaEnabled } from './mfa.ts';
 import { checkSecondFactorLimited } from './loginGuard.ts';
-import { consumeStepUp, isStepUpToken } from './stepUp.ts';
+import { consumeStepUp, isStepUpToken, type StepUpPurpose } from './stepUp.ts';
 
 export type RevealOutcome =
   | { ok: true; documentNumber: string | null }
@@ -29,7 +29,7 @@ export type RevealOutcome =
  * proved nothing a stolen session did not.
  */
 export async function checkCredential(
-  kind: 'companyUser' | 'admin', accountId: string, credential: string,
+  kind: 'companyUser' | 'admin', accountId: string, credential: string, purpose: StepUpPurpose,
 ): Promise<{ ok: true } | { ok: false; reason: 'missing' | 'invalid' | 'no-credential' }> {
   const account = kind === 'admin'
     ? await prisma.admin.findUnique({
@@ -44,7 +44,7 @@ export async function checkCredential(
 
   // A passkey, exchanged for a one-time step-up token, counts as a code.
   if (isStepUpToken(credential)) {
-    return consumeStepUp(credential, kind, accountId) ? { ok: true } : { ok: false, reason: 'invalid' };
+    return consumeStepUp(credential, kind, accountId, purpose) ? { ok: true } : { ok: false, reason: 'invalid' };
   }
   if (!mfaEnabled(account)) return { ok: false, reason: 'no-credential' };
   const second = await checkSecondFactorLimited(kind, account, credential);
@@ -80,6 +80,7 @@ export async function revealDocumentNumber({
     asAdmin ? 'admin' : 'companyUser',
     asAdmin ? (adminId ?? userId) : userId,
     credential,
+    'reveal',
   );
   if (!check.ok) return { ok: false, reason: check.reason };
 

@@ -92,7 +92,7 @@ export function MfaSettings({
         const need = stepUpNeeded(err);
         if (need === 'password' && withPassword === undefined) { setPassword(''); setAskPassword(true); return; }
         if (need !== 'passkey') throw err;
-        const proof = await passkeyProof(client, account);
+        const proof = await passkeyProof(client, account, 'sign-in-methods');
         ({ data } = await start({ variables: { proof } }));
       }
       setAskPassword(false);

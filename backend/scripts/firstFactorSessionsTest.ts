@@ -104,7 +104,7 @@ try {
   const fresh = await gql('{ myAccount { id } }', {}, added?.token);
   check('the replacement does', fresh.data?.myAccount?.id === u.id, JSON.stringify(fresh.errors?.[0]));
 
-  const step = (await import('../lib/stepUp.ts')).issueStepUp('companyUser', u.id);
+  const step = (await import('../lib/stepUp.ts')).issueStepUp('companyUser', u.id, 'sign-in-methods');
   const again = await gql('mutation($p:String){ startPasskeyRegistration(proof:$p){ optionsJson ticket } }', { p: step }, added.token);
   const done2 = await gql(
     'mutation($t:String!,$r:String!){ finishPasskeyRegistration(ticket:$t, responseJson:$r, name:"Phone"){ id token } }',
@@ -124,7 +124,7 @@ try {
   const pk = await gql(DEL, { id: s1.id, c: '' }, added.token);
   check('a passkey account is asked for its passkey', code(pk) === 'STEP_UP_REQUIRED' && pk.errors[0].extensions.method === 'passkey', JSON.stringify(pk.errors?.[0]));
   check('and nothing was deleted', (await prisma.submission.count({ where: { id: s1.id } })) === 1);
-  const viaStep = await gql(DEL, { id: s1.id, c: (await import('../lib/stepUp.ts')).issueStepUp('companyUser', u.id) }, added.token);
+  const viaStep = await gql(DEL, { id: s1.id, c: (await import('../lib/stepUp.ts')).issueStepUp('companyUser', u.id, 'delete-statement') }, added.token);
   check('with the passkey step-up it is deleted', viaStep.data?.deleteCompanySubmission === true && (await prisma.submission.count({ where: { id: s1.id } })) === 0, JSON.stringify(viaStep.errors?.[0]));
 
   // The same owner with an authenticator app too: the code is what is asked for.

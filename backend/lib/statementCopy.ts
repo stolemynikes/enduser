@@ -7,7 +7,7 @@ import type { StatementCopy } from '../services/email.ts';
 import { statementCheckCode, statementCheckUrl } from './statementCheck.ts';
 
 export async function statementCopy(
-  submission: StatementForPdf & { companyId?: string | null },
+  submission: StatementForPdf & { companyId?: string | null; termsText?: string | null; termsUrl?: string | null },
 ): Promise<StatementCopy | undefined> {
   try {
     const company = submission.companyId
@@ -17,10 +17,16 @@ export async function statementCopy(
         })
       : null;
     const config = resolveConfig(company?.formConfig);
+    // The terms stored with the statement are the ones the buyer agreed to.
+    // Only a statement from before they were stored falls back to the form's
+    // current settings.
+    const stored = submission.termsText != null || submission.termsUrl != null;
     const content = await buildStatementPdf(submission, {
       sellerName: company?.name,
-      termsText: config.customTermsMode === 'TEXT' ? config.customTermsText : undefined,
-      termsUrl: config.customTermsMode === 'LINK' ? config.customTermsUrl : undefined,
+      termsText: stored ? submission.termsText ?? undefined
+        : config.customTermsMode === 'TEXT' ? config.customTermsText : undefined,
+      termsUrl: stored ? submission.termsUrl ?? undefined
+        : config.customTermsMode === 'LINK' ? config.customTermsUrl : undefined,
       checkUrl: statementCheckUrl(process.env.FRONTEND_URL ?? 'http://localhost:5173', submission.id),
       checkCode: statementCheckCode(submission.id),
     });

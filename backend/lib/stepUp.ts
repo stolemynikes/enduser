@@ -24,9 +24,26 @@ const TTL_SECONDS = 120;
 
 /** jti → expiry, so a token works once. One instance (see the Dockerfile). */
 const spent = new Map<string, number>();
+/**
+ * That memory goes with a restart, so a token issued before this process
+ * started is refused: one already spent would otherwise work again for the
+ * rest of its two minutes.
+ */
+const BOOT_SECONDS = Math.floor(Date.now() / 1000);
 
-export function issueStepUp(kind: Kind, accountId: string): string {
-  return PREFIX + jwt.sign({ kind }, process.env.COMPANY_JWT_SECRET!, {
+/**
+ * What a step-up was approved for. A token is accepted only by that action: a
+ * passkey prompt the person approved to change their sign-in methods must not
+ * be redeemable for deleting a statement or exporting a buyer's data.
+ */
+export const STEP_UP_PURPOSES = ['sign-in-methods', 'delete-statement', 'buyer-data', 'decision-export', 'reveal'] as const;
+export type StepUpPurpose = typeof STEP_UP_PURPOSES[number];
+export function isStepUpPurpose(v: unknown): v is StepUpPurpose {
+  return typeof v === 'string' && (STEP_UP_PURPOSES as readonly string[]).includes(v);
+}
+
+export function issueStepUp(kind: Kind, accountId: string, purpose: StepUpPurpose): string {
+  return PREFIX + jwt.sign({ kind, pur: purpose }, process.env.COMPANY_JWT_SECRET!, {
     algorithm: 'HS256', audience: AUDIENCE, subject: accountId, expiresIn: TTL_SECONDS, jwtid: crypto.randomUUID(),
   });
 }
@@ -36,12 +53,12 @@ export function isStepUpToken(v: unknown): v is string {
 }
 
 /** Valid, for this account, and not used before — and now used. */
-export function consumeStepUp(token: string, kind: Kind, accountId: string): boolean {
+export function consumeStepUp(token: string, kind: Kind, accountId: string, purpose: StepUpPurpose): boolean {
   try {
     const c = jwt.verify(token.slice(PREFIX.length), process.env.COMPANY_JWT_SECRET!, {
       algorithms: ['HS256'], audience: AUDIENCE, subject: accountId,
-    }) as { kind?: string; jti?: string; exp?: number };
-    if (c.kind !== kind || !c.jti) return false;
+    }) as { kind?: string; pur?: string; jti?: string; exp?: number; iat?: number };
+    if (c.kind !== kind || c.pur !== purpose || !c.jti || (c.iat ?? 0) < BOOT_SECONDS) return false;
     const now = Date.now();
     for (const [k, exp] of spent) if (exp < now) spent.delete(k);
     if (spent.has(c.jti)) return false;
@@ -90,7 +107,7 @@ export async function proveExistingFactor(kind: Kind, id: string, proof: unknown
   }
   const method = f.totp ? 'code' : 'passkey';
   if (typeof proof !== 'string' || !proof.trim()) return { ok: false, reason: 'needed', method };
-  if (isStepUpToken(proof)) return consumeStepUp(proof, kind, id) ? { ok: true } : { ok: false, reason: 'invalid', method };
+  if (isStepUpToken(proof)) return consumeStepUp(proof, kind, id, 'sign-in-methods') ? { ok: true } : { ok: false, reason: 'invalid', method };
   if (!f.totp) return { ok: false, reason: 'needed', method };
   const second = await checkSecondFactorLimited(kind, f.account, proof);
   return second.ok ? { ok: true } : { ok: false, reason: 'invalid', method };

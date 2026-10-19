@@ -41,9 +41,14 @@ const MAX_PAGE = 200;
 const FIXED_ROWS: Record<string, number> = {
   teamDecisions: MAX_ROWS,
   adminCompanies: MAX_PAGE,
+  // Five count queries over the tenant's statements per copy; uncharged, a
+  // document of aliased copies multiplied them freely.
+  companySubmissionCounts: 50,
+  // Renders a PDF of every acceptance on file: one per request is enough.
+  legalAcceptanceRecord: MAX_ROWS,
 };
 
-const LIST_FIELDS = new Set(['companySubmissions', 'submissions', 'adminCompanies', 'accessRequests', 'companyMembers', 'notifications', 'teamDecisions']);
+const LIST_FIELDS = new Set(['companySubmissions', 'submissions', 'adminCompanies', 'accessRequests', 'companyMembers', 'notifications', 'teamDecisions', ...Object.keys(FIXED_ROWS)]);
 
 /**
  * Walks an operation with every fragment expanded in place, so a field reached

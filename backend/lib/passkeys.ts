@@ -84,9 +84,15 @@ type Ticket = {
 // so the library's replay check never fires for it, and one assertion could be
 // submitted again and again within the ticket's two minutes. One instance
 // (see the Dockerfile), so memory is enough.
+//
+// The memory goes with a restart, so a ticket issued before this process
+// started is refused outright: otherwise one already spent would be accepted
+// again in the two minutes after a restart. The cost is that a ceremony in
+// flight during a deploy has to be started again.
 const spentTickets = new Map<string, number>();
-function spendTicket(jti: string | undefined, exp: number | undefined): boolean {
-  if (!jti) return false;
+const BOOT_SECONDS = Math.floor(Date.now() / 1000);
+function spendTicket(jti: string | undefined, exp: number | undefined, iat?: number): boolean {
+  if (!jti || (iat ?? 0) < BOOT_SECONDS) return false;
   const now = Date.now();
   for (const [k, e] of spentTickets) if (e < now) spentTickets.delete(k);
   if (spentTickets.has(jti)) return false;
@@ -111,11 +117,11 @@ function readTicket(token: string, purpose: TicketPurpose): Ticket | null {
   try {
     const claims = jwt.verify(token, process.env.COMPANY_JWT_SECRET!, {
       algorithms: ['HS256'], audience: 'passkey-ticket',
-    }) as Ticket & { jti?: string; exp?: number };
+    }) as Ticket & { jti?: string; exp?: number; iat?: number };
     // A ticket for one ceremony must never be accepted for the other, and
     // neither may stand in for a session.
     if (claims.purpose !== purpose) return null;
-    return spendTicket(claims.jti, claims.exp) ? claims : null;
+    return spendTicket(claims.jti, claims.exp, claims.iat) ? claims : null;
   } catch {
     return null;
   }
@@ -247,10 +253,18 @@ export async function finishRegistration({
   return { ok: true, passkeyId: created.id, firstFactor };
 }
 
+/**
+ * Removes one of the account's passkeys and ends the sessions that existed
+ * before: a session signed in with the removed device (a lost laptop, say)
+ * must not outlive it. The caller is handed a replacement by the resolver.
+ */
 export async function removePasskey(kind: AccountKind, id: string, passkeyId: string): Promise<boolean> {
   const { count } = await prisma.passkey.deleteMany({
     where: { id: passkeyId, ...owner(kind, id) },
   });
+  if (count === 1) {
+    await (prisma[kind] as any).update({ where: { id }, data: { sessionsValidFrom: new Date() } });
+  }
   return count === 1;
 }
 
@@ -297,6 +311,17 @@ export async function finishAuthentication({
   const claims = readTicket(ticket, 'passkey-login');
   // The signature must have been asked for this purpose (see Ticket.scope).
   if (!claims || (claims.scope ?? 'login') !== scope) return { ok: false, reason: 'bad-ticket' };
+  // A ticket from before the account's sessions were cut off (a password
+  // reset, two-factor switched on or off) is refused like a session from then:
+  // it was issued on the strength of the old password, and finishing it would
+  // mint a fresh session that passes every later check.
+  const issuedAt = ((claims as { iat?: number }).iat ?? 0) * 1000;
+  const holder = await (prisma[claims.kind] as any).findUnique({
+    where: { id: claims.accountId }, select: { sessionsValidFrom: true },
+  });
+  if (!holder || (holder.sessionsValidFrom && issuedAt + 1000 < holder.sessionsValidFrom.getTime())) {
+    return { ok: false, reason: 'bad-ticket' };
+  }
 
   let parsed: { id?: string };
   try { parsed = JSON.parse(responseJson); } catch { return { ok: false, reason: 'rejected' }; }

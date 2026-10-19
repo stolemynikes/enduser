@@ -18,12 +18,14 @@ function hash(token: string): string {
 }
 
 /**
- * Issues a token and invalidates any earlier unused one of the same kind, so a
- * second "reset my password" click cannot leave two live links behind.
+ * Issues a token. Earlier unused links of the same kind stay valid until one of
+ * them is used (consumeToken then spends the rest). Revoking them here let
+ * anyone who knows an address cancel the link its owner was about to click,
+ * just by asking for another — every link goes to the owner's own inbox, so
+ * leaving them live gives a stranger nothing.
  */
 export async function issueToken(userId: string, kind: AuthTokenKind): Promise<string> {
   const token = crypto.randomBytes(32).toString('base64url');
-  await prisma.authToken.deleteMany({ where: { userId, kind, usedAt: null } });
   await prisma.authToken.create({
     data: { userId, kind, tokenHash: hash(token), expiresAt: new Date(Date.now() + TTL_MS[kind]) },
   });
@@ -46,7 +48,13 @@ export async function consumeToken(token: string, kind: AuthTokenKind): Promise<
     where: { id: row.id, usedAt: null },
     data: { usedAt: new Date() },
   });
-  return count === 1 ? row.userId : null;
+  if (count !== 1) return null;
+  // One link used: every other live link of this kind is spent with it.
+  await prisma.authToken.updateMany({
+    where: { userId: row.userId, kind, usedAt: null },
+    data: { usedAt: new Date() },
+  });
+  return row.userId;
 }
 
 /** Drops expired and spent rows. Called from the nightly maintenance job. */

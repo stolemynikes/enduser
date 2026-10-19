@@ -109,6 +109,7 @@ export default function App() {
       <Route path="/invite/:token" element={<AcceptInvite />} />
       <Route path="/forgot" element={<ForgotPassword />} />
       <Route path="/reset/:token" element={<ResetPassword />} />
+      <Route path="/reset" element={<ResetPassword />} />
       <Route path="/verify/:token" element={<VerifyEmail />} />
       {/* Public company forms live at the root — keep this route last. */}
       <Route path="/:slug" element={<Form />} />

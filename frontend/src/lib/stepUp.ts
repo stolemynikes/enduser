@@ -27,24 +27,27 @@ export function stepUpNeeded(err: unknown): ProofMethod | null {
 const OPS = {
   company: {
     START: gql`mutation StartStepUp { startStepUp { optionsJson ticket } }`,
-    FINISH: gql`mutation FinishStepUp($ticket: String!, $responseJson: String!) { finishStepUp(ticket: $ticket, responseJson: $responseJson) }`,
+    FINISH: gql`mutation FinishStepUp($ticket: String!, $responseJson: String!, $purpose: String!) { finishStepUp(ticket: $ticket, responseJson: $responseJson, purpose: $purpose) }`,
     started: 'startStepUp', finished: 'finishStepUp',
   },
   admin: {
     START: gql`mutation StartAdminStepUp { startAdminStepUp { optionsJson ticket } }`,
-    FINISH: gql`mutation FinishAdminStepUp($ticket: String!, $responseJson: String!) { finishAdminStepUp(ticket: $ticket, responseJson: $responseJson) }`,
+    FINISH: gql`mutation FinishAdminStepUp($ticket: String!, $responseJson: String!, $purpose: String!) { finishAdminStepUp(ticket: $ticket, responseJson: $responseJson, purpose: $purpose) }`,
     started: 'startAdminStepUp', finished: 'finishAdminStepUp',
   },
 } as const;
 
+/** What the proof is for; the server only accepts it for that (lib/stepUp.ts). */
+export type StepUpPurpose = 'sign-in-methods' | 'delete-statement' | 'buyer-data' | 'decision-export';
+
 /** Signs a challenge with an existing passkey and returns the one-time proof. */
-export async function passkeyProof(client: ApolloClient, account: 'company' | 'admin'): Promise<string> {
+export async function passkeyProof(client: ApolloClient, account: 'company' | 'admin', purpose: StepUpPurpose): Promise<string> {
   const ops = OPS[account];
   const { data: began } = await client.mutate<any>({ mutation: ops.START });
   const { optionsJson, ticket } = began[ops.started];
   const assertion = await startAuthentication({ optionsJSON: JSON.parse(optionsJson) });
   const { data: done } = await client.mutate<any>({
-    mutation: ops.FINISH, variables: { ticket, responseJson: JSON.stringify(assertion) },
+    mutation: ops.FINISH, variables: { ticket, responseJson: JSON.stringify(assertion), purpose },
   });
   return done[ops.finished] as string;
 }

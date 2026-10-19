@@ -90,7 +90,9 @@ export function resolveConfig(json: unknown): FormConfig {
     }
     if (typeof src.customTermsUrl === 'string') {
       const url = src.customTermsUrl.trim().slice(0, TERMS_URL_MAX);
-      out.customTermsUrl = /^https?:\/\//i.test(url) ? url : '';
+      // https only: the buyer agrees to what this link shows, and a plain-http
+      // page can be altered on the way to them.
+      out.customTermsUrl = /^https:\/\//i.test(url) ? url : '';
     }
   }
   return out;

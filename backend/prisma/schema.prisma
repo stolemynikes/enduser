@@ -42,6 +42,15 @@ model Submission {
   idLivenessPassed        Boolean?
   idFaceMatch             Boolean?
   idVerificationWarnings  String?
+  /// Whether the name typed on the form matches the name on the verified
+  /// document. False fails the identity check until a reviewer overrides it
+  /// with a reason; null where there was no document to compare against.
+  idNameMatches           Boolean?
+  /// The seller's terms as they stood when the buyer agreed to them. The PDF
+  /// and emails use these, not the form's current settings, which the seller
+  /// can change afterwards.
+  termsText               String?
+  termsUrl                String?
   idVerificationCheckedAt DateTime?
   /// True once the Didit-side session (including the document images) has been purged.
   idVerificationPurged    Boolean               @default(false)
@@ -111,6 +120,25 @@ model Submission {
 // One row per manual override of a failing automated check (VIES / Identity /
 // Substance). Records who bypassed the check, when, and why — the audit trail
 // behind a fail-closed approval.
+/// Every decision and override on a statement, kept when the statement is
+/// reopened or an override cleared. Those reset the statement's own fields,
+/// which used to be the only record of who had decided what.
+model DecisionLog {
+  id            String   @id @default(uuid())
+  companyId     String?
+  submissionId  String
+  /// APPROVED, DENIED, REOPENED, OVERRIDE, OVERRIDE_CLEARED
+  action        String
+  /// The check an override concerns.
+  category      String?
+  byId          String
+  byName        String
+  at            DateTime @default(now())
+
+  @@index([companyId, at])
+  @@index([submissionId])
+}
+
 model SubmissionOverride {
   id            String           @id @default(uuid())
   submission    Submission       @relation(fields: [submissionId], references: [id], onDelete: Cascade)
@@ -476,7 +504,12 @@ model Notification {
   body      String?
   /// Where the bell takes you — a submission id, or null for nothing to open.
   submissionId String?
+  /// Legacy, from when read was one shared flag; still honoured for old rows.
   readAt    DateTime?
+  /// Company users who have read this. Per person, like dismissedBy: one
+  /// member opening a shared notice (a support-access alert, say) must not
+  /// mark it read for the owners who still need to see it.
+  readBy    String[]         @default([])
   /// Company users who cleared this from their own activity list. Clearing is
   /// per person: a shared notice disappears for the one who cleared it, not
   /// for the rest of the team.

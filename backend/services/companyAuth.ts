@@ -21,6 +21,18 @@ const SESSION_MINUTES = 60;
 /** Support sessions are privileged admin access into a tenant — far shorter. */
 const SUPPORT_HOURS = 2;
 
+/**
+ * However actively it is used, a session ends this long after the sign-in that
+ * started it. Renewal kept a session alive for as long as it was renewed, so a
+ * stolen token, or a tab left open on an unattended desk, never expired.
+ */
+export const MAX_SESSION_HOURS = 12;
+
+/** True when the sign-in behind this session is older than the absolute limit. */
+export function sessionTooOld(auth: number | undefined): boolean {
+  return auth != null && Date.now() / 1000 - auth > MAX_SESSION_HOURS * 3600;
+}
+
 export type CompanyTokenPayload = {
   /** Issued-at, present on verified tokens; used to refuse pre-reset sessions. */
   iat?: number;
@@ -33,6 +45,11 @@ export type CompanyTokenPayload = {
    * session that earned it rather than to the account.
    */
   sid?: string;
+  /**
+   * When the person last signed in, in seconds. Carried over on renewal like
+   * the session id, so renewing extends the idle limit but never this one.
+   */
+  auth?: number;
   // Set on tokens issued via adminSupportLogin so support sessions are
   // distinguishable and every operation can be audit-logged.
   support?: boolean;
@@ -46,6 +63,7 @@ export function signCompanyToken(payload: CompanyTokenPayload): string {
     // being renewed keeps the id it already had, so an elevation survives a
     // refresh and does not survive a new sign-in.
     sid: payload.sid ?? crypto.randomBytes(16).toString('base64url'),
+    auth: payload.auth ?? Math.floor(Date.now() / 1000),
   };
   return jwt.sign(body, SECRET, {
     expiresIn: payload.support ? `${SUPPORT_HOURS}h` : `${SESSION_MINUTES}m`,

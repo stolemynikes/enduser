@@ -52,12 +52,22 @@ export async function mailBudgetAllows(recipient: string, kind: keyof typeof BUD
   const recipientHash = pseudonym(recipient);
   const since = new Date(Date.now() - budget.minutes * 60_000);
   try {
-    const used = await prisma.mailBudget.count({ where: { recipientHash, kind, sentAt: { gte: since } } });
-    if (used >= budget.max) {
+    // Write first, then count with this one included. Counting first let a
+    // burst of requests all see room in the budget before any of them wrote;
+    // now each sees the others, and whichever finds itself past the limit
+    // takes its own entry back and does not send.
+    const mine = await prisma.mailBudget.create({ data: { recipientHash, kind }, select: { id: true, sentAt: true } });
+    const ahead = await prisma.mailBudget.count({
+      where: {
+        recipientHash, kind, sentAt: { gte: since },
+        OR: [{ sentAt: { lt: mine.sentAt } }, { sentAt: mine.sentAt, id: { lt: mine.id } }],
+      },
+    });
+    if (ahead >= budget.max) {
+      await prisma.mailBudget.deleteMany({ where: { id: mine.id } });
       console.warn(`[mail] budget reached for a recipient (${kind}) — message not sent`);
       return false;
     }
-    await prisma.mailBudget.create({ data: { recipientHash, kind } });
     return true;
   } catch (err: any) {
     console.error(`[mail] budget check failed: ${err?.message ?? 'unknown error'}`);

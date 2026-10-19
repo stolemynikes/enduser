@@ -156,8 +156,8 @@ async function gql(query: string, variables?: object, token?: string): Promise<R
   const keyRow = await prisma.passkey.findFirst({ where: { userId: owner.id }, select: { id: true } });
   // With the proof given, so it is the last-factor rule that refuses, not the step-up.
   const { issueStepUp } = await import('../lib/stepUp.ts');
-  const lastOne = await gql('mutation($id:ID!,$p:String){ removePasskey(id:$id, proof:$p) }',
-    { id: keyRow!.id, p: issueStepUp('companyUser', owner.id) }, ownerToken);
+  const lastOne = await gql('mutation($id:ID!,$p:String){ removePasskey(id:$id, proof:$p){ ok token } }',
+    { id: keyRow!.id, p: issueStepUp('companyUser', owner.id, 'sign-in-methods') }, ownerToken);
   check('removing the only passkey is refused while there is no app',
     !!lastOne.errors?.length, JSON.stringify(lastOne.data));
   check('and it is still there',
@@ -171,13 +171,19 @@ async function gql(query: string, variables?: object, token?: string): Promise<R
   });
   await prisma.rateLimitHit.deleteMany({});
   // Removing needs the existing factor (reviewFindingsTest); a passkey step-up is that proof.
-  const nowFine = await gql('mutation($id:ID!,$p:String){ removePasskey(id:$id, proof:$p) }',
-    { id: keyRow!.id, p: issueStepUp('companyUser', owner.id) }, ownerToken);
-  check('with two enrolled and the passkey used, one can go', nowFine.data?.removePasskey === true,
+  const nowFine = await gql('mutation($id:ID!,$p:String){ removePasskey(id:$id, proof:$p){ ok token } }',
+    { id: keyRow!.id, p: issueStepUp('companyUser', owner.id, 'sign-in-methods') }, ownerToken);
+  check('with two enrolled and the passkey used, one can go', nowFine.data?.removePasskey?.ok === true,
     JSON.stringify(nowFine.errors));
 
+  // Removing a passkey signs out the sessions before it; the reply carries a replacement.
+  await new Promise(r => setTimeout(r, 1100));
+  check('the session the removal ran in is replaced',
+    typeof nowFine.data?.removePasskey?.token === 'string');
+  const afterRemoval = nowFine.data?.removePasskey?.token as string;
+
   console.log('— Listing is per account —');
-  const mine = await gql('{ myPasskeys{ id name } }', undefined, ownerToken);
+  const mine = await gql('{ myPasskeys{ id name } }', undefined, afterRemoval);
   check('the owner sees their own', (mine.data?.myPasskeys ?? []).length === 1,
     JSON.stringify(mine.data));
   const otherToken = signCompanyToken({ companyUserId: other.id, companyId: company.id, role: 'EMPLOYEE_PLUS' });

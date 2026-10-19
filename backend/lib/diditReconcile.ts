@@ -13,6 +13,23 @@ import { recordEvent } from './ops.ts';
 import type { Prisma } from '../generated/prisma/client.ts';
 
 const FINAL = new Set(['APPROVED', 'DECLINED', 'EXPIRED']);
+
+/** Buyers younger than this are refused. Shared with the submit mutation. */
+export const MINIMUM_AGE = 18;
+
+/**
+ * The platform's own rules on top of Didit's answer: a passport or identity
+ * card, and a buyer of age. The submit mutation enforces them when the answer
+ * is already final; an answer that arrives later (IN_REVIEW turning APPROVED,
+ * by webhook or the nightly reconcile) used to be stored as APPROVED without
+ * them, and APPROVED is what the approval gate trusts.
+ */
+export function policyFailure(d: DiditDecision): string | null {
+  if (d.status !== 'APPROVED') return null;
+  if (d.documentType == null) return 'Document type not accepted (passport or identity card only)';
+  if (d.age != null && d.age < MINIMUM_AGE) return `Buyer is under ${MINIMUM_AGE}`;
+  return null;
+}
 const HOUR_MS = 60 * 60 * 1000;
 /** Younger than this, a check is left to its webhook. */
 const MIN_AGE_MS = HOUR_MS;
@@ -28,13 +45,18 @@ const BATCH = 200;
  */
 export async function recordDecision(submissionId: string, sessionId: string, decision: DiditDecision): Promise<void> {
   const purged = FINAL.has(decision.status) ? await deleteSession(sessionId) : false;
+  const failure = policyFailure(decision);
   await prisma.submission.update({
     where: { id: submissionId },
     data: {
-      idVerificationStatus: decision.status,
+      // Stored as declined, with the reason in the warnings, so the gate
+      // blocks it and the reviewer sees why.
+      idVerificationStatus: failure ? 'DECLINED' : decision.status,
       idLivenessPassed: decision.livenessPassed,
       idFaceMatch: decision.faceMatch,
-      idVerificationWarnings: decision.warnings,
+      idVerificationWarnings: failure
+        ? [failure, decision.warnings].filter(Boolean).join('; ').slice(0, 1000)
+        : decision.warnings,
       idVerificationCheckedAt: new Date(),
       idVerificationPurged: purged,
       ...(decision.documentType ? { idDocumentType: decision.documentType } : {}),
@@ -149,4 +171,25 @@ export async function purgeSessionsOf(where: Prisma.SubmissionWhereInput): Promi
 /** `only` scopes it for tests. */
 export function purgeBeforeRetention(cutoff: Date, { only }: { only?: string[] } = {}): Promise<number> {
   return purgeSessionsOf({ createdAt: { lt: cutoff }, ...(only ? { id: { in: only } } : {}) });
+}
+
+/** Letters only, lower case, accents removed, split into words. */
+function nameWords(s: string): string[] {
+  return s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+    .replace(/[^a-z]+/g, ' ').trim().split(' ').filter(Boolean);
+}
+
+/**
+ * Whether the name typed on the form is the name on the verified document:
+ * every word of the surname, and the first word of the given name, must
+ * appear on the document (which may carry more given names). Null when there
+ * is no document name to compare with.
+ */
+export function nameMatchesDocument(first: unknown, last: unknown, documentName: string | null | undefined): boolean | null {
+  if (!documentName) return null;
+  const doc = new Set(nameWords(documentName));
+  const given = nameWords(String(first ?? ''));
+  const surname = nameWords(String(last ?? ''));
+  if (given.length === 0 || surname.length === 0) return false;
+  return doc.has(given[0]) && surname.every(w => doc.has(w));
 }

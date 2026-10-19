@@ -4,7 +4,7 @@ import jwt from 'jsonwebtoken';
 import { GraphQLError } from 'graphql';
 import { DUMMY_HASH, LOCKED_MESSAGE, checkSecondFactorLimited, recordFailure, recordSuccess, refundAttempt, reserveAttempt } from '../lib/loginGuard.ts';
 import { verifyHumanOrThrow } from '../services/turnstile.ts';
-import { issueStepUp, proveExistingFactor } from '../lib/stepUp.ts';
+import { isStepUpPurpose, issueStepUp, proveExistingFactor } from '../lib/stepUp.ts';
 import {
   MFA_SELECT, checkSecondFactor, confirmEnrolment, disableMfa, issueRecoveryCodes,
   mfaEnabled, recoveryCodesLeft, startEnrolment,
@@ -142,13 +142,14 @@ export const authResolvers = {
       return challenge;
     },
 
-    finishAdminStepUp: async (_: unknown, { ticket, responseJson }: { ticket: string; responseJson: string }, ctx: AdminCtx) => {
+    finishAdminStepUp: async (_: unknown, { ticket, responseJson, purpose }: { ticket: string; responseJson: string; purpose: string }, ctx: AdminCtx) => {
       const adminId = requireAdminId(ctx);
       const outcome = await finishAuthentication({ ticket, responseJson, scope: 'step-up' });
       if (!outcome.ok || outcome.kind !== 'admin' || outcome.accountId !== adminId) {
         throw new Error('That passkey could not be verified. Try again.');
       }
-      return issueStepUp('admin', adminId);
+      if (!isStepUpPurpose(purpose)) throw new Error('Unknown step-up purpose.');
+      return issueStepUp('admin', adminId, purpose);
     },
 
     startAdminMfaEnrolment: async (_: unknown, { proof }: { proof?: string }, ctx: AdminCtx) => {
@@ -255,7 +256,8 @@ export const authResolvers = {
           'That is your only second factor. Add an authenticator app or another passkey first.',
         );
       }
-      return removePasskey('admin', adminId, id);
+      const ok = await removePasskey('admin', adminId, id);
+      return { ok, token: ok ? jwt.sign({ adminId }, process.env.JWT_SECRET!, { expiresIn: '8h', algorithm: 'HS256' }) : null };
     },
 
     beginAdminPasskeyLogin: async (

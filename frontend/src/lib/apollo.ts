@@ -14,11 +14,37 @@ function tokenForPath(path: string): string | null {
   return null;
 }
 
+/**
+ * Who a token is for — the account and, for a seller, the company — read from
+ * its payload. Not verified here (the server does that); only compared.
+ */
+function identityOf(token: string | null): string {
+  if (!token) return '';
+  try {
+    const raw = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+    const p = JSON.parse(atob(raw)) as { adminId?: string; companyUserId?: string; companyId?: string; support?: boolean };
+    return p.adminId && !p.companyId ? `admin:${p.adminId}` : `company:${p.companyUserId}:${p.companyId}:${p.support ? 's' : ''}`;
+  } catch {
+    return 'unknown';
+  }
+}
+
+// The cache holds what the last account was allowed to read. When the account
+// behind the requests changes — signing out and in as someone else, switching
+// company, entering or leaving a support session — it is emptied first, so
+// nothing one account fetched is shown to the next. A renewed token for the
+// same account keeps it.
+let lastIdentity: string | null = null;
+
 const authLink = setContext((_, { headers }) => {
   // A request may name its token itself (accepting an invitation as the
   // account already signed in); otherwise the path decides.
-  if (headers?.authorization) return { headers };
-  const token = tokenForPath(window.location.pathname);
+  const named = headers?.authorization as string | undefined;
+  const token = named ? named.replace(/^Bearer /, '') : tokenForPath(window.location.pathname);
+  const identity = identityOf(token);
+  if (lastIdentity !== null && identity !== lastIdentity) client.cache.reset();
+  lastIdentity = identity;
+  if (named) return { headers };
   return { headers: { ...headers, authorization: token ? `Bearer ${token}` : '' } };
 });
 

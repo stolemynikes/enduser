@@ -310,10 +310,15 @@ export async function checkSecondFactor(
   const check = verifyTotp(secret, typed, { lastCounter: account.totpLastCounter });
   if (!check.ok) return { ok: false, reason: 'invalid' };
 
-  await (prisma[kind] as any).update({
-    where: { id: account.id },
+  // Recorded conditionally: only a request that moves the counter forward
+  // wins. The check above reads the counter from a snapshot, so several
+  // requests sent at once could all pass it with one code; this makes the
+  // database pick one, and the rest are refused as a reused code.
+  const { count } = await (prisma[kind] as any).updateMany({
+    where: { id: account.id, OR: [{ totpLastCounter: null }, { totpLastCounter: { lt: check.counter } }] },
     data: { totpLastCounter: check.counter },
   });
+  if (count !== 1) return { ok: false, reason: 'invalid' };
   return { ok: true, usedRecoveryCode: false };
 }
 

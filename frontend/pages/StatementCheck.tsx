@@ -25,10 +25,17 @@ export default function StatementCheck() {
   const [reference, setReference] = useState(params.reference ?? '');
   const [code, setCode] = useState(search.get('c') ?? '');
   const [run, { data, loading, error }] = useLazyQuery<any>(CHECK, { fetchPolicy: 'no-cache' });
-  const r = data?.checkStatement;
+  // The reference and code the shown answer belongs to. A result is only shown
+  // for exactly what is in the fields now and only once its own request has
+  // finished: otherwise the previous statement's "genuine" stayed on screen
+  // while a different one was being checked, or after its check failed.
+  const [checked, setChecked] = useState<string | null>(null);
+  const current = `${reference.trim()}\n${code.trim()}`;
+  const r = !loading && !error && checked === current ? data?.checkStatement : undefined;
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
+    setChecked(current);
     void run({ variables: { reference: reference.trim(), code: code.trim() } });
   };
 

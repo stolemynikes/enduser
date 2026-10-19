@@ -320,7 +320,10 @@ app.post('/verification-session', extractLimiter, async (req, res) => {
       vendorData: crypto.randomBytes(16).toString('hex'),
       callbackUrl: VERIFICATION_CALLBACK,
     });
-    await registerSession(sessionId, companyId, ipHash);
+    if (!(await registerSession(sessionId, companyId, ipHash))) {
+      res.status(429).json({ error: 'Identity verification is busy, please try again shortly.' });
+      return;
+    }
     res.json({ sessionId, url });
   } catch (err: any) {
     console.error(`[didit] session creation failed: ${err?.message ?? 'unknown error'}`);
@@ -494,6 +497,8 @@ cron.schedule('0 2 * * *', async () => {
     const actionCutoff = new Date();
     actionCutoff.setMonth(actionCutoff.getMonth() - RETENTION_MONTHS);
     await prisma.buyerDataAction.deleteMany({ where: { createdAt: { lt: actionCutoff } } });
+    // The decision history is kept as long as the statements it is about.
+    await prisma.decisionLog.deleteMany({ where: { at: { lt: actionCutoff } } });
     const revealRows = await pruneRevealLog(RETENTION_MONTHS);
     if (revealRows > 0) console.log(`Retention: deleted ${revealRows} reveal-log row(s)`);
     const supportRows = await pruneSupportAccess(RETENTION_MONTHS);

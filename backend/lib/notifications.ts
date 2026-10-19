@@ -38,7 +38,7 @@ const KEEP_PER_COMPANY = 200;
 export async function notify(input: NewNotification): Promise<void> {
   if (!input.companyId) return;
   try {
-    await prisma.notification.create({
+    const created = await prisma.notification.create({
       data: {
         companyId: input.companyId,
         userId: input.userId ?? null,
@@ -47,7 +47,15 @@ export async function notify(input: NewNotification): Promise<void> {
         body: input.body?.slice(0, 600) ?? null,
         submissionId: input.submissionId ?? null,
       },
+      select: { id: true },
     });
+    // Written after the fact (the caller does not wait), so the statement it
+    // names may have been erased in between. Then it goes too: a buyer's name
+    // must not come back in the activity list after their erasure.
+    if (input.submissionId && !(await prisma.submission.count({ where: { id: input.submissionId } }))) {
+      await prisma.notification.deleteMany({ where: { id: created.id } });
+      return;
+    }
     // Trimmed occasionally rather than on every write. Counting, selecting and
     // deleting on each notification was three queries per message to enforce a
     // ceiling that only matters after two hundred of them.

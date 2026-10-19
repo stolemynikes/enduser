@@ -15,6 +15,7 @@ export type GateSubmission = {
   idLikelySynthetic: boolean | null;
   idDocumentExpiry: Date | string | null;
   idVerificationStatus: IdVerificationStatus;
+  idNameMatches?: boolean | null;
   idLivenessPassed: boolean | null;
   idFaceMatch: boolean | null;
   substanceCheckStatus: 'NOT_CHECKED' | 'PENDING' | 'OK' | 'FLAGGED' | 'ERROR';
@@ -47,6 +48,9 @@ function identityFailing(s: GateSubmission, now: Date): boolean {
 
   if (s.idVerificationStatus !== 'NOT_CHECKED') {
     if (s.idVerificationStatus !== 'APPROVED') return true;
+    // The document is genuine, but is it this buyer's? A name typed on the
+    // form that the document does not carry fails until a reviewer accepts it.
+    if (s.idNameMatches === false) return true;
     // Didit can approve the document while a sub-check came back negative;
     // surface that rather than inheriting the headline verdict.
     if (s.idLivenessPassed === false) return true;

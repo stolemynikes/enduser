@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { gql } from '@apollo/client';
 import { useMutation } from '@apollo/client/react';
 import { useParams } from 'react-router-dom';
@@ -16,7 +16,14 @@ const RESET = gql`
 export default function ResetPassword() {
   const { formProps } = useFieldValidation();
   useDocumentTitle('Set a new password');
-  const { token } = useParams<{ token: string }>();
+  // The link's token is a credential: read once, kept in memory, and taken
+  // out of the address bar straight away, so it is not left in the browser's
+  // history or shown to whoever looks at the screen.
+  const params = useParams<{ token: string }>();
+  const [token] = useState(() => params.token ?? '');
+  useEffect(() => {
+    if (window.location.pathname !== '/reset') window.history.replaceState(null, '', '/reset');
+  }, []);
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [done, setDone] = useState(false);
@@ -44,7 +51,13 @@ export default function ResetPassword() {
           <div className="au-logo">
             <Wordmark size={20} textClassName="au-brand" />
           </div>
-          {done ? (
+          {!token && !done ? (
+            <>
+              <h1 className="au-title">This link is incomplete</h1>
+              <p className="au-sub">Open the link from the email again, or ask for a new one.</p>
+              <a className="au-link-btn" href="/forgot">Request a new link</a>
+            </>
+          ) : done ? (
             <>
               <h1 className="au-title">Password changed</h1>
               <p className="au-sub">You can sign in with your new password now.</p>

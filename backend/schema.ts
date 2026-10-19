@@ -642,6 +642,15 @@ export const typeDefs = `#graphql
     ticket: String!
   }
 
+  """
+  Removing a passkey ends every other session (one may have been signed in with
+  it); token replaces the caller's own.
+  """
+  type PasskeyRemoval {
+    ok: Boolean!
+    token: String
+  }
+
   type PasskeyInfo {
     id: ID!
     name: String!
@@ -777,7 +786,8 @@ export const typeDefs = `#graphql
     startRevealWithPasskey(id: ID!): PasskeyChallenge!
     """A passkey challenge for one sensitive step; finishStepUp returns a one-time token that counts as a code."""
     startStepUp: PasskeyChallenge!
-    finishStepUp(ticket: String!, responseJson: String!): String!
+    """purpose: what the token may be spent on — sign-in-methods, delete-statement, buyer-data, decision-export."""
+    finishStepUp(ticket: String!, responseJson: String!, purpose: String!): String!
     finishRevealWithPasskey(id: ID!, ticket: String!, responseJson: String!): RevealedDocument!
     """Marks the given notifications read, or every one of them when no ids are given."""
     markNotificationsRead(ids: [ID!]): Int!
@@ -789,7 +799,7 @@ export const typeDefs = `#graphql
     """
     startPasskeyRegistration(proof: String): PasskeyChallenge!
     finishPasskeyRegistration(ticket: String!, responseJson: String!, name: String!): PasskeyInfo!
-    removePasskey(id: ID!, proof: String): Boolean!
+    removePasskey(id: ID!, proof: String): PasskeyRemoval!
     """
     Step one of signing in with a passkey: proves the password, then hands back
     a challenge. Returns nothing useful without the correct password.
@@ -803,11 +813,11 @@ export const typeDefs = `#graphql
     regenerateRecoveryCodes(code: String!): RecoveryCodes!
     startAdminPasskeyRegistration(proof: String): PasskeyChallenge!
     finishAdminPasskeyRegistration(ticket: String!, responseJson: String!, name: String!): PasskeyInfo!
-    removeAdminPasskey(id: ID!, proof: String): Boolean!
+    removeAdminPasskey(id: ID!, proof: String): PasskeyRemoval!
     beginAdminPasskeyLogin(username: String!, password: String!, turnstileToken: String): PasskeyChallenge!
     finishAdminPasskeyLogin(ticket: String!, responseJson: String!): AuthPayload!
     startAdminStepUp: PasskeyChallenge!
-    finishAdminStepUp(ticket: String!, responseJson: String!): String!
+    finishAdminStepUp(ticket: String!, responseJson: String!, purpose: String!): String!
     startAdminMfaEnrolment(proof: String): MfaEnrolment!
     confirmAdminMfaEnrolment(code: String!): MfaActivation!
     disableAdminMfa(password: String!, code: String!): Boolean!

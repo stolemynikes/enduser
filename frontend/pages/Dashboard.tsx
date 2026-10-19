@@ -385,7 +385,15 @@ export default function Dashboard() {
     navigate('/company/dashboard');
   };
 
-  const logout = () => { localStorage.removeItem('adminToken'); navigate('/admin'); };
+  // Signing out of the admin dashboard also drops a support session opened from
+  // it: that token is an owner's session in someone else's company, and the
+  // next person at this browser must not find it still in storage.
+  const logout = () => {
+    const support = localStorage.getItem('supportMode') === '1';
+    localStorage.removeItem('adminToken');
+    if (support) ['companyToken', 'companyRole', 'companyName', 'companySlug', 'supportMode'].forEach(k => localStorage.removeItem(k));
+    navigate('/admin');
+  };
 
   const submissions: Submission[] = data?.submissions ?? [];
   const q = search.toLowerCase().trim();

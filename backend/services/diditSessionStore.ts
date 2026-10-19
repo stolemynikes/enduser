@@ -53,14 +53,31 @@ export async function checkCapacity(ipHash: string | null, companyId: string | n
   return { ok: true };
 }
 
+/**
+ * Stores a started session, then checks the budgets again with it counted.
+ * The check before starting it reads the counts and this writes afterwards, so
+ * requests arriving together could all pass that check; whichever finds itself
+ * over a budget here undoes its own session (at Didit too) and is refused.
+ * Returns false in that case.
+ */
 export async function registerSession(
   sessionId: string, companyId: string | null, ipHash: string | null,
-): Promise<void> {
+): Promise<boolean> {
   await prisma.verificationSession.create({
     data: { sessionId, companyId, ipHash, expiresAt: new Date(Date.now() + TTL_MS) },
   });
   // Counted separately: the row itself is pruned once the session expires.
   recordEvent('didit-session-started');
+  const live = { consumedAt: null, expiresAt: { gt: new Date() } };
+  const [fromIp, forCompany, total] = await Promise.all([
+    ipHash ? prisma.verificationSession.count({ where: { ...live, ipHash } }) : Promise.resolve(0),
+    companyId ? prisma.verificationSession.count({ where: { ...live, companyId } }) : Promise.resolve(0),
+    prisma.verificationSession.count({ where: live }),
+  ]);
+  if (fromIp <= MAX_PER_IP && (!companyId || forCompany <= MAX_PER_COMPANY) && total <= MAX_LIVE_SESSIONS) return true;
+  await prisma.verificationSession.deleteMany({ where: { sessionId } });
+  if (DIDIT_ENABLED) void deleteSession(sessionId).catch(() => {});
+  return false;
 }
 
 /** True when this server started the session and it has not been spent yet. */
@@ -81,14 +98,21 @@ export async function sessionMatches(sessionId: string, companyId: string | null
   return row != null && row.companyId === companyId;
 }
 
-/** Whether enough time has passed to fetch a fresh decision for this session. */
+/**
+ * Claims the next decision fetch for this session, if one is due. A single
+ * conditional update, so of several polls arriving together exactly one goes
+ * to Didit; reading the time first and writing it afterwards let them all
+ * through.
+ */
 export async function shouldRefresh(sessionId: string): Promise<boolean> {
-  const row = await prisma.verificationSession.findFirst({
-    where: liveWhere(sessionId),
-    select: { lastCheckedAt: true },
+  const { count } = await prisma.verificationSession.updateMany({
+    where: {
+      ...liveWhere(sessionId),
+      OR: [{ lastCheckedAt: null }, { lastCheckedAt: { lte: new Date(Date.now() - POLL_INTERVAL_MS) } }],
+    },
+    data: { lastCheckedAt: new Date() },
   });
-  if (!row) return false;
-  return row.lastCheckedAt == null || Date.now() - row.lastCheckedAt.getTime() >= POLL_INTERVAL_MS;
+  return count === 1;
 }
 
 export async function cacheStatus(sessionId: string, status: DiditVerificationStatus): Promise<void> {

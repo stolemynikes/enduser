@@ -142,7 +142,7 @@ export default function SetupWizard({ companyName, companySlug, onDone }: Props)
     if (draft.customTermsMode === 'LINK') {
       const url = draft.customTermsUrl.trim();
       if (!url) { setTermsError('Please enter a link to your terms page.'); return; }
-      if (!/^https?:\/\//i.test(url)) { setTermsError('The link must start with http:// or https://'); return; }
+      if (!/^https:\/\//i.test(url)) { setTermsError('The link must start with https://'); return; }
     }
     setTermsError('');
     if (revealed === TERMS_STEP) setRevealed(SECURITY_STEP);

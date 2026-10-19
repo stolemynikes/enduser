@@ -137,9 +137,9 @@ try {
   check('with a passkey, an app is not added on the session alone', code(a1) === 'STEP_UP_REQUIRED' && a1.errors[0].extensions.method === 'passkey', JSON.stringify(a1.errors?.[0]));
   const forged = 'su.' + jwt.sign({ kind: 'companyUser' }, 'not-the-secret', { audience: 'step-up', subject: pk.u.id, expiresIn: 60 });
   check('nor with a forged step-up token', !(await gql('mutation($p:String){ startMfaEnrolment(proof:$p){ secret } }', { p: forged }, pkToken)).data?.startMfaEnrolment);
-  const other = issueStepUp('companyUser', attacker.u.id);
+  const other = issueStepUp('companyUser', attacker.u.id, 'sign-in-methods');
   check('nor with one made for another account', !(await gql('mutation($p:String){ startMfaEnrolment(proof:$p){ secret } }', { p: other }, pkToken)).data?.startMfaEnrolment);
-  const good = issueStepUp('companyUser', pk.u.id);
+  const good = issueStepUp('companyUser', pk.u.id, 'sign-in-methods');
   check('with a passkey step-up it is', !!(await gql('mutation($p:String){ startMfaEnrolment(proof:$p){ secret } }', { p: good }, pkToken)).data?.startMfaEnrolment?.secret);
   check('and that step-up works once', !(await gql('mutation($p:String){ startMfaEnrolment(proof:$p){ secret } }', { p: good }, pkToken)).data?.startMfaEnrolment);
   const fresh = await user('fresh');
@@ -227,7 +227,7 @@ try {
   // F4: removing a passkey needs the factor you have, like adding one.
   await prisma.companyUser.update({ where: { id: victim.u.id }, data: { failedLogins: 0, lockedUntil: null } });
   const vk = await prisma.passkey.create({ data: { userId: victim.u.id, credentialId: `rf-cred-victim-${run}`, publicKey: 'AA', name: 'Victim key' } });
-  const rm = await gql('mutation($id:ID!){ removePasskey(id:$id) }', { id: vk.id }, victimToken);
+  const rm = await gql('mutation($id:ID!){ removePasskey(id:$id){ ok } }', { id: vk.id }, victimToken);
   check('a passkey is not removed on the session alone', code(rm) === 'STEP_UP_REQUIRED' && (await prisma.passkey.count({ where: { id: vk.id } })) === 1, JSON.stringify(rm.errors?.[0]));
   await prisma.submission.delete({ where: { id: subRow.id } });
 

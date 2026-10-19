@@ -31,8 +31,35 @@ export async function deleteSubmissions(where: Prisma.SubmissionWhereInput): Pro
   let count = 0;
   for (let i = 0; i < ids.length; i += CHUNK) {
     const chunk = ids.slice(i, i + CHUNK);
+    await keepUnpurgedSessions(chunk);
     await prisma.notification.deleteMany({ where: { submissionId: { in: chunk } } });
     count += (await prisma.submission.deleteMany({ where: { id: { in: chunk } } })).count;
+    // Again afterwards: a notification written while this ran (a new-statement
+    // alert still on its way) would otherwise outlive the statement it names.
+    await prisma.notification.deleteMany({ where: { submissionId: { in: chunk } } });
   }
   return { count, sessionFailures };
+}
+
+/**
+ * A session Didit would not delete just now is the only pointer to the
+ * buyer's photos held there, and it lived on the row being deleted. It is
+ * handed to the session store as an abandoned session, already past its
+ * grace period, so the nightly prune keeps trying to delete it at Didit (and
+ * reports it if it gives up) instead of the reference vanishing with the row.
+ */
+async function keepUnpurgedSessions(chunk: string[]): Promise<void> {
+  const left = await prisma.submission.findMany({
+    where: { id: { in: chunk }, idVerificationSessionId: { not: null }, idVerificationPurged: false },
+    select: { idVerificationSessionId: true, companyId: true },
+  });
+  const expiredAt = new Date(Date.now() - 2 * 60 * 60 * 1000);
+  for (const s of left) {
+    const sessionId = s.idVerificationSessionId as string;
+    await prisma.verificationSession.upsert({
+      where: { sessionId },
+      create: { sessionId, companyId: s.companyId, expiresAt: expiredAt, consumedAt: new Date() },
+      update: { expiresAt: expiredAt },
+    });
+  }
 }

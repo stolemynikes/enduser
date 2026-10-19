@@ -49,6 +49,10 @@ export const PII_FIELDS = [
   'street', 'zipCode', 'place', 'country',
   'companyName', 'vatNumber', 'substances', 'casNumbers',
   'statement', 'statementTranslation', 'idDocumentName', 'idDocumentNumber', 'adminNote',
+  // What VIES returned about the buyer's business (for a sole trader, a
+  // person's name and home address) and the verification's own remarks.
+  // Older rows hold these in plain text; decryptField passes those through.
+  'viesName', 'viesAddress', 'idVerificationWarnings',
 ] as const;
 
 export function encryptData<T extends Record<string, unknown>>(data: T): T {

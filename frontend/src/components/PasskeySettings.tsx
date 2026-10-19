@@ -33,7 +33,7 @@ const OPS = {
       mutation FinishPasskeyRegistration($ticket: String!, $responseJson: String!, $name: String!) {
         finishPasskeyRegistration(ticket: $ticket, responseJson: $responseJson, name: $name) { id name token }
       }`,
-    REMOVE: gql`mutation RemovePasskey($id: ID!, $proof: String) { removePasskey(id: $id, proof: $proof) }`,
+    REMOVE: gql`mutation RemovePasskey($id: ID!, $proof: String) { removePasskey(id: $id, proof: $proof) { ok token } }`,
     listed: 'myPasskeys', started: 'startPasskeyRegistration', finished: 'finishPasskeyRegistration',
     tokenKey: 'companyToken',
   },
@@ -44,7 +44,7 @@ const OPS = {
       mutation FinishAdminPasskeyRegistration($ticket: String!, $responseJson: String!, $name: String!) {
         finishAdminPasskeyRegistration(ticket: $ticket, responseJson: $responseJson, name: $name) { id name token }
       }`,
-    REMOVE: gql`mutation RemoveAdminPasskey($id: ID!, $proof: String) { removeAdminPasskey(id: $id, proof: $proof) }`,
+    REMOVE: gql`mutation RemoveAdminPasskey($id: ID!, $proof: String) { removeAdminPasskey(id: $id, proof: $proof) { ok token } }`,
     listed: 'adminPasskeys', started: 'startAdminPasskeyRegistration', finished: 'finishAdminPasskeyRegistration',
     tokenKey: 'adminToken',
   },
@@ -95,6 +95,12 @@ export function PasskeySettings({ onChanged, account = 'company' }: {
 
   const passkeys: Passkey[] = data?.[ops.listed] ?? [];
 
+  /** Removing a passkey signed out every other session; this tab keeps going on the replacement. */
+  const keepSession = (res: { data?: any }) => {
+    const out = res.data && (Object.values(res.data)[0] as { token?: string | null } | undefined);
+    if (out?.token) localStorage.setItem(ops.tokenKey, out.token);
+  };
+
   const enrol = async (proof?: string) => {
     setError('');
     setAdded('');
@@ -106,7 +112,7 @@ export function PasskeySettings({ onChanged, account = 'company' }: {
       } catch (err) {
         const need = stepUpNeeded(err);
         if (need === 'passkey' && !proof) {
-          const p = await passkeyProof(client, account);
+          const p = await passkeyProof(client, account, 'sign-in-methods');
           ({ data: began } = await start({ variables: { proof: p } }));
         } else if ((need === 'code' || need === 'password') && !proof) {
           setCodeFor(null); setProofKind(need); setCodeProof('');
@@ -165,12 +171,12 @@ export function PasskeySettings({ onChanged, account = 'company' }: {
     setBusy(true);
     try {
       try {
-        await remove({ variables: { id: key.id, proof: proof ?? null } });
+        keepSession(await remove({ variables: { id: key.id, proof: proof ?? null } }));
       } catch (err) {
         // Removing a sign-in method needs the one you have, like adding one.
         const need = stepUpNeeded(err);
         if (need === 'passkey' && proof === undefined) {
-          await remove({ variables: { id: key.id, proof: await passkeyProof(client, account) } });
+          keepSession(await remove({ variables: { id: key.id, proof: await passkeyProof(client, account, 'sign-in-methods') } }));
         } else if (need === 'code' && proof === undefined) {
           setCodeFor(key); setProofKind('code'); setCodeProof('');
           return;

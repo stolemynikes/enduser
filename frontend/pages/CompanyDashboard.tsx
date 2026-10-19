@@ -518,7 +518,7 @@ export default function CompanyDashboard() {
     } catch (err: any) {
       if (err?.name === 'NotAllowedError' || err?.name === 'AbortError') return;
       if (stepUpNeeded(err) === 'passkey' && credential === '') {
-        try { await attemptDelete(await passkeyProof(apollo, 'company')); }
+        try { await attemptDelete(await passkeyProof(apollo, 'company', 'delete-statement')); }
         catch (e: any) { if (e?.name !== 'NotAllowedError' && e?.name !== 'AbortError') toast.error('That passkey could not be used.'); }
         return;
       }
@@ -697,9 +697,19 @@ export default function CompanyDashboard() {
   //
   // A support session is the exception: the server will not extend it (it is
   // kept short on purpose), and asking anyway reads as a dead session.
+  //
+  // The interval only renews after real use since the last renewal — a key, a
+  // click, a scroll. Renewing on a timer alone kept an unattended tab signed in
+  // forever, which is not the hour of idleness the session promises. The
+  // server also ends every session twelve hours after its sign-in.
   useEffect(() => {
     if (localStorage.getItem('supportMode') === '1') return;
+    let usedSinceRenewal = false;
+    const markUsed = () => { usedSinceRenewal = true; };
+    const activity = ['pointerdown', 'keydown', 'wheel', 'touchstart'] as const;
+    activity.forEach(e => window.addEventListener(e, markUsed, { passive: true }));
     const renew = async () => {
+      usedSinceRenewal = false;
       try {
         const { data } = await refreshSession();
         if (data?.refreshSession?.token) {
@@ -712,12 +722,13 @@ export default function CompanyDashboard() {
     };
     void renew();
     // Comfortably inside the hour, so one missed tick is not a sign-out.
-    const timer = setInterval(() => void renew(), 15 * 60 * 1000);
+    const timer = setInterval(() => { if (usedSinceRenewal) void renew(); }, 15 * 60 * 1000);
     const onWake = () => { if (document.visibilityState === 'visible') void renew(); };
     document.addEventListener('visibilitychange', onWake);
     window.addEventListener('focus', onWake);
     return () => {
       clearInterval(timer);
+      activity.forEach(e => window.removeEventListener(e, markUsed));
       document.removeEventListener('visibilitychange', onWake);
       window.removeEventListener('focus', onWake);
     };

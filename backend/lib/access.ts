@@ -28,13 +28,16 @@ export async function formOpen(companyId: string): Promise<boolean> {
   const company = await prisma.company.findUnique({
     where: { id: companyId },
     select: {
-      approvedAt: true, deletedAt: true,
+      approvedAt: true, deletedAt: true, deletionRequestedAt: true, formConfig: true,
       members: {
         where: { role: 'OWNER' }, orderBy: { createdAt: 'asc' }, take: 1,
         select: { user: { select: { emailVerifiedAt: true } } },
       },
     },
   });
-  return !!company && !company.deletedAt && !!company.approvedAt
-    && company.members[0]?.user.emailVerifiedAt != null;
+  // A company that asked to close stops taking statements at once, not when
+  // the purge runs 30 days later; and a form nobody has set up yet is not open,
+  // whichever way it is reached (formInfo checked this, submission did not).
+  return !!company && !company.deletedAt && !company.deletionRequestedAt && company.formConfig != null
+    && !!company.approvedAt && company.members[0]?.user.emailVerifiedAt != null;
 }
