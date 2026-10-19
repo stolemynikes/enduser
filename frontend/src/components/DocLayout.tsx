@@ -30,6 +30,7 @@ const NAV: { to: string; label: string }[] = [
   { to: '/privacy', label: 'Privacy' },
   { to: '/terms', label: 'Terms' },
   { to: '/dpa', label: 'DPA' },
+  { to: '/security', label: 'Security' },
 ];
 
 export function DocLayout({ title, intro, children }: { title: string; intro?: ReactNode; children: ReactNode }) {

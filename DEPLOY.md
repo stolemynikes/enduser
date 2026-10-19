@@ -333,6 +333,13 @@ docker compose exec -T db pg_dump -U enduser enduser | gzip \
   | age -r age1REPLACE_WITH_YOUR_PUBLIC_KEY > ~/pre-update-$(date +%F-%H%M).sql.gz.age
 
 git pull --ff-only
+
+# The Security overview promises these run before every update. On your own
+# machine, against the commit you are about to ship, with the local API up:
+#   (cd backend && for t in scripts/*Test.ts; do npx tsx "$t" | tail -1; done)
+#   (cd backend && npm audit --omit=dev) && (cd frontend && npm audit --omit=dev)
+# Ship only when every suite ends "0 failed" and both audits find nothing.
+
 docker compose up -d --build          # the API runs `prisma migrate deploy` before it starts
 docker compose ps                     # every service "running", api "healthy" if it has a check
 docker compose logs --tail=50 api     # "Backend running" and no stack traces

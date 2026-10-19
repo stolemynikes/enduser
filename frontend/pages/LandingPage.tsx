@@ -249,6 +249,7 @@ export default function LandingPage() {
             <Link to="/privacy">Privacy</Link>
             <Link to="/terms">Terms</Link>
             <Link to="/dpa">DPA</Link>
+            <Link to="/security">Security</Link>
           </nav>
           <span className="lp-footer-copy">© {new Date().getFullYear()} eustatement — end-user statement management</span>
         </footer>

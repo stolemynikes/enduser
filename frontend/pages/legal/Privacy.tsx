@@ -23,7 +23,8 @@ export default function Privacy() {
           <li><strong>Account data</strong> — your name, email address and a securely hashed password.</li>
           <li><strong>Sign-in factors</strong> — if you enable them: an authenticator-app secret, passkeys (public keys only) and hashed recovery codes.</li>
           <li><strong>Company data</strong> — the company name, its form address and form settings, the team members and their roles, and what you wrote when requesting access.</li>
-          <li><strong>Activity records</strong> — who decided on a statement and when, who looked up an identity document number and when, and when platform staff accessed your account for support.</li>
+          <li><strong>Activity records</strong> — who decided on a statement and when, who looked up an identity document number and when, who exported or erased a buyer’s data or downloaded the decision log and when, and when platform staff accessed your account for support.</li>
+          <li><strong>Agreements</strong> — which version of these terms and the DPA you accepted for your company, when, with your name and email address.</li>
           <li><strong>Security tokens</strong> — short-lived tokens for email confirmation, password resets and invitations, deleted once used or expired.</li>
           <li><strong>Technical data</strong> — IP addresses, used in pseudonymised form to limit abuse, and kept only as long as the limit they count towards.</li>
         </ul>

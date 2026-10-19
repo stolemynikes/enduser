@@ -12,6 +12,7 @@ import { sendAccessApproved, sendAccessRejected } from '../services/email.ts';
 import { deleteSubmissions } from '../lib/submissionDelete.ts';
 import { adminHealth } from '../lib/health.ts';
 import { NoticeInputError, allNotices, announceSubprocessor } from '../lib/subprocessors.ts';
+import { IncidentInputError, incidentNotices, notifyIncident } from '../lib/incidents.ts';
 
 function noticeRecord(n: { id: string; name: string; purpose: string; data: string; location: string; effectiveAt: Date; sent: number; failed: number; createdAt: Date }) {
   return { ...n, effectiveAt: n.effectiveAt.toISOString(), createdAt: n.createdAt.toISOString() };
@@ -148,6 +149,11 @@ export const adminResolvers = {
      * and every company into memory to count them, which is a self-inflicted
      * outage the day the platform succeeds.
      */
+    adminIncidentNotices: async (_: unknown, __: unknown, ctx: Ctx) => {
+      requireAdmin(ctx);
+      return (await incidentNotices()).map(n => ({ ...n, createdAt: n.createdAt.toISOString() }));
+    },
+
     adminSubprocessorNotices: async (_: unknown, __: unknown, ctx: Ctx) => {
       requireAdmin(ctx);
       return (await allNotices()).map(noticeRecord);
@@ -470,6 +476,17 @@ export const adminResolvers = {
 
       if (willCheckSubstance) void runSubstanceCheck(submission.id);
       return submission;
+    },
+
+    notifyIncident: async (_: unknown, { input }: { input: any }, ctx: Ctx) => {
+      const adminId = requireAdmin(ctx);
+      try {
+        const n = await notifyIncident(adminId, input);
+        return { ...n, createdAt: n.createdAt.toISOString() };
+      } catch (err) {
+        if (err instanceof IncidentInputError) throw new GraphQLError(err.message, { extensions: { code: 'BAD_USER_INPUT' } });
+        throw err;
+      }
     },
 
     announceSubprocessor: async (_: unknown, { input }: { input: any }, ctx: Ctx) => {

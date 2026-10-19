@@ -16,6 +16,7 @@ import { MfaSettings } from '../src/components/MfaSettings.tsx';
 import { RevealDocumentNumber } from '../src/components/RevealDocumentNumber.tsx';
 import { BuyerDataRequest } from '../src/components/BuyerDataRequest.tsx';
 import { LegalAgreementsPanel, LegalBanner, SubprocessorBanner } from '../src/components/LegalAgreements.tsx';
+import { RecordOfProcessing } from '../src/components/RecordOfProcessing.tsx';
 import { RevealLog } from '../src/components/RevealLog.tsx';
 import { PasskeySettings } from '../src/components/PasskeySettings.tsx';
 import { EnrolmentRequired } from '../src/components/EnrolmentRequired.tsx';
@@ -1289,6 +1290,8 @@ export default function CompanyDashboard() {
               {isOwner && <RevealLog onOpenSubmission={openSubmissionById} />}
 
               {isOwner && <LegalAgreementsPanel />}
+
+              {isOwner && <RecordOfProcessing companyName={companyName} />}
 
               {myCompanies.length > 1 && (
                 <div className="cd-embed">

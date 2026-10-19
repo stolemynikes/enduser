@@ -437,6 +437,25 @@ export const typeDefs = `#graphql
     truncated: Boolean!
   }
 
+  type IncidentNoticeRecord {
+    id: ID!
+    subject: String!
+    message: String!
+    allCompanies: Boolean!
+    companies: Int!
+    sent: Int!
+    failed: Int!
+    createdAt: String!
+  }
+
+  input IncidentNoticeInput {
+    subject: String!
+    message: String!
+    """True to write to every company on the platform; otherwise list their form addresses in slugs."""
+    allCompanies: Boolean!
+    slugs: [String!]
+  }
+
   type AdminInsights {
     totalCompanies: Int!
     totalSubmissions: Int!
@@ -676,6 +695,7 @@ export const typeDefs = `#graphql
     """Announced sub-processor changes, until a week after they take effect."""
     subprocessorNotices: [SubprocessorAnnouncement!]!
     adminSubprocessorNotices: [SubprocessorNoticeRecord!]!
+    adminIncidentNotices: [IncidentNoticeRecord!]!
     """A PDF record of every acceptance, base64. Owner only."""
     legalAcceptanceRecord: String!
     """Platform health over the last \`days\` days (1–365). Platform admin only."""
@@ -727,6 +747,8 @@ export const typeDefs = `#graphql
     exportDecisions(from: String!, to: String!, credential: String!): DecisionExport!
     """Announces a sub-processor to every company owner by email and on the dashboard. Platform admin only."""
     announceSubprocessor(input: SubprocessorNoticeInput!): SubprocessorNoticeRecord!
+    """Emails the owners of all or the listed companies about a security incident. Platform admin only."""
+    notifyIncident(input: IncidentNoticeInput!): IncidentNoticeRecord!
     """Deletes every statement of the buyer of this statement, for a GDPR erasure request. Owner only, with a current second-factor code; logged. Returns how many were deleted."""
     eraseBuyerData(id: ID!, credential: String!): Int!
     """

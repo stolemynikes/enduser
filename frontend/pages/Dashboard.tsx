@@ -111,6 +111,15 @@ const ANNOUNCE_SUBPROCESSOR = gql`
   }
 `;
 
+const INCIDENT_NOTICES = gql`
+  query AdminIncidentNotices { adminIncidentNotices { id subject message allCompanies companies sent failed createdAt } }
+`;
+const NOTIFY_INCIDENT = gql`
+  mutation NotifyIncident($input: IncidentNoticeInput!) {
+    notifyIncident(input: $input) { id subject message allCompanies companies sent failed createdAt }
+  }
+`;
+
 const SUPPORT_LOGIN = gql`
   mutation AdminSupportLogin($companyId: ID!) {
     adminSupportLogin(companyId: $companyId) {
@@ -1303,8 +1312,91 @@ const MAIL_NAMES: Record<string, string> = {
   'seller-new-statement': 'New statement to seller', invite: 'Team invitation', 'password-reset': 'Password reset',
   'email-verification': 'Email confirmation', 'admin-new-statement': 'New statement to admin',
   'access-request': 'Access request to admin', 'access-approved': 'Access approved', 'access-rejected': 'Access declined',
-  'ops-alert': 'Maintenance alert', 'subprocessor-notice': 'Sub-processor notice',
+  'ops-alert': 'Maintenance alert', 'subprocessor-notice': 'Sub-processor notice', 'incident-notice': 'Incident notice',
 };
+
+type IncidentRecord = { id: string; subject: string; message: string; allCompanies: boolean; companies: number; sent: number; failed: number; createdAt: string };
+
+/**
+ * Step 3 of INCIDENT.md: telling the owners of the affected companies about a
+ * security incident. The message goes out as plain text; every send is stored.
+ */
+function IncidentPanel({ toast }: { toast: ReturnType<typeof useToast> }) {
+  const { data, refetch } = useQuery<{ adminIncidentNotices: IncidentRecord[] }>(INCIDENT_NOTICES);
+  const [subject, setSubject] = useState('');
+  const [message, setMessage] = useState('');
+  const [all, setAll] = useState(false);
+  const [slugs, setSlugs] = useState('');
+  const [notify, { loading }] = useMutation<{ notifyIncident: IncidentRecord }>(NOTIFY_INCIDENT);
+  const confirm = useConfirm();
+  const slugList = slugs.split(/[\s,]+/).map(x => x.trim().replace(/^\/+/, '')).filter(Boolean);
+  const ready = subject.trim().length >= 5 && message.trim().length >= 20 && (all || slugList.length > 0);
+
+  const submit = async () => {
+    const ok = await confirm({
+      title: all ? 'Email the owners of every company?' : `Email the owners of ${slugList.length} compan${slugList.length === 1 ? 'y' : 'ies'}?`,
+      message: 'The message goes out now, from the platform, and cannot be unsent. Replies come to you.',
+      confirmLabel: 'Send', danger: true,
+    });
+    if (!ok) return;
+    try {
+      const { data: res } = await notify({ variables: { input: { subject, message, allCompanies: all, slugs: all ? null : slugList } } });
+      const n = res!.notifyIncident;
+      toast[n.failed ? 'error' : 'success'](`Sent to ${n.sent} owner${n.sent === 1 ? '' : 's'} at ${n.companies} compan${n.companies === 1 ? 'y' : 'ies'}${n.failed ? `; ${n.failed} failed — see Health` : ''}.`);
+      setSubject(''); setMessage(''); setSlugs(''); setAll(false);
+      void refetch();
+    } catch (err: any) {
+      toast.error(err?.message ?? 'Could not send it.');
+    }
+  };
+
+  const sentList = data?.adminIncidentNotices ?? [];
+  return (
+    <div className="db-panel">
+      <div className="db-panel-head"><h3 className="db-panel-title">Notify owners of an incident</h3></div>
+      <p className="db-test-sub">
+        Step 3 of <code>INCIDENT.md</code>. Say what happened and when, which of their data is affected, what you have
+        done, and what they may need to do. Plain text; a blank line starts a new paragraph.
+      </p>
+      <div className="db-test-grid" style={{ gridTemplateColumns: '1fr' }}>
+        <label className="db-test-field"><span className="db-test-label">Subject</span>
+          <input className="db-test-input" maxLength={150} value={subject} onChange={e => setSubject(e.target.value)} placeholder="e.g. Security incident on 3 November — what it means for you" /></label>
+        <label className="db-test-field"><span className="db-test-label">Message</span>
+          <textarea className="db-test-input db-test-textarea" rows={8} maxLength={10000} value={message} onChange={e => setMessage(e.target.value)} /></label>
+        <label className="db-test-field db-check-row">
+          <input type="checkbox" checked={all} onChange={e => setAll(e.target.checked)} />
+          <span>Every company on the platform</span>
+        </label>
+        {!all && (
+          <label className="db-test-field"><span className="db-test-label">Affected companies — form addresses, separated by spaces or commas</span>
+            <input className="db-test-input" value={slugs} onChange={e => setSlugs(e.target.value)} placeholder="e.g. acme-chemicals, labsupply" /></label>
+        )}
+      </div>
+      <div className="db-test-actions">
+        <button className="db-btn-view" disabled={loading || !ready} onClick={() => void submit()}>
+          {loading ? 'Sending…' : 'Send to the owners'}
+        </button>
+      </div>
+      {sentList.length > 0 && (
+        <div className="db-table-wrap" style={{ marginTop: '1rem' }}>
+          <table className="db-table db-table-flat">
+            <thead><tr><th>Sent</th><th>Subject</th><th>To</th><th>Emails</th></tr></thead>
+            <tbody>
+              {sentList.map(n => (
+                <tr key={n.id}>
+                  <td className="db-cell-mono">{n.createdAt.slice(0, 16).replace('T', ' ')}</td>
+                  <td>{n.subject}</td>
+                  <td>{n.allCompanies ? 'All companies' : `${n.companies} compan${n.companies === 1 ? 'y' : 'ies'}`}</td>
+                  <td>{n.sent} sent{n.failed > 0 && <> · <span className="db-badge db-badge-red">{n.failed} failed</span></>}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
 
 type NoticeRecord = { id: string; name: string; purpose: string; data: string; location: string; effectiveAt: string; sent: number; failed: number; createdAt: string };
 
@@ -1345,6 +1437,8 @@ function LegalTab({ toast }: { toast: ReturnType<typeof useToast> }) {
   const notices = data?.adminSubprocessorNotices ?? [];
   return (
     <div className="db-insights">
+      <IncidentPanel toast={toast} />
+
       <div className="db-panel">
         <div className="db-panel-head"><h3 className="db-panel-title">Announce a sub-processor</h3></div>
         <p className="db-test-sub">
@@ -2318,6 +2412,8 @@ const dashStyles = `
   .db-health-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
   .db-health-list li { display: flex; justify-content: space-between; align-items: center; font-size: 13px; color: var(--text); padding: 6px 0; border-bottom: 1px solid var(--border); }
   .db-health-list li:last-child { border-bottom: 0; }
+  .db-check-row { flex-direction: row !important; align-items: center; gap: 8px; font-size: 13px; color: var(--text); cursor: pointer; }
+  .db-check-row input { width: 18px; height: 18px; accent-color: var(--blue); }
   .db-legend { display: flex; gap: 1rem; }
   .db-legend-row { margin-top: 0.7rem; }
   .db-legend-item { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--text-mid); }

@@ -590,3 +590,19 @@ model SubprocessorNotice {
 
   @@index([effectiveAt])
 }
+
+/// A message to company owners about a security incident or a personal-data
+/// breach. The DPA promises sellers are told without undue delay; this is the
+/// telling, and the record of when and to whom (by count).
+model IncidentNotice {
+  id          String   @id @default(cuid())
+  subject     String
+  message     String
+  /// Companies addressed: every company on the platform, or the listed ones.
+  allCompanies Boolean
+  companies   Int
+  sent        Int      @default(0)
+  failed      Int      @default(0)
+  createdById String
+  createdAt   DateTime @default(now())
+}

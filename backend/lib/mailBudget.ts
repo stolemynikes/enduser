@@ -37,6 +37,8 @@ const BUDGETS: Record<string, { max: number; minutes: number }> = {
   'ops-alert': { max: 3, minutes: 24 * 60 },
   // One per announcement; a few a day covers a correction being sent.
   'subprocessor-notice': { max: 5, minutes: 24 * 60 },
+  // An incident can need an update or two the same day; more is a mistake.
+  'incident-notice': { max: 10, minutes: 24 * 60 },
 };
 
 /**

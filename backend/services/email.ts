@@ -297,3 +297,20 @@ export async function sendSubprocessorNotice(
       <p><a href="${esc(APP_URL)}/dpa#sub-processors">The current list of sub-processors</a></p>`),
   });
 }
+
+/**
+ * A security incident or personal-data breach, told to a company owner. The
+ * text is the admin's, shown as plain paragraphs (escaped; never HTML).
+ */
+export async function sendIncidentNotice(to: string, name: string, companyName: string, subject: string, message: string) {
+  const paragraphs = message.split(/\n{2,}/).map(p => `<p>${esc(p).replace(/\n/g, '<br/>')}</p>`).join('');
+  return send('incident-notice', {
+    from: { name: PLATFORM, address: FROM_ADDRESS }, to,
+    ...(ADMIN_EMAIL ? { replyTo: ADMIN_EMAIL } : {}),
+    subject: `[eustatement] ${subject}`,
+    html: layout(`<p>Hi ${esc(name)},</p>
+      <p>This message concerns <strong>${esc(companyName)}</strong>'s account on eustatement.</p>
+      ${paragraphs}
+      <p>Reply to this email with any question; it reaches the operator directly.</p>`),
+  });
+}
