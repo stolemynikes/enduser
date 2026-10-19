@@ -3,6 +3,7 @@ import { gql } from '@apollo/client';
 import { useQuery, useMutation, useLazyQuery } from '@apollo/client/react';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from '../src/components/Toast.tsx';
+import { useConfirm } from '../src/components/ConfirmDialog.tsx';
 import { AccessRequestsTab } from '../src/components/AccessRequests.tsx';
 import { ACCESS_REQUESTS, type AccessRequest } from '../src/lib/accessRequests.ts';
 import { AdminRevealDocument } from '../src/components/AdminRevealDocument.tsx';
@@ -99,6 +100,17 @@ const ADMIN_HEALTH = gql`
   }
 `;
 
+const SUBPROCESSOR_NOTICES = gql`
+  query AdminSubprocessorNotices {
+    adminSubprocessorNotices { id name purpose data location effectiveAt sent failed createdAt }
+  }
+`;
+const ANNOUNCE_SUBPROCESSOR = gql`
+  mutation AnnounceSubprocessor($input: SubprocessorNoticeInput!) {
+    announceSubprocessor(input: $input) { id name purpose data location effectiveAt sent failed createdAt }
+  }
+`;
+
 const SUPPORT_LOGIN = gql`
   mutation AdminSupportLogin($companyId: ID!) {
     adminSupportLogin(companyId: $companyId) {
@@ -164,7 +176,7 @@ type IdVerificationStatus = 'NOT_CHECKED' | 'PENDING' | 'IN_REVIEW' | 'APPROVED'
 type ViesAddressMatch = 'NOT_CHECKED' | 'UNAVAILABLE' | 'MATCH' | 'PARTIAL' | 'MISMATCH';
 
 type Filter = 'ALL' | 'PENDING_REVIEW' | 'APPROVED' | 'DENIED';
-type Tab = 'submissions' | 'access' | 'companies' | 'insights' | 'health' | 'test' | 'account';
+type Tab = 'submissions' | 'access' | 'companies' | 'insights' | 'health' | 'legal' | 'test' | 'account';
 
 type CompanyActivity = {
   id: string; name: string; slug: string; membersCount: number; submissionsCount: number;
@@ -459,6 +471,12 @@ export default function Dashboard() {
                 </svg>
                 <span className="db-sb-label">Health</span>
               </button>
+              <button className={`db-sb-item${tab === 'legal' ? ' db-sb-active' : ''}`} onClick={() => setTab('legal')}>
+                <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+                  <path d="M6 3h6l4 4v10H6V3zM12 3v4h4M8.5 11h5M8.5 14h5" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+                <span className="db-sb-label">Legal</span>
+              </button>
               <button className={`db-sb-item${tab === 'test' ? ' db-sb-active' : ''}`} onClick={() => setTab('test')}>
                 <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8">
                   <path d="M8 3v5L4 15a1.5 1.5 0 001.3 2.3h9.4A1.5 1.5 0 0016 15l-4-7V3M7 3h6M7 12h6" strokeLinecap="round" strokeLinejoin="round" />
@@ -654,6 +672,8 @@ export default function Dashboard() {
               error={healthError?.message}
             />
           )}
+
+          {tab === 'legal' && <LegalTab toast={toast} />}
 
           {tab === 'test' && <TestToolsTab toast={toast} onSubmissionCreated={() => refetch()} />}
           {tab === 'account' && <AdminAccountTab />}
@@ -1283,8 +1303,101 @@ const MAIL_NAMES: Record<string, string> = {
   'seller-new-statement': 'New statement to seller', invite: 'Team invitation', 'password-reset': 'Password reset',
   'email-verification': 'Email confirmation', 'admin-new-statement': 'New statement to admin',
   'access-request': 'Access request to admin', 'access-approved': 'Access approved', 'access-rejected': 'Access declined',
-  'ops-alert': 'Maintenance alert',
+  'ops-alert': 'Maintenance alert', 'subprocessor-notice': 'Sub-processor notice',
 };
+
+type NoticeRecord = { id: string; name: string; purpose: string; data: string; location: string; effectiveAt: string; sent: number; failed: number; createdAt: string };
+
+function isoInDays(n: number): string {
+  return new Date(Date.now() + n * 86_400_000).toISOString().slice(0, 10);
+}
+
+/**
+ * Announcing a new or replaced sub-processor: the DPA promises owners 30
+ * days' notice. The server refuses an earlier date; the field starts there.
+ */
+function LegalTab({ toast }: { toast: ReturnType<typeof useToast> }) {
+  const { data, refetch } = useQuery<{ adminSubprocessorNotices: NoticeRecord[] }>(SUBPROCESSOR_NOTICES);
+  const empty = { name: '', purpose: '', data: '', location: '', effectiveDate: isoInDays(30) };
+  const [form, setForm] = useState(empty);
+  const [announce, { loading }] = useMutation<{ announceSubprocessor: NoticeRecord }>(ANNOUNCE_SUBPROCESSOR);
+  const confirm = useConfirm();
+  const filled = form.name.trim() && form.purpose.trim() && form.data.trim() && form.location.trim() && form.effectiveDate;
+
+  const submit = async () => {
+    const ok = await confirm({
+      title: 'Email every company owner?',
+      message: `This emails every owner on the platform that ${form.name.trim()} will process data from ${form.effectiveDate}, and shows it on their dashboard. It cannot be unsent.`,
+      confirmLabel: 'Announce',
+    });
+    if (!ok) return;
+    try {
+      const { data: res } = await announce({ variables: { input: form } });
+      const n = res!.announceSubprocessor;
+      toast[n.failed ? 'error' : 'success'](`Announced: ${n.sent} email${n.sent === 1 ? '' : 's'} sent${n.failed ? `, ${n.failed} failed — see Health` : ''}.`);
+      setForm(empty);
+      void refetch();
+    } catch (err: any) {
+      toast.error(err?.message ?? 'Could not announce it.');
+    }
+  };
+
+  const notices = data?.adminSubprocessorNotices ?? [];
+  return (
+    <div className="db-insights">
+      <div className="db-panel">
+        <div className="db-panel-head"><h3 className="db-panel-title">Announce a sub-processor</h3></div>
+        <p className="db-test-sub">
+          The DPA promises owners at least 30 days&rsquo; notice of a new or replaced sub-processor. This emails every
+          owner and shows it on their dashboard. On the effective date, add it to <code>SUB_PROCESSORS</code> in
+          <code> frontend/src/lib/legal.ts</code>, and set <code>LAST_UPDATED</code> there and <code>LEGAL_VERSION</code> in
+          <code> backend/lib/legal.ts</code> to that date — owners are then asked to accept the new version.
+        </p>
+        <div className="db-test-grid">
+          <label className="db-test-field"><span className="db-test-label">Sub-processor</span>
+            <input className="db-test-input" maxLength={120} value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="e.g. Scaleway SAS" /></label>
+          <label className="db-test-field"><span className="db-test-label">Location</span>
+            <input className="db-test-input" maxLength={120} value={form.location} onChange={e => setForm({ ...form, location: e.target.value })} placeholder="e.g. France (EU)" /></label>
+          <label className="db-test-field"><span className="db-test-label">Effective from</span>
+            <input className="db-test-input" type="date" min={isoInDays(30)} value={form.effectiveDate} onChange={e => setForm({ ...form, effectiveDate: e.target.value })} /></label>
+        </div>
+        <div className="db-test-grid" style={{ marginTop: '0.85rem', gridTemplateColumns: '1fr 1fr' }}>
+          <label className="db-test-field"><span className="db-test-label">Purpose</span>
+            <input className="db-test-input" maxLength={300} value={form.purpose} onChange={e => setForm({ ...form, purpose: e.target.value })} placeholder="e.g. Sending the platform's emails" /></label>
+          <label className="db-test-field"><span className="db-test-label">Data</span>
+            <input className="db-test-input" maxLength={300} value={form.data} onChange={e => setForm({ ...form, data: e.target.value })} placeholder="e.g. Recipient address, name and message content" /></label>
+        </div>
+        <div className="db-test-actions">
+          <button className="db-btn-view" disabled={loading || !filled} onClick={() => void submit()}>
+            {loading ? 'Sending…' : 'Announce to all owners'}
+          </button>
+        </div>
+      </div>
+
+      <div className="db-panel">
+        <div className="db-panel-head"><h3 className="db-panel-title">Announcements</h3></div>
+        {notices.length === 0 ? <div className="db-state">Nothing announced yet.</div> : (
+          <div className="db-table-wrap">
+            <table className="db-table db-table-flat">
+              <thead><tr><th>Sub-processor</th><th>Location</th><th>Effective</th><th>Announced</th><th>Emails</th></tr></thead>
+              <tbody>
+                {notices.map(n => (
+                  <tr key={n.id}>
+                    <td><div className="db-company">{n.name}</div><div className="db-vat">{n.purpose}</div></td>
+                    <td>{n.location}</td>
+                    <td className="db-cell-mono">{n.effectiveAt.slice(0, 10)}</td>
+                    <td className="db-cell-mono">{n.createdAt.slice(0, 10)}</td>
+                    <td>{n.sent} sent{n.failed > 0 && <> · <span className="db-badge db-badge-red">{n.failed} failed</span></>}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 /**
  * Whether the platform works: the outside services, the checks, identity

@@ -35,6 +35,8 @@ const BUDGETS: Record<string, { max: number; minutes: number }> = {
   'access-decision': { max: 5, minutes: 60 },
   // The nightly maintenance alert: one a night is the design, three is slack.
   'ops-alert': { max: 3, minutes: 24 * 60 },
+  // One per announcement; a few a day covers a correction being sent.
+  'subprocessor-notice': { max: 5, minutes: 24 * 60 },
 };
 
 /**

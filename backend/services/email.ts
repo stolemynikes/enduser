@@ -268,3 +268,32 @@ export async function sendOpsAlert(lines: string[]) {
       <p style="color:#888">Details are in the server log for this night.</p>`),
   });
 }
+
+/**
+ * A new or replaced sub-processor, announced to each company owner at least
+ * 30 days ahead, as the DPA promises. Replies go to the platform admin, which
+ * is where an objection is made.
+ */
+export async function sendSubprocessorNotice(
+  to: string, name: string, companyName: string,
+  notice: { name: string; purpose: string; data: string; location: string; effectiveAt: Date },
+) {
+  const when = notice.effectiveAt.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+  return send('subprocessor-notice', {
+    from: { name: PLATFORM, address: FROM_ADDRESS }, to,
+    ...(ADMIN_EMAIL ? { replyTo: ADMIN_EMAIL } : {}),
+    subject: `A new sub-processor from ${when}`,
+    html: layout(`<p>Hi ${esc(name)},</p>
+      <p>As our Data Processing Agreement with <strong>${esc(companyName)}</strong> requires, we are telling you at least
+      30 days in advance that from <strong>${esc(when)}</strong> we will use a new sub-processor:</p>
+      <table style="border-collapse:collapse;font-size:14px">
+        <tr><td style="padding:4px 12px 4px 0;color:#666">Sub-processor</td><td><strong>${esc(notice.name)}</strong></td></tr>
+        <tr><td style="padding:4px 12px 4px 0;color:#666">Purpose</td><td>${esc(notice.purpose)}</td></tr>
+        <tr><td style="padding:4px 12px 4px 0;color:#666">Data</td><td>${esc(notice.data)}</td></tr>
+        <tr><td style="padding:4px 12px 4px 0;color:#666">Location</td><td>${esc(notice.location)}</td></tr>
+      </table>
+      <p>You may object on reasonable grounds by replying to this email before that date. If we cannot resolve it,
+      you may close your account before the change takes effect.</p>
+      <p><a href="${esc(APP_URL)}/dpa#sub-processors">The current list of sub-processors</a></p>`),
+  });
+}

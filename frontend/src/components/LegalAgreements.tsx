@@ -6,6 +6,7 @@
 // downloads the record of it.
 import { gql } from '@apollo/client';
 import { useMutation, useQuery, useLazyQuery } from '@apollo/client/react';
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 
 const COMPANY_LEGAL = gql`
@@ -19,6 +20,7 @@ const ACCEPT_LEGAL = gql`
   }
 `;
 const RECORD = gql`query LegalAcceptanceRecord { legalAcceptanceRecord }`;
+const NOTICES = gql`query SubprocessorNotices { subprocessorNotices { id name purpose data location effectiveAt } }`;
 
 type Legal = {
   currentVersion: string; acceptedVersion: string | null; needsAcceptance: boolean;
@@ -95,5 +97,46 @@ export function LegalAgreementsPanel() {
         </button>
       </div>
     </div>
+  );
+}
+
+type Notice = { id: string; name: string; purpose: string; data: string; location: string; effectiveAt: string };
+
+/**
+ * A new sub-processor, announced at least 30 days ahead as the DPA promises.
+ * Shown to the owner, who is the one who may object; dismissed per browser,
+ * since the same notice also went out by email.
+ */
+export function SubprocessorBanner({ isOwner, support }: { isOwner: boolean; support: boolean }) {
+  const { data } = useQuery<{ subprocessorNotices: Notice[] }>(NOTICES, { skip: !isOwner || support });
+  const [hidden, setHidden] = useState<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem('sp-notices-dismissed') ?? '[]'); } catch { return []; }
+  });
+  const notices = (data?.subprocessorNotices ?? []).filter(n => !hidden.includes(n.id));
+  if (!isOwner || support || notices.length === 0) return null;
+  const dismiss = (id: string) => {
+    const next = [...hidden, id];
+    setHidden(next);
+    try { localStorage.setItem('sp-notices-dismissed', JSON.stringify(next)); } catch { /* storage unavailable */ }
+  };
+  return (
+    <>
+      {notices.map(n => {
+        const started = new Date(n.effectiveAt).getTime() <= Date.now();
+        return (
+          <div key={n.id} className="cd-banner cd-banner--info" role="status">
+            <span>
+              <b>{started ? 'New sub-processor' : 'Upcoming sub-processor'}:</b> {started ? 'since' : 'from'}{' '}
+              {dateLabel(n.effectiveAt)}, <b>{n.name}</b> ({n.location}) processes {n.data.toLowerCase()} for {n.purpose.toLowerCase()}.
+              {!started && <> You can object by replying to the email we sent you about it.</>}{' '}
+              <Link to="/dpa#sub-processors" target="_blank">The current list</Link>
+            </span>
+            <span className="cd-banner-actions">
+              <button className="cd-banner-x" aria-label="Dismiss" onClick={() => dismiss(n.id)}>×</button>
+            </span>
+          </div>
+        );
+      })}
+    </>
   );
 }

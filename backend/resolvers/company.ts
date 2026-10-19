@@ -32,6 +32,7 @@ import { GraphQLError } from 'graphql';
 import { checkCredential, revealDocumentNumber, revealHistory, revealsToday } from '../lib/reveal.ts';
 import { buildBuyerExport, buyerStatementIds } from '../lib/buyerData.ts';
 import { LEGAL_VERSION, acceptanceRecordPdf, legalStatus, recordAcceptance } from '../lib/legal.ts';
+import { activeNotices } from '../lib/subprocessors.ts';
 import { deleteSubmissions } from '../lib/submissionDelete.ts';
 import {
   countPasskeys, finishAuthentication, finishRegistration, listPasskeys,
@@ -524,6 +525,15 @@ export const companyResolvers = {
     companyLegal: async (_: unknown, __: unknown, ctx: Ctx) => {
       const { companyId } = requireCompany(ctx);
       return legalStatus(companyId);
+    },
+
+    subprocessorNotices: async (_: unknown, __: unknown, ctx: Ctx) => {
+      requireCompany(ctx);
+      const rows = await activeNotices();
+      return rows.map(n => ({
+        id: n.id, name: n.name, purpose: n.purpose, data: n.data, location: n.location,
+        effectiveAt: n.effectiveAt.toISOString(),
+      }));
     },
 
     legalAcceptanceRecord: async (_: unknown, __: unknown, ctx: Ctx) => {

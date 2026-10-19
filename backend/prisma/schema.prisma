@@ -569,3 +569,22 @@ model LegalAcceptance {
 
   @@index([companyId, acceptedAt])
 }
+
+/// An announced new or replaced sub-processor. The DPA promises at least 30
+/// days' notice, by email and in the dashboard; this is that notice, and the
+/// record that it was given.
+model SubprocessorNotice {
+  id          String   @id @default(cuid())
+  name        String
+  purpose     String
+  data        String
+  location    String
+  effectiveAt DateTime
+  /// Owners the email was sent to, and how many of those sends failed.
+  sent        Int      @default(0)
+  failed      Int      @default(0)
+  createdById String
+  createdAt   DateTime @default(now())
+
+  @@index([effectiveAt])
+}

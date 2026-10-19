@@ -15,7 +15,7 @@ import { PriorApprovals } from '../src/components/PriorApprovals.tsx';
 import { MfaSettings } from '../src/components/MfaSettings.tsx';
 import { RevealDocumentNumber } from '../src/components/RevealDocumentNumber.tsx';
 import { BuyerDataRequest } from '../src/components/BuyerDataRequest.tsx';
-import { LegalAgreementsPanel, LegalBanner } from '../src/components/LegalAgreements.tsx';
+import { LegalAgreementsPanel, LegalBanner, SubprocessorBanner } from '../src/components/LegalAgreements.tsx';
 import { RevealLog } from '../src/components/RevealLog.tsx';
 import { PasskeySettings } from '../src/components/PasskeySettings.tsx';
 import { EnrolmentRequired } from '../src/components/EnrolmentRequired.tsx';
@@ -942,6 +942,7 @@ export default function CompanyDashboard() {
 
         <main className="cd-main">
           <LegalBanner isOwner={isOwner} support={supportMode} />
+          <SubprocessorBanner isOwner={isOwner} support={supportMode} />
           {account && !account.emailVerified && !verificationDismissed && (
             <div className="cd-banner">
               <span>

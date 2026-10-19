@@ -397,6 +397,38 @@ export const typeDefs = `#graphql
     history: [LegalAcceptanceEntry!]!
   }
 
+  """A new or replaced sub-processor, as shown to a company."""
+  type SubprocessorAnnouncement {
+    id: ID!
+    name: String!
+    purpose: String!
+    data: String!
+    location: String!
+    effectiveAt: String!
+  }
+
+  """The same, with how many owners were emailed. Platform admin only."""
+  type SubprocessorNoticeRecord {
+    id: ID!
+    name: String!
+    purpose: String!
+    data: String!
+    location: String!
+    effectiveAt: String!
+    sent: Int!
+    failed: Int!
+    createdAt: String!
+  }
+
+  input SubprocessorNoticeInput {
+    name: String!
+    purpose: String!
+    data: String!
+    location: String!
+    """YYYY-MM-DD, at least 30 days from today."""
+    effectiveDate: String!
+  }
+
   type AdminInsights {
     totalCompanies: Int!
     totalSubmissions: Int!
@@ -633,6 +665,9 @@ export const typeDefs = `#graphql
     accessRequests: [AccessRequest!]!
     adminInsights: AdminInsights!
     companyLegal: CompanyLegal!
+    """Announced sub-processor changes, until a week after they take effect."""
+    subprocessorNotices: [SubprocessorAnnouncement!]!
+    adminSubprocessorNotices: [SubprocessorNoticeRecord!]!
     """A PDF record of every acceptance, base64. Owner only."""
     legalAcceptanceRecord: String!
     """Platform health over the last \`days\` days (1–365). Platform admin only."""
@@ -680,6 +715,8 @@ export const typeDefs = `#graphql
     exportBuyerData(id: ID!, credential: String!): BuyerExport!
     """The owner accepts the current Terms, DPA and Privacy Policy; \`version\` must be the current one."""
     acceptLegal(version: String!): CompanyLegal!
+    """Announces a sub-processor to every company owner by email and on the dashboard. Platform admin only."""
+    announceSubprocessor(input: SubprocessorNoticeInput!): SubprocessorNoticeRecord!
     """Deletes every statement of the buyer of this statement, for a GDPR erasure request. Owner only, with a current second-factor code; logged. Returns how many were deleted."""
     eraseBuyerData(id: ID!, credential: String!): Int!
     """

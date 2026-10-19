@@ -11,6 +11,11 @@ import { mailBudgetAllows } from '../lib/mailBudget.ts';
 import { sendAccessApproved, sendAccessRejected } from '../services/email.ts';
 import { deleteSubmissions } from '../lib/submissionDelete.ts';
 import { adminHealth } from '../lib/health.ts';
+import { NoticeInputError, allNotices, announceSubprocessor } from '../lib/subprocessors.ts';
+
+function noticeRecord(n: { id: string; name: string; purpose: string; data: string; location: string; effectiveAt: Date; sent: number; failed: number; createdAt: Date }) {
+  return { ...n, effectiveAt: n.effectiveAt.toISOString(), createdAt: n.createdAt.toISOString() };
+}
 
 const APP_URL = (process.env.FRONTEND_URL ?? 'http://localhost:5173').replace(/\/+$/, '');
 
@@ -143,6 +148,11 @@ export const adminResolvers = {
      * and every company into memory to count them, which is a self-inflicted
      * outage the day the platform succeeds.
      */
+    adminSubprocessorNotices: async (_: unknown, __: unknown, ctx: Ctx) => {
+      requireAdmin(ctx);
+      return (await allNotices()).map(noticeRecord);
+    },
+
     adminHealth: async (_: unknown, { days }: { days: number }, ctx: Ctx) => {
       requireAdmin(ctx);
       return adminHealth(days);
@@ -460,6 +470,16 @@ export const adminResolvers = {
 
       if (willCheckSubstance) void runSubstanceCheck(submission.id);
       return submission;
+    },
+
+    announceSubprocessor: async (_: unknown, { input }: { input: any }, ctx: Ctx) => {
+      const adminId = requireAdmin(ctx);
+      try {
+        return noticeRecord(await announceSubprocessor(adminId, input));
+      } catch (err) {
+        if (err instanceof NoticeInputError) throw new GraphQLError(err.message, { extensions: { code: 'BAD_USER_INPUT' } });
+        throw err;
+      }
     },
 
     deleteTestSubmissions: async (_: unknown, __: unknown, ctx: Ctx) => {
