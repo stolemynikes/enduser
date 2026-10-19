@@ -13,11 +13,21 @@ function esc(s: string): string {
 const PREVIEW = process.env.MAIL_PREVIEW === '1' && process.env.NODE_ENV !== 'production';
 if (PREVIEW) console.warn('[mail] MAIL_PREVIEW=1 — messages are rendered, not sent.');
 
+// TLS is required, never opportunistic. These messages carry reset and invite
+// links that are credentials in their own right, and the relay login itself:
+// with plain STARTTLS-if-offered, anyone between this server and the relay
+// could strip the offer and read both. Port 465 is TLS from the first byte;
+// any other port must upgrade with STARTTLS or the send fails. Certificates
+// are checked (Nodemailer's default, stated here so nobody turns it off).
+const SMTP_PORT = Number(process.env.SMTP_PORT) || 587;
 const transporter = PREVIEW
   ? nodemailer.createTransport({ jsonTransport: true })
   : nodemailer.createTransport({
       host: process.env.SMTP_HOST,
-      port: Number(process.env.SMTP_PORT) || 587,
+      port: SMTP_PORT,
+      secure: SMTP_PORT === 465,
+      requireTLS: SMTP_PORT !== 465,
+      tls: { rejectUnauthorized: true, minVersion: 'TLSv1.2' },
       auth: process.env.SMTP_USER
         ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS }
         : undefined,

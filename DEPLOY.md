@@ -64,7 +64,7 @@ Passkeys are bound to the host in `FRONTEND_URL` (here `eustatement.com`; the
 address — a tunnel, a Tailscale name — does not carry over and has to be added
 again once the site runs on its real domain.
 | `TRUST_PROXY_HOPS` | count your proxies | Too high and `X-Forwarded-For` is forgeable, so every IP-keyed limit is evaded; too low and every client looks like the proxy and shares one bucket. Caddy alone is 1; Cloudflare in front of Caddy is 2 |
-| `SMTP_*` | real credentials | **No mail has ever been delivered.** Every decision, invitation and reset currently fails into a `.catch` |
+| `SMTP_*` | real credentials | **No mail has ever been delivered.** Every decision, invitation and reset currently fails into a `.catch`. TLS is required: port 465, or 587 with STARTTLS; a relay without it gets no mail |
 | `TURNSTILE_SECRET` / `TURNSTILE_SITE_KEY` | from Cloudflare | Without them the anti-robot check is inert and the public form is free to script |
 | `REQUIRE_MFA` | `1` — *after* step 5 | Setting it first locks you out of your own product |
 
