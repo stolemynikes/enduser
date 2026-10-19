@@ -8,6 +8,7 @@
 // browser, and the decision is always fetched by us — a status reported by the
 // client (redirect query string, webhook body) is a hint, never a fact.
 import 'dotenv/config';
+import { noteService } from '../lib/ops.ts';
 
 const BASE_URL = (process.env.DIDIT_BASE_URL ?? 'https://verification.didit.me').replace(/\/+$/, '');
 const API_KEY = process.env.DIDIT_API_KEY;
@@ -54,16 +55,26 @@ function requireConfig() {
 
 async function call(path: string, init: RequestInit = {}): Promise<any> {
   requireConfig();
-  const res = await fetch(`${BASE_URL}${path}`, {
-    ...init,
-    headers: {
-      'x-api-key': API_KEY as string,
-      'Content-Type': 'application/json',
-      ...(init.headers ?? {}),
-    },
-    signal: AbortSignal.timeout(TIMEOUT_MS),
-  });
-  const text = await res.text();
+  let res: Response;
+  let text: string;
+  try {
+    res = await fetch(`${BASE_URL}${path}`, {
+      ...init,
+      headers: {
+        'x-api-key': API_KEY as string,
+        'Content-Type': 'application/json',
+        ...(init.headers ?? {}),
+      },
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    });
+    text = await res.text();
+  } catch (err) {
+    noteService('didit', false);
+    throw err;
+  }
+  // A 4xx is Didit answering (an unknown session, a rejected request); only a
+  // 5xx or no answer at all says the service itself is in trouble.
+  noteService('didit', res.status < 500);
   if (!res.ok) {
     // Body may carry provider detail we do not want to surface to the buyer.
     console.error(`[didit] ${init.method ?? 'GET'} ${path} → ${res.status}: ${text.slice(0, 500)}`);

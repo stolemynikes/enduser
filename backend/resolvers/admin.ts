@@ -10,6 +10,7 @@ import { accessStatus } from '../lib/access.ts';
 import { mailBudgetAllows } from '../lib/mailBudget.ts';
 import { sendAccessApproved, sendAccessRejected } from '../services/email.ts';
 import { purgeSessionsOf } from '../lib/diditReconcile.ts';
+import { adminHealth } from '../lib/health.ts';
 
 const APP_URL = (process.env.FRONTEND_URL ?? 'http://localhost:5173').replace(/\/+$/, '');
 
@@ -142,6 +143,11 @@ export const adminResolvers = {
      * and every company into memory to count them, which is a self-inflicted
      * outage the day the platform succeeds.
      */
+    adminHealth: async (_: unknown, { days }: { days: number }, ctx: Ctx) => {
+      requireAdmin(ctx);
+      return adminHealth(days);
+    },
+
     adminInsights: async (_: unknown, __: unknown, ctx: Ctx) => {
       requireAdmin(ctx);
       // The chart covers 12 weeks, so only 12 weeks of rows are read.

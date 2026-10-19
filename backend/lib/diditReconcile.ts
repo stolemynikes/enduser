@@ -9,6 +9,7 @@
 // purge of any final check whose deletion at Didit failed earlier.
 import { prisma } from './prisma.ts';
 import { DIDIT_ENABLED, deleteSession, retrieveDecision, type DiditDecision } from '../services/didit.ts';
+import { recordEvent } from './ops.ts';
 import type { Prisma } from '../generated/prisma/client.ts';
 
 const FINAL = new Set(['APPROVED', 'DECLINED', 'EXPIRED']);
@@ -125,6 +126,7 @@ export async function purgeSessionsOf(where: Prisma.SubmissionWhereInput): Promi
       await prisma.submission.update({ where: { id: o.id }, data: { idVerificationPurged: true } });
     } else {
       failed++;
+      recordEvent('didit-purge-failed');
     }
   }
   return failed;

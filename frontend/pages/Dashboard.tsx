@@ -87,6 +87,18 @@ const ADMIN_INSIGHTS = gql`
   }
 `;
 
+const ADMIN_HEALTH = gql`
+  query AdminHealth($days: Int!) {
+    adminHealth(days: $days) {
+      days translationEnabled untranslated
+      services { service state lastOkAt lastFailAt failStreak }
+      checks { kind ok flagged error open overridden }
+      didit { started submitted purgedAfterSubmit purgedAbandoned purgedRefused purgeFailed gaveUp stuckInReview }
+      mailFailures { kind count }
+    }
+  }
+`;
+
 const SUPPORT_LOGIN = gql`
   mutation AdminSupportLogin($companyId: ID!) {
     adminSupportLogin(companyId: $companyId) {
@@ -152,7 +164,7 @@ type IdVerificationStatus = 'NOT_CHECKED' | 'PENDING' | 'IN_REVIEW' | 'APPROVED'
 type ViesAddressMatch = 'NOT_CHECKED' | 'UNAVAILABLE' | 'MATCH' | 'PARTIAL' | 'MISMATCH';
 
 type Filter = 'ALL' | 'PENDING_REVIEW' | 'APPROVED' | 'DENIED';
-type Tab = 'submissions' | 'access' | 'companies' | 'insights' | 'test' | 'account';
+type Tab = 'submissions' | 'access' | 'companies' | 'insights' | 'health' | 'test' | 'account';
 
 type CompanyActivity = {
   id: string; name: string; slug: string; membersCount: number; submissionsCount: number;
@@ -306,6 +318,9 @@ export default function Dashboard() {
     useQuery<any>(ADMIN_COMPANIES, { skip: tab === 'submissions' });
   const { data: insightsData, loading: insightsLoading, error: insightsError } =
     useQuery<any>(ADMIN_INSIGHTS, { skip: tab !== 'insights' });
+  const [healthDays, setHealthDays] = useState(30);
+  const { data: healthData, loading: healthLoading, error: healthError } =
+    useQuery<{ adminHealth: Health }>(ADMIN_HEALTH, { variables: { days: healthDays }, skip: tab !== 'health', pollInterval: tab === 'health' ? 60_000 : 0 });
   const [supportLogin, { loading: supportLoading }] = useMutation<any>(SUPPORT_LOGIN);
 
   // Open a company's own dashboard as its owner (support session). The
@@ -437,6 +452,12 @@ export default function Dashboard() {
                   <path d="M3 17h14M5 13v-3m4 3V7m4 6v-5m4 5V4" strokeLinecap="round" />
                 </svg>
                 <span className="db-sb-label">Insights</span>
+              </button>
+              <button className={`db-sb-item${tab === 'health' ? ' db-sb-active' : ''}`} onClick={() => setTab('health')}>
+                <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+                  <path d="M2 10h3.5l2-5 3 10 2-5H18" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+                <span className="db-sb-label">Health</span>
               </button>
               <button className={`db-sb-item${tab === 'test' ? ' db-sb-active' : ''}`} onClick={() => setTab('test')}>
                 <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8">
@@ -621,6 +642,16 @@ export default function Dashboard() {
               companies={companiesData?.adminCompanies ?? []}
               loading={insightsLoading || companiesLoading}
               error={insightsError?.message ?? companiesError?.message}
+            />
+          )}
+
+          {tab === 'health' && (
+            <HealthTab
+              health={healthData?.adminHealth}
+              days={healthDays}
+              onDays={setHealthDays}
+              loading={healthLoading && !healthData}
+              error={healthError?.message}
             />
           )}
 
@@ -1217,6 +1248,165 @@ function InsightsTab({ insights, companies, loading, error }: {
           </table>
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+type ServiceStatus = { service: string; state: string; lastOkAt: string | null; lastFailAt: string | null; failStreak: number };
+type CheckStats = { kind: string; ok: number; flagged: number; error: number; open: number; overridden: number };
+type Health = {
+  days: number; translationEnabled: boolean; untranslated: number;
+  services: ServiceStatus[]; checks: CheckStats[];
+  didit: { started: number; submitted: number; purgedAfterSubmit: number; purgedAbandoned: number; purgedRefused: number; purgeFailed: number; gaveUp: number; stuckInReview: number };
+  mailFailures: { kind: string; count: number }[];
+};
+
+const SERVICE_NAMES: Record<string, string> = {
+  pubchem: 'PubChem', wikidata: 'Wikidata', vies: 'VIES', didit: 'Didit', translate: 'Translator', mail: 'Email',
+};
+// The state in words as well as colour, so it reads without the colour too.
+const STATE_BADGE: Record<string, { label: string; cls: string }> = {
+  OK: { label: 'Working', cls: 'db-badge-green' },
+  DEGRADED: { label: 'Failing', cls: 'db-badge-amber' },
+  DOWN: { label: 'Down', cls: 'db-badge-red' },
+  UNKNOWN: { label: 'Not called yet', cls: 'db-badge-grey' },
+  DISABLED: { label: 'Not configured', cls: 'db-badge-grey' },
+};
+const CHECK_NAMES: Record<string, { name: string; flagged: string }> = {
+  substance: { name: 'Substance', flagged: 'Flagged' },
+  vies: { name: 'VIES', flagged: 'Invalid' },
+  identity: { name: 'Identity', flagged: 'Declined' },
+};
+const MAIL_NAMES: Record<string, string> = {
+  received: 'Receipt to buyer', approved: 'Approval to buyer', denied: 'Denial to buyer',
+  'seller-new-statement': 'New statement to seller', invite: 'Team invitation', 'password-reset': 'Password reset',
+  'email-verification': 'Email confirmation', 'admin-new-statement': 'New statement to admin',
+  'access-request': 'Access request to admin', 'access-approved': 'Access approved', 'access-rejected': 'Access declined',
+  'ops-alert': 'Maintenance alert',
+};
+
+/**
+ * Whether the platform works: the outside services, the checks, identity
+ * sessions, mail. Counts only — what anyone submitted is not shown here.
+ */
+function HealthTab({ health, days, onDays, loading, error }: {
+  health?: Health; days: number; onDays: (d: number) => void; loading: boolean; error?: string;
+}) {
+  if (error) return <div className="db-state db-state-err">Failed to load: {error}</div>;
+  if (loading || !health) return <div className="db-state">Loading health…</div>;
+  const d = health.didit;
+  const purged = d.purgedAfterSubmit + d.purgedAbandoned + d.purgedRefused;
+  const mailFailed = health.mailFailures.reduce((n, m) => n + m.count, 0);
+  return (
+    <div className="db-insights">
+      <div className="db-filters" role="group" aria-label="Period">
+        {[7, 30, 90].map(n => (
+          <button key={n} className={`db-filter-btn ${days === n ? 'db-filter-active' : ''}`}
+            aria-pressed={days === n} onClick={() => onDays(n)}>
+            Last {n} days
+          </button>
+        ))}
+      </div>
+
+      <div className="db-panel">
+        <div className="db-panel-head">
+          <h3 className="db-panel-title">Outside services</h3>
+          <span className="db-panel-side">Refreshes every minute</span>
+        </div>
+        <div className="db-health-services">
+          {health.services.map(sv => {
+            const badge = STATE_BADGE[sv.state] ?? STATE_BADGE.UNKNOWN;
+            const failing = sv.state === 'DEGRADED' || sv.state === 'DOWN';
+            return (
+              <div key={sv.service} className="db-health-service">
+                <div className="db-health-service-top">
+                  <span className="db-health-service-name">{SERVICE_NAMES[sv.service] ?? sv.service}</span>
+                  <span className={`db-badge ${badge.cls}`}>{badge.label}</span>
+                </div>
+                <span className="db-health-service-note">
+                  {failing
+                    ? <>Failing since <span title={formatDate(sv.lastFailAt)}>{relativeTime(sv.lastFailAt)}</span> · {sv.failStreak} in a row</>
+                    : sv.lastOkAt
+                      ? <>Last answered <span title={formatDate(sv.lastOkAt)}>{relativeTime(sv.lastOkAt)}</span></>
+                      : sv.state === 'DISABLED' ? 'Not set up on this server' : 'No calls since this was added'}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="db-panel">
+        <div className="db-panel-head">
+          <h3 className="db-panel-title">Checks</h3>
+          <span className="db-panel-side">Statements submitted in the last {health.days} days, test data excluded</span>
+        </div>
+        <div className="db-table-wrap">
+          <table className="db-table db-table-flat db-table-num">
+            <thead>
+              <tr><th>Check</th><th>Passed</th><th>Flagged</th><th>Error</th><th>Undecided</th><th>Overridden</th></tr>
+            </thead>
+            <tbody>
+              {health.checks.map(c => (
+                <tr key={c.kind}>
+                  <td>{CHECK_NAMES[c.kind]?.name ?? c.kind}</td>
+                  <td>{c.ok}</td>
+                  <td title={CHECK_NAMES[c.kind]?.flagged}>{c.flagged}</td>
+                  <td>{c.error ? <span className="db-badge db-badge-amber">{c.error}</span> : 0}</td>
+                  <td>{c.open}</td>
+                  <td>{c.overridden}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="db-panel">
+        <div className="db-panel-head"><h3 className="db-panel-title">Identity checks at Didit</h3></div>
+        <div className="db-stat-row db-stat-row-sub">
+          <div className="db-stat-card"><span className="db-stat-num">{d.started}</span><span className="db-stat-label">Sessions started</span></div>
+          <div className="db-stat-card"><span className="db-stat-num">{d.submitted}</span><span className="db-stat-label">Used in a statement</span></div>
+          <div className="db-stat-card"><span className="db-stat-num">{purged}</span><span className="db-stat-label">Photos deleted at Didit</span></div>
+          <div className={`db-stat-card${d.purgeFailed || d.gaveUp ? ' db-stat-card-bad' : ''}`}><span className="db-stat-num">{d.purgeFailed + d.gaveUp}</span><span className="db-stat-label">Deletions failed</span></div>
+          <div className={`db-stat-card${d.stuckInReview ? ' db-stat-card-warn' : ''}`}><span className="db-stat-num">{d.stuckInReview}</span><span className="db-stat-label">In review over 7 days</span></div>
+        </div>
+        <p className="db-health-foot">
+          Deleted: {d.purgedAfterSubmit} after a decision, {d.purgedAbandoned} abandoned, {d.purgedRefused} refused buyers.
+          {d.gaveUp > 0 && <> {d.gaveUp} given up after 30 days — delete those at Didit by hand; the ids are in the server log.</>}
+        </p>
+      </div>
+
+      <div className="db-panel-duo">
+        <div className="db-panel">
+          <div className="db-panel-head">
+            <h3 className="db-panel-title">Email</h3>
+            <span className="db-panel-side">{mailFailed} failed</span>
+          </div>
+          {health.mailFailures.length === 0
+            ? <div className="db-state">No email failed to send in this period.</div>
+            : (
+              <ul className="db-health-list">
+                {health.mailFailures.map(m => (
+                  <li key={m.kind}><span>{MAIL_NAMES[m.kind] ?? m.kind}</span><span className="db-badge db-badge-red">{m.count}</span></li>
+                ))}
+              </ul>
+            )}
+        </div>
+        <div className="db-panel">
+          <div className="db-panel-head"><h3 className="db-panel-title">Translation</h3></div>
+          {!health.translationEnabled
+            ? <div className="db-state">The translator is not set up on this server, so no statement is translated.</div>
+            : (
+              <div className="db-stat-row db-stat-row-sub">
+                <div className={`db-stat-card${health.untranslated ? ' db-stat-card-warn' : ''}`}>
+                  <span className="db-stat-num">{health.untranslated}</span>
+                  <span className="db-stat-label">Statements left untranslated</span>
+                </div>
+              </div>
+            )}
+        </div>
       </div>
     </div>
   );
@@ -2001,6 +2191,20 @@ const dashStyles = `
   .db-panel-head { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; margin-bottom: 0.9rem; }
   .db-panel-title { font-size: 13px; font-weight: 600; color: var(--text); }
   .db-panel-side { font-size: 12px; color: var(--text-mid); }
+  .db-health-services { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 10px; }
+  .db-health-service {
+    display: flex; flex-direction: column; gap: 6px; padding: 12px 14px;
+    border: 1px solid var(--border); border-radius: 10px; background: var(--surface2);
+  }
+  .db-health-service-top { display: flex; align-items: center; justify-content: space-between; gap: 6px 8px; flex-wrap: wrap; }
+  .db-health-service-top .db-badge { white-space: nowrap; }
+  .db-health-service-name { font-size: 13px; font-weight: 600; color: var(--text); }
+  .db-health-service-note { font-size: 12px; color: var(--text-mid); font-variant-numeric: tabular-nums; }
+  .db-table-num td:not(:first-child), .db-table-num th:not(:first-child) { text-align: right; font-variant-numeric: tabular-nums; }
+  .db-health-foot { margin: 12px 0 0; font-size: 12.5px; color: var(--text-mid); line-height: 1.6; }
+  .db-health-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+  .db-health-list li { display: flex; justify-content: space-between; align-items: center; font-size: 13px; color: var(--text); padding: 6px 0; border-bottom: 1px solid var(--border); }
+  .db-health-list li:last-child { border-bottom: 0; }
   .db-legend { display: flex; gap: 1rem; }
   .db-legend-row { margin-top: 0.7rem; }
   .db-legend-item { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--text-mid); }

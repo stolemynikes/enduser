@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import nodemailer from 'nodemailer';
+import { noteService, recordEvent } from '../lib/ops.ts';
 
 function esc(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -21,6 +22,23 @@ const transporter = PREVIEW
         ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS }
         : undefined,
     });
+
+/**
+ * Every message goes through here, so a failed send is counted for the admin
+ * health page (by kind, never by recipient) and the mail server's state is
+ * recorded. The error still reaches the caller unchanged.
+ */
+async function send(kind: string, mail: Parameters<typeof transporter.sendMail>[0]) {
+  try {
+    const info = await transporter.sendMail(mail);
+    if (!PREVIEW) noteService('mail', true);
+    return info;
+  } catch (err) {
+    noteService('mail', false);
+    recordEvent('mail-failed', kind);
+    throw err;
+  }
+}
 
 const FROM_ADDRESS = process.env.SMTP_FROM ?? 'noreply@eustatement.com';
 // No fallback address. The old default was a domain this platform does not
@@ -75,7 +93,7 @@ export async function sendSubmissionReceived(
   to: string, name: string, sellerName?: string, copy?: StatementCopy,
 ) {
   const who = sellerName ?? 'the supplier';
-  return transporter.sendMail({
+  return send('received', {
     from: sellerFrom(sellerName), to,
     subject: sellerName
       ? `${sellerName} received your end-user statement`
@@ -91,7 +109,7 @@ export async function sendSubmissionReceived(
 export async function sendApproved(
   to: string, name: string, sellerName?: string, copy?: StatementCopy,
 ) {
-  return transporter.sendMail({
+  return send('approved', {
     from: sellerFrom(sellerName), to,
     subject: 'Your end-user statement has been approved',
     html: layout(`<p>Dear ${esc(name)},</p>
@@ -103,7 +121,7 @@ export async function sendApproved(
 }
 
 export async function sendDenied(to: string, name: string, reason: string, sellerName?: string) {
-  return transporter.sendMail({
+  return send('denied', {
     from: sellerFrom(sellerName), to,
     subject: 'Your end-user statement has been declined',
     html: layout(`<p>Dear ${esc(name)},</p>
@@ -124,7 +142,7 @@ export async function sendNewSubmissionToCompany(
 ) {
   if (recipients.length === 0) return;
   const from = buyerCompany ? `${buyerName} (${buyerCompany})` : buyerName;
-  return transporter.sendMail({
+  return send('seller-new-statement', {
     from: { name: PLATFORM, address: FROM_ADDRESS },
     // One address per message rather than a shared To line, so recipients do not
     // see each other and each mail can be filtered on its own.
@@ -140,7 +158,7 @@ export async function sendNewSubmissionToCompany(
 }
 
 export async function sendCompanyInvite(to: string, inviterName: string, companyName: string, inviteUrl: string) {
-  return transporter.sendMail({
+  return send('invite', {
     from: sellerFrom(companyName), to,
     subject: `You've been invited to join ${companyName}`,
     html: layout(`<p>Hi,</p>
@@ -153,7 +171,7 @@ export async function sendCompanyInvite(to: string, inviterName: string, company
 }
 
 export async function sendPasswordReset(to: string, name: string, resetUrl: string) {
-  return transporter.sendMail({
+  return send('password-reset', {
     from: { name: PLATFORM, address: FROM_ADDRESS }, to,
     subject: 'Reset your password',
     html: layout(`<p>Hi ${esc(name)},</p>
@@ -166,7 +184,7 @@ export async function sendPasswordReset(to: string, name: string, resetUrl: stri
 }
 
 export async function sendEmailVerification(to: string, name: string, verifyUrl: string) {
-  return transporter.sendMail({
+  return send('email-verification', {
     from: { name: PLATFORM, address: FROM_ADDRESS }, to,
     subject: 'Confirm your email address',
     html: layout(`<p>Hi ${esc(name)},</p>
@@ -180,7 +198,7 @@ export async function sendEmailVerification(to: string, name: string, verifyUrl:
 export async function sendAdminNotification(submissionId: string, companyName: string) {
   const to = adminRecipient();
   if (!to) return null;
-  return transporter.sendMail({
+  return send('admin-new-statement', {
     from: { name: PLATFORM, address: FROM_ADDRESS },
     to,
     subject: 'New end-user statement pending review',
@@ -194,7 +212,7 @@ export async function sendAdminNotification(submissionId: string, companyName: s
 export async function sendAccessRequestToAdmin(companyName: string, ownerName: string, ownerEmail: string, note: string | null) {
   const to = adminRecipient();
   if (!to) return null;
-  return transporter.sendMail({
+  return send('access-request', {
     from: { name: PLATFORM, address: FROM_ADDRESS },
     to,
     subject: `Access request: ${companyName}`,
@@ -208,7 +226,7 @@ export async function sendAccessRequestToAdmin(companyName: string, ownerName: s
 
 /** The applicant's request was approved: their form is now open. */
 export async function sendAccessApproved(to: string, name: string, companyName: string, formUrl: string) {
-  return transporter.sendMail({
+  return send('access-approved', {
     from: { name: PLATFORM, address: FROM_ADDRESS }, to,
     subject: `${companyName} is approved`,
     html: layout(`<p>Hi ${esc(name)},</p>
@@ -221,7 +239,7 @@ export async function sendAccessApproved(to: string, name: string, companyName: 
 
 /** The applicant's request was declined, with the reason given. */
 export async function sendAccessRejected(to: string, name: string, companyName: string, reason: string) {
-  return transporter.sendMail({
+  return send('access-rejected', {
     from: { name: PLATFORM, address: FROM_ADDRESS }, to,
     // The sender address takes no replies; a reply reaches the admin who decided.
     ...(ADMIN_EMAIL ? { replyTo: ADMIN_EMAIL } : {}),
@@ -241,7 +259,7 @@ export async function sendAccessRejected(to: string, name: string, companyName: 
 export async function sendOpsAlert(lines: string[]) {
   const to = adminRecipient();
   if (!to) return null;
-  return transporter.sendMail({
+  return send('ops-alert', {
     from: { name: PLATFORM, address: FROM_ADDRESS },
     to,
     subject: 'eustatement: nightly maintenance needs attention',

@@ -11,6 +11,8 @@
 // the submitted address can be compared (matchViesAddress) — for review, never to
 // auto-deny.
 
+import { noteService } from '../lib/ops.ts';
+
 export type ViesResult = 'VALID' | 'INVALID' | 'ERROR';
 export type ViesLookup = { status: ViesResult; name: string | null; address: string | null };
 export type ViesAddressMatch = 'NOT_CHECKED' | 'UNAVAILABLE' | 'MATCH' | 'PARTIAL' | 'MISMATCH';
@@ -71,8 +73,14 @@ export async function checkVies(countryCode: string, vatNumber: string): Promise
       headers: { Accept: 'application/json', 'User-Agent': 'enduser-statements/1.0' },
       signal: controller.signal,
     });
-    if (!res.ok) return { status: 'ERROR', name: null, address: null };
+    if (!res.ok) {
+      noteService('vies', false);
+      return { status: 'ERROR', name: null, address: null };
+    }
     const data = (await res.json()) as { isValid?: boolean; userError?: string; name?: string; address?: string };
+    // A member state being down is a failure of the service; any other answer,
+    // even an unhelpful one, means it was reachable.
+    noteService('vies', !(data.userError && SERVICE_ERRORS.has(data.userError)));
 
     let status: ViesResult;
     if (data.userError && SERVICE_ERRORS.has(data.userError)) status = 'ERROR';
@@ -93,6 +101,7 @@ export async function checkVies(countryCode: string, vatNumber: string): Promise
     }
     return result;
   } catch {
+    noteService('vies', false);
     return { status: 'ERROR', name: null, address: null };
   } finally {
     clearTimeout(timer);

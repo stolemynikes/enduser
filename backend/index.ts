@@ -39,6 +39,7 @@ import { accessStatus } from './lib/access.ts';
 import { pruneAuthTokens } from './lib/authTokens.ts';
 import { mailBudgetAllows, pruneMailBudget } from './lib/mailBudget.ts';
 import { errorSpikes } from './lib/opsAlerts.ts';
+import { pruneOpsEvents } from './lib/ops.ts';
 import { ADMIN_INBOX, sendOpsAlert } from './services/email.ts';
 import { pruneRevealLog } from './lib/reveal.ts';
 import { prisma } from './lib/prisma.ts';
@@ -473,6 +474,7 @@ cron.schedule('0 2 * * *', async () => {
     const tokens = await pruneAuthTokens();
     const limits = await pruneRateLimits();
     const mail = await pruneMailBudget();
+    await pruneOpsEvents();
     if (sessions.pruned || events || tokens || limits || mail) {
       console.log(`Maintenance: pruned ${sessions.pruned} verification session(s), ${events} webhook event(s), `
         + `${tokens} auth token(s), ${limits} rate-limit row(s), ${mail} mail budget row(s)`);

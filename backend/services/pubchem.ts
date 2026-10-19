@@ -8,6 +8,8 @@
 // Free, public, and needs no API key. NCBI's usage policy caps callers at 5
 // requests per second, so every call goes through a serialised queue.
 
+import { noteService } from '../lib/ops.ts';
+
 const BASE_URL = 'https://pubchem.ncbi.nlm.nih.gov/rest/pug';
 const TIMEOUT_MS = 10_000;
 // NCBI allows 5 req/s. Stay under it with a single in-flight request and a gap.
@@ -58,19 +60,25 @@ export async function resolveCompound(term: string): Promise<Compound | null> {
     try {
       res = await fetch(url, { signal: AbortSignal.timeout(TIMEOUT_MS) });
     } catch (err: any) {
+      noteService('pubchem', false);
       throw new PubChemUnavailable(err?.name === 'TimeoutError' ? 'timed out' : 'network error');
     }
 
     // 404 is PubChem's "no such compound" — an answer, not a failure.
-    if (res.status === 404) return null;
-    if (!res.ok) throw new PubChemUnavailable(`HTTP ${res.status}`);
+    if (res.status === 404) { noteService('pubchem', true); return null; }
+    if (!res.ok) {
+      noteService('pubchem', false);
+      throw new PubChemUnavailable(`HTTP ${res.status}`);
+    }
 
     let json: any;
     try {
       json = await res.json();
     } catch {
+      noteService('pubchem', false);
       throw new PubChemUnavailable('malformed response');
     }
+    noteService('pubchem', true);
 
     const prop = json?.PropertyTable?.Properties?.[0];
     if (!prop?.CID) return null;

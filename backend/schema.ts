@@ -323,6 +323,58 @@ export const typeDefs = `#graphql
     companies: Int!
   }
 
+  """How an outside service last answered. Counts and times only."""
+  type ServiceStatus {
+    service: String!
+    """OK, DEGRADED (failing, fewer than 3 in a row), DOWN, UNKNOWN (not called yet) or DISABLED (not configured)."""
+    state: String!
+    lastOkAt: String
+    lastFailAt: String
+    failStreak: Int!
+  }
+
+  type CheckStats {
+    """substance, vies or identity."""
+    kind: String!
+    ok: Int!
+    """Flagged (substance), invalid (VIES), declined or expired (identity)."""
+    flagged: Int!
+    error: Int!
+    """Still undecided: substance checks running, identity checks in review."""
+    open: Int!
+    """Failed checks a reviewer overrode with a reason."""
+    overridden: Int!
+  }
+
+  type DiditStats {
+    started: Int!
+    submitted: Int!
+    purgedAfterSubmit: Int!
+    purgedAbandoned: Int!
+    purgedRefused: Int!
+    purgeFailed: Int!
+    gaveUp: Int!
+    """Submitted checks still in review after 7 days, at any age."""
+    stuckInReview: Int!
+  }
+
+  type MailFailure {
+    kind: String!
+    count: Int!
+  }
+
+  """Platform health for the admin. Aggregates only: no names, no reasons, no buyer data."""
+  type AdminHealth {
+    days: Int!
+    services: [ServiceStatus!]!
+    checks: [CheckStats!]!
+    didit: DiditStats!
+    mailFailures: [MailFailure!]!
+    """Statements whose language was never settled because the translator could not be reached."""
+    untranslated: Int!
+    translationEnabled: Boolean!
+  }
+
   type AdminInsights {
     totalCompanies: Int!
     totalSubmissions: Int!
@@ -558,6 +610,8 @@ export const typeDefs = `#graphql
     """Undecided access requests first, then the most recent decisions."""
     accessRequests: [AccessRequest!]!
     adminInsights: AdminInsights!
+    """Platform health over the last \`days\` days (1–365). Platform admin only."""
+    adminHealth(days: Int!): AdminHealth!
     adminMfaStatus: MfaStatus!
     adminPasskeys: [PasskeyInfo!]!
     testVies(vat: String!, street: String, zipCode: String, place: String): ViesTestResult!

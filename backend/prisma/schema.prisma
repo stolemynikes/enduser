@@ -502,3 +502,29 @@ model SupportAccess {
 
   @@index([companyId, createdAt])
 }
+
+/// How each outside service last answered: PubChem, Wikidata, VIES, Didit, the
+/// translator, the mail server. One row per service, updated on every call, so
+/// the admin health page can say "VIES unreachable since 14:02" without
+/// probing anything itself. Holds no personal data.
+model ServiceHealth {
+  service    String    @id
+  lastOkAt   DateTime?
+  lastFailAt DateTime?
+  /// Failures in a row since the last success.
+  failStreak Int       @default(0)
+  updatedAt  DateTime  @updatedAt
+}
+
+/// Counted operational events: what happened and when, never to whom. Things
+/// that leave no other trace — a Didit session started, a purge given up on,
+/// an email that failed to send. Pruned after a year.
+model OpsEvent {
+  id        String   @id @default(cuid())
+  kind      String
+  /// A sub-kind where one helps, e.g. which email failed. Never personal data.
+  detail    String?
+  createdAt DateTime @default(now())
+
+  @@index([kind, createdAt])
+}

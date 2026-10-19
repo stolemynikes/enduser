@@ -21,6 +21,8 @@
 // Unset LIBRETRANSLATE_URL, or the service being down, means no translation —
 // never a failed submission or a failed check.
 
+import { noteService } from '../lib/ops.ts';
+
 const URL_BASE = process.env.LIBRETRANSLATE_URL?.replace(/\/+$/, '') || '';
 export const TRANSLATION_ENABLED = !!URL_BASE;
 
@@ -54,14 +56,21 @@ function queued<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 async function call<T>(path: string, body?: unknown): Promise<T> {
-  const res = await fetch(`${URL_BASE}${path}`, {
-    method: body === undefined ? 'GET' : 'POST',
-    headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
-    body: body === undefined ? undefined : JSON.stringify(body),
-    signal: AbortSignal.timeout(TIMEOUT_MS),
-  });
-  if (!res.ok) throw new Error(`LibreTranslate ${path}: HTTP ${res.status}`);
-  return res.json() as Promise<T>;
+  try {
+    const res = await fetch(`${URL_BASE}${path}`, {
+      method: body === undefined ? 'GET' : 'POST',
+      headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
+      body: body === undefined ? undefined : JSON.stringify(body),
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    });
+    if (!res.ok) throw new Error(`LibreTranslate ${path}: HTTP ${res.status}`);
+    const json = await res.json() as T;
+    noteService('translate', true);
+    return json;
+  } catch (err) {
+    noteService('translate', false);
+    throw err;
+  }
 }
 
 let languages: { set: Set<string>; at: number } | null = null;

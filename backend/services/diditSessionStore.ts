@@ -11,6 +11,7 @@
 // personal data, only opaque ids and a cached status.
 import { prisma } from '../lib/prisma.ts';
 import { DIDIT_ENABLED, deleteSession, type DiditVerificationStatus } from './didit.ts';
+import { recordEvent } from '../lib/ops.ts';
 
 const TTL_MS = 60 * 60 * 1000; // 1 hour — hosted flow plus finishing the form
 
@@ -58,6 +59,8 @@ export async function registerSession(
   await prisma.verificationSession.create({
     data: { sessionId, companyId, ipHash, expiresAt: new Date(Date.now() + TTL_MS) },
   });
+  // Counted separately: the row itself is pruned once the session expires.
+  recordEvent('didit-session-started');
 }
 
 /** True when this server started the session and it has not been spent yet. */
@@ -173,13 +176,14 @@ export async function pruneSessions({ only }: { only?: string[] } = {}): Promise
         // Over the nightly budget: untouched, so it is neither purged nor given up on.
         if (purges >= MAX_PURGES_PER_RUN) continue;
         purges++;
-        if (await deleteSession(sessionId)) { drop.push(sessionId); continue; }
+        if (await deleteSession(sessionId)) { recordEvent('didit-purge-abandoned'); drop.push(sessionId); continue; }
       }
       // Given up on only after a failed attempt (or with Didit switched off,
       // when no attempt is possible), never for want of one.
       if (age > PURGE_GIVE_UP_MS) {
         console.error(`[didit] giving up purging abandoned session ${sessionId}; delete it at Didit by hand`);
         gaveUp++;
+        recordEvent('didit-purge-gaveup');
         drop.push(sessionId);
       }
     }

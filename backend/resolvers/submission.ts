@@ -88,6 +88,7 @@ import { mailBudgetAllows } from '../lib/mailBudget.ts';
 import { statementCopy } from '../lib/statementCopy.ts';
 import { matchKeys } from '../lib/matchKeys.ts';
 import { buyerError, type BuyerErrorCode } from '../lib/buyerError.ts';
+import { recordEvent } from '../lib/ops.ts';
 import { revealDocumentNumber } from '../lib/reveal.ts';
 import { secondFactorError, mfaSetupRequiredError } from './auth.ts';
 import { notifySubmission, notify } from '../lib/notifications.ts';
@@ -302,7 +303,7 @@ export const submissionResolvers = {
         // Didit now rather than by the nightly prune — for an under-age buyer
         // especially, a day is too long to keep them.
         const refuse = async (code: BuyerErrorCode, message: string): Promise<never> => {
-          await deleteSession(diditSessionId);
+          if (await deleteSession(diditSessionId)) recordEvent('didit-purge-refused');
           throw buyerError(code, message);
         };
 

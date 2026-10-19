@@ -14,6 +14,7 @@
 // Free, no key. Wikimedia asks automated clients to identify themselves;
 // WIKIDATA_CONTACT is added to the User-Agent when set, and nothing else is.
 import { normalizeName } from '../lib/precursors.ts';
+import { noteService } from '../lib/ops.ts';
 
 const ENDPOINT = 'https://query.wikidata.org/sparql';
 const TIMEOUT_MS = 8_000;
@@ -90,16 +91,22 @@ async function lookup(cas: string): Promise<WikidataName[]> {
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
   } catch (err: any) {
+    noteService('wikidata', false);
     throw new WikidataUnavailable(err?.name === 'TimeoutError' ? 'timed out' : 'network error');
   }
-  if (!res.ok) throw new WikidataUnavailable(`HTTP ${res.status}`);
+  if (!res.ok) {
+    noteService('wikidata', false);
+    throw new WikidataUnavailable(`HTTP ${res.status}`);
+  }
 
   let json: any;
   try {
     json = await res.json();
   } catch {
+    noteService('wikidata', false);
     throw new WikidataUnavailable('malformed response');
   }
+  noteService('wikidata', true);
 
   const names: WikidataName[] = (json?.results?.bindings ?? []).map((b: any) => ({
     lang: String(b.name?.['xml:lang'] ?? ''),
