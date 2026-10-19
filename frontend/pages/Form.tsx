@@ -13,6 +13,12 @@ import en, { type Messages, type ServerErrorCode } from '../src/i18n/messages/en
 import { LanguagePicker } from '../src/components/LanguagePicker.tsx';
 import { COUNTRY_CODE } from '../src/lib/countries.ts';
 import { readPublicTheme, storePublicTheme } from '../src/lib/publicTheme.ts';
+import '@fontsource/libre-baskerville/400.css';
+import '@fontsource/libre-baskerville/700.css';
+import '@fontsource/libre-baskerville/400-italic.css';
+import '@fontsource/jetbrains-mono/300.css';
+import '@fontsource/jetbrains-mono/400.css';
+import '@fontsource/jetbrains-mono/500.css';
 
 const SUBMIT_STATEMENT = gql`
   mutation SubmitEndUserStatement($input: SubmitInput!) {
@@ -778,7 +784,6 @@ function Field({
 }
 
 const styles = `
-  @import url('https://fonts.googleapis.com/css2?family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=JetBrains+Mono:wght@300;400;500&display=swap');
 
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 

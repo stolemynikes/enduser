@@ -9,6 +9,10 @@ import { Wordmark } from '../src/components/Mark.tsx';
 import { Turnstile } from '../src/components/Turnstile.tsx';
 import { TotpInput } from '../src/components/TotpInput.tsx';
 import { mfaSignal } from '../src/lib/mfaError.ts';
+import '@fontsource/inter/400.css';
+import '@fontsource/inter/500.css';
+import '@fontsource/inter/600.css';
+import '@fontsource/inter/700.css';
 
 const ADMIN_LOGIN = gql`
   mutation AdminLogin($username: String!, $password: String!, $turnstileToken: String, $totp: String) {
@@ -109,7 +113,6 @@ export default function AdminLogin() {
 }
 
 const loginStyles = `
-  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   :root {
     --bg: #0f0f10; --surface: #1c1c1e; --surface2: #0d0d0e;

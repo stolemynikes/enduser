@@ -19,6 +19,10 @@ import { Link, useLocation } from 'react-router-dom';
 import { useDocumentTitle } from '../lib/useDocumentTitle.ts';
 import { lastUpdatedLabel } from '../lib/legal.ts';
 import { readPublicTheme, storePublicTheme } from '../lib/publicTheme.ts';
+import '@fontsource/inter/400.css';
+import '@fontsource/inter/500.css';
+import '@fontsource/inter/600.css';
+import '@fontsource/inter/700.css';
 
 const NAV: { to: string; label: string }[] = [
   { to: '/docs', label: 'Docs' },
@@ -101,7 +105,6 @@ export function Clause({ n, id, title, children }: { n?: number; id: string; tit
 }
 
 const styles = `
-  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
   .doc-page {
     --bg: #0f0f10; --surface: #171718; --text: #f2f2f0; --text-mid: #a3a3a6; --text-dim: #8a8a8f;

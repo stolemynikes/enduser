@@ -12,6 +12,10 @@ import {
 } from '../src/lib/formConfigShared';
 import { MfaSettings } from '../src/components/MfaSettings.tsx';
 import { readAppTheme } from '../src/lib/useAppTheme.ts';
+import '@fontsource/inter/400.css';
+import '@fontsource/inter/500.css';
+import '@fontsource/inter/600.css';
+import '@fontsource/inter/800.css';
 
 // First-time setup wizard: full-screen takeover shown instead of the dashboard
 // until the owner saves their form config for the first time. Questions reveal
@@ -348,7 +352,6 @@ export default function SetupWizard({ companyName, companySlug, onDone }: Props)
 }
 
 const styles = `
-  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;800&display=swap');
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
   :root {

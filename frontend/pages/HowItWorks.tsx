@@ -25,6 +25,11 @@ import { useDocumentTitle } from '../src/lib/useDocumentTitle.ts';
 import { readPublicTheme, storePublicTheme } from '../src/lib/publicTheme.ts';
 import { CONTACT_EMAIL, LAST_UPDATED } from '../src/lib/legal.ts';
 import en, { type HowItWorks as Copy } from '../src/i18n/howItWorks/en.ts';
+import '@fontsource/libre-baskerville/400.css';
+import '@fontsource/libre-baskerville/700.css';
+import '@fontsource/inter/400.css';
+import '@fontsource/inter/500.css';
+import '@fontsource/inter/600.css';
 
 const FORM_INFO = gql`query HowItWorksSeller($slug: String!) { formInfo(slug: $slug) { companyName } }`;
 
@@ -192,7 +197,6 @@ function HowItWorks() {
 }
 
 const styles = `
-  @import url('https://fonts.googleapis.com/css2?family=Libre+Baskerville:wght@400;700&family=Inter:wght@400;500;600&display=swap');
 
   .hw-page {
     --paper: #faf9f6; --surface: #ffffff; --surface2: #f4f2ee;

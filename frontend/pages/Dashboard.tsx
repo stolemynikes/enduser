@@ -16,6 +16,9 @@ import { StatementWithTranslation } from '../src/components/StatementTranslation
 import { useAppTheme } from '../src/lib/useAppTheme.ts';
 import { MfaSettings } from '../src/components/MfaSettings.tsx';
 import { PasskeySettings } from '../src/components/PasskeySettings.tsx';
+import '@fontsource/inter/400.css';
+import '@fontsource/inter/500.css';
+import '@fontsource/inter/600.css';
 
 const GET_SUBMISSIONS = gql`
   query GetSubmissions {
@@ -1504,7 +1507,6 @@ function TestToolsTab({ toast, onSubmissionCreated }: {
 }
 
 const dashStyles = `
-  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
   :root {
