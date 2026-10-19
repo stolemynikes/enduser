@@ -21,7 +21,7 @@ export const PRODUCT = 'eustatement';
 export const CONTACT_EMAIL = 'privacy@eustatement.example';
 
 /** The date shown on every legal page. Change it whenever their content changes. */
-export const LAST_UPDATED = '2026-10-09';
+export const LAST_UPDATED = '2026-10-19';
 
 /** Must match backend/lib/retention.ts. */
 export const RETENTION_MONTHS = 18;

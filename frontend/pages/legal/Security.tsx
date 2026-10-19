@@ -12,8 +12,8 @@ export default function Security() {
     <DocLayout title="Security overview" intro={
       <p>
         The technical and organisational measures that protect the statements on eustatement, for your own
-        records and for security questionnaires. They are part of the <Link to="/dpa">Data Processing
-        Agreement</Link>. To report a weakness, see the <a href="/security-policy.txt">disclosure policy</a>.
+        records and for security questionnaires. They expand on section 6 of the{' '}
+        <Link to="/dpa#security">Data Processing Agreement</Link>. To report a weakness, see the <a href="/security-policy.txt">disclosure policy</a>.
       </p>
     }>
       <Clause n={1} id="storage" title="Where data is, and how it is stored">

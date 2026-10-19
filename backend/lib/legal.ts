@@ -6,7 +6,7 @@
 import PDFDocument from 'pdfkit';
 import { prisma } from './prisma.ts';
 
-export const LEGAL_VERSION = '2026-10-09';
+export const LEGAL_VERSION = '2026-10-19';
 
 export async function recordAcceptance(companyId: string, user: { id: string; name: string; email: string }) {
   return prisma.legalAcceptance.create({
