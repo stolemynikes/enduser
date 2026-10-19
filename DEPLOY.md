@@ -229,20 +229,39 @@ Two things, kept apart, which is the whole point:
 
 ```sh
 # The data. Run it from a systemd timer or cron; keep copies off the server.
-docker compose exec -T db pg_dump -U enduser enduser | gzip > enduser-$(date +%F).sql.gz
+# Encrypted to a public key whose private half is NOT on this server, so a
+# stolen dump is unreadable even for the columns that are not field-encrypted
+# (company names, account emails). Make the pair once, elsewhere:
+#   age-keygen -o backup-key.txt   # keep this file offline, beside nothing
+# and put only the printed public key (age1…) here.
+docker compose exec -T db pg_dump -U enduser enduser | gzip \
+  | age -r age1REPLACE_WITH_YOUR_PUBLIC_KEY > enduser-$(date +%F).sql.gz.age
 ```
+
+`age` is in Ubuntu's repositories (`apt install age`). The Privacy Policy says
+backups are encrypted; this is what makes that true — a plain `.sql.gz` would
+not be.
 
 And `ENCRYPTION_KEY`, stored somewhere that is **not** where those dumps go. A
 dump without the key is unreadable, which is the design working; a dump beside
 the key is one theft away from being plaintext.
 
-Test a restore before you need one. An untested backup is a belief.
+Test a restore before you need one. An untested backup is a belief. With the
+offline key at hand, on a test machine:
+
+```sh
+age -d -i backup-key.txt enduser-YYYY-MM-DD.sql.gz.age | gunzip \
+  | docker compose exec -T db psql -U enduser enduser
+```
+
+and start the API with the *same* `ENCRYPTION_KEY` — the restore only counts if
+an encrypted field (a document number) reads back.
 
 **Keep no dump longer than 30 days.** The Privacy Policy and the DPA both say
 backups rotate out within 30 days; that is only true if something deletes them:
 
 ```sh
-find /path/to/backups -name 'enduser-*.sql.gz' -mtime +30 -delete
+find /path/to/backups -name 'enduser-*.sql.gz.age' -mtime +30 -delete
 ```
 
 ### Before launch: the legal pages
@@ -298,7 +317,59 @@ The second should show `frame-ancestors https:` and **no** `X-Frame-Options`.
 Point the production webhook at `https://<host>/didit-webhook`. The signature
 secret is already set; the URL is not.
 
-## 8. Before real buyers
+## 8. Updating, and rolling back
+
+Every change after launch goes the same way. Write the commit you are leaving
+down first; it is the one you go back to.
+
+```sh
+cd /opt/eustatement
+git rev-parse HEAD > ~/last-good-commit        # where a rollback returns to
+git fetch && git log --oneline HEAD..origin/main  # read what is about to ship
+
+# A dump right before the update — see 4c. Migrations only go forward, so
+# this dump is the only way back if the update changed the schema.
+docker compose exec -T db pg_dump -U enduser enduser | gzip \
+  | age -r age1REPLACE_WITH_YOUR_PUBLIC_KEY > ~/pre-update-$(date +%F-%H%M).sql.gz.age
+
+git pull --ff-only
+docker compose up -d --build          # the API runs `prisma migrate deploy` before it starts
+docker compose ps                     # every service "running", api "healthy" if it has a check
+docker compose logs --tail=50 api     # "Backend running" and no stack traces
+```
+
+Then check by hand: the landing page loads, you can sign in, and one test
+statement goes through a form end to end.
+
+**Rolling back** when something is wrong:
+
+```sh
+cd /opt/eustatement
+git checkout $(cat ~/last-good-commit)
+docker compose up -d --build
+```
+
+That is enough when the update had no migration (`git diff --stat
+$(cat ~/last-good-commit) HEAD -- backend/prisma/migrations` is empty). When it
+had one, the old code may not run against the new schema. Stop the API, empty
+the database, restore the pre-update dump, and bring it back:
+
+```sh
+docker compose stop api
+docker compose exec -T db psql -U enduser -d enduser -c 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;'
+age -d -i backup-key.txt ~/pre-update-YYYY-MM-DD-HHMM.sql.gz.age | gunzip \
+  | docker compose exec -T db psql -U enduser enduser
+docker compose up -d api
+```
+
+The private key lives offline, so this is a step you do with it in hand, not
+from the server alone. Statements submitted between the update and the restore are lost by that
+step — note their time window and tell the affected sellers.
+
+Afterwards go back to the branch (`git checkout main`) before the next update,
+so `git pull` works again.
+
+## 9. Before real buyers
 
 - **The data now in the database is development data**, including one real
   passport number. Decide what carries over; the cheapest security measure is
