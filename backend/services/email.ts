@@ -22,10 +22,19 @@ const transporter = PREVIEW
         : undefined,
     });
 
-const FROM_ADDRESS = process.env.SMTP_FROM ?? 'noreply@enduser.com';
-const ADMIN_EMAIL = process.env.ADMIN_EMAIL ?? 'admin@enduser.com';
+const FROM_ADDRESS = process.env.SMTP_FROM ?? 'noreply@eustatement.com';
+// No fallback address. The old default was a domain this platform does not
+// own, so with the variable unset, access requests (a company name and its
+// owner's email address) went to a stranger's inbox. Unset now means not sent.
+const ADMIN_EMAIL = process.env.ADMIN_EMAIL?.trim() || null;
 /** Where requests and platform notices go — exported so callers can budget against it. */
-export const ADMIN_INBOX = ADMIN_EMAIL;
+export const ADMIN_INBOX = ADMIN_EMAIL ?? '';
+
+/** The admin address, or null after saying why a platform notice is not sent. */
+function adminRecipient(): string | null {
+  if (!ADMIN_EMAIL) console.warn('[mail] ADMIN_EMAIL is not set — platform notice not sent');
+  return ADMIN_EMAIL;
+}
 const APP_URL = (process.env.FRONTEND_URL ?? 'http://localhost:5173').replace(/\/+$/, '');
 const PLATFORM = 'eustatement';
 
@@ -169,9 +178,11 @@ export async function sendEmailVerification(to: string, name: string, verifyUrl:
 }
 
 export async function sendAdminNotification(submissionId: string, companyName: string) {
+  const to = adminRecipient();
+  if (!to) return null;
   return transporter.sendMail({
     from: { name: PLATFORM, address: FROM_ADDRESS },
-    to: ADMIN_EMAIL,
+    to,
     subject: 'New end-user statement pending review',
     html: layout(`<p>A new end-user statement was submitted by <strong>${esc(companyName)}</strong>
       and is pending review.</p>
@@ -181,9 +192,11 @@ export async function sendAdminNotification(submissionId: string, companyName: s
 
 /** A company asked for access. The admin decides in the dashboard. */
 export async function sendAccessRequestToAdmin(companyName: string, ownerName: string, ownerEmail: string, note: string | null) {
+  const to = adminRecipient();
+  if (!to) return null;
   return transporter.sendMail({
     from: { name: PLATFORM, address: FROM_ADDRESS },
-    to: ADMIN_EMAIL,
+    to,
     subject: `Access request: ${companyName}`,
     html: layout(`<p><strong>${esc(companyName)}</strong> asked for access.</p>
       <p>${esc(ownerName)} &lt;${esc(ownerEmail)}&gt;</p>
@@ -211,11 +224,29 @@ export async function sendAccessRejected(to: string, name: string, companyName: 
   return transporter.sendMail({
     from: { name: PLATFORM, address: FROM_ADDRESS }, to,
     // The sender address takes no replies; a reply reaches the admin who decided.
-    replyTo: ADMIN_EMAIL,
+    ...(ADMIN_EMAIL ? { replyTo: ADMIN_EMAIL } : {}),
     subject: `Your access request for ${companyName}`,
     html: layout(`<p>Hi ${esc(name)},</p>
       <p>Your access request for <strong>${esc(companyName)}</strong> was not approved.</p>
       <p style="padding:8px 12px;border-left:3px solid #ccc;color:#444">${esc(reason)}</p>
       <p>If you think this is a mistake, reply to this message.</p>`),
+  });
+}
+
+/**
+ * The nightly maintenance found something a person should look at: identity
+ * checks stuck at Didit, sessions it could not delete, a run of failed checks.
+ * One message per night at most; the lines say what and how many, never whose.
+ */
+export async function sendOpsAlert(lines: string[]) {
+  const to = adminRecipient();
+  if (!to) return null;
+  return transporter.sendMail({
+    from: { name: PLATFORM, address: FROM_ADDRESS },
+    to,
+    subject: 'eustatement: nightly maintenance needs attention',
+    html: layout(`<p>The nightly maintenance run found:</p>
+      <ul>${lines.map(l => `<li>${esc(l)}</li>`).join('')}</ul>
+      <p style="color:#888">Details are in the server log for this night.</p>`),
   });
 }

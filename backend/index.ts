@@ -33,11 +33,13 @@ import {
   shouldRefresh,
 } from './services/diditSessionStore.ts';
 import { WEBHOOK_CONFIGURED, claimEvent, pruneEvents, verifyWebhook } from './services/diditWebhook.ts';
-import { recordDecision, reconcileOpenVerifications } from './lib/diditReconcile.ts';
+import { purgeBeforeRetention, recordDecision, reconcileOpenVerifications } from './lib/diditReconcile.ts';
 import { purgeDeletedCompanies, pruneSupportAccess, DELETION_GRACE_DAYS, RETENTION_MONTHS } from './lib/retention.ts';
 import { accessStatus } from './lib/access.ts';
 import { pruneAuthTokens } from './lib/authTokens.ts';
-import { pruneMailBudget } from './lib/mailBudget.ts';
+import { mailBudgetAllows, pruneMailBudget } from './lib/mailBudget.ts';
+import { errorSpikes } from './lib/opsAlerts.ts';
+import { ADMIN_INBOX, sendOpsAlert } from './services/email.ts';
 import { pruneRevealLog } from './lib/reveal.ts';
 import { prisma } from './lib/prisma.ts';
 import { pseudonym } from './lib/tokens.ts';
@@ -416,44 +418,81 @@ app.use(
   })
 );
 
-// Nightly maintenance, 02:00.
+// Nightly maintenance, 02:00. Each step runs on its own, so one failing does
+// not skip the rest, and anything a person should look at ends up in one
+// alert to the platform admin instead of only in a log nobody reads.
 cron.schedule('0 2 * * *', async () => {
-  // Retention runs off createdAt, so it covers every submission. It used to key
-  // on idDataCollectedAt, which meant a form with identity verification switched
-  // off was kept forever — the opposite of the intent.
-  const cutoff = new Date();
-  cutoff.setMonth(cutoff.getMonth() - RETENTION_MONTHS);
-  const { count } = await prisma.submission.deleteMany({ where: { createdAt: { lt: cutoff } } });
-  if (count > 0) console.log(`Retention: deleted ${count} submission(s) older than ${RETENTION_MONTHS} months`);
+  const alerts: string[] = [];
+  const step = async (name: string, fn: () => Promise<void>) => {
+    try { await fn(); } catch (err: any) {
+      console.error(`[nightly] ${name} failed: ${err?.message ?? 'unknown error'}`);
+      alerts.push(`The "${name}" step failed: ${err?.message ?? 'unknown error'}`);
+    }
+  };
 
-  // The audit trail does not outlive what it describes: an access log about
-  // submissions that were deleted months ago is data kept for nothing.
-  const revealRows = await pruneRevealLog(RETENTION_MONTHS);
-  if (revealRows > 0) console.log(`Retention: deleted ${revealRows} reveal-log row(s)`);
-  const supportRows = await pruneSupportAccess(RETENTION_MONTHS);
-  if (supportRows > 0) console.log(`Retention: deleted ${supportRows} support-access row(s)`);
+  await step('retention', async () => {
+    // Retention runs off createdAt, so it covers every submission. It used to key
+    // on idDataCollectedAt, which meant a form with identity verification switched
+    // off was kept forever — the opposite of the intent.
+    const cutoff = new Date();
+    cutoff.setMonth(cutoff.getMonth() - RETENTION_MONTHS);
+    // A submission is the only link to its Didit session. Deleting one whose
+    // session was never purged would orphan the photos at Didit for good, so
+    // those are purged first.
+    if (DIDIT_ENABLED) {
+      const failed = await purgeBeforeRetention(cutoff);
+      if (failed) alerts.push(`${failed} Didit session(s) of submissions past retention could not be deleted at Didit — delete them by hand (ids in the log).`);
+    }
+    const { count } = await prisma.submission.deleteMany({ where: { createdAt: { lt: cutoff } } });
+    if (count > 0) console.log(`Retention: deleted ${count} submission(s) older than ${RETENTION_MONTHS} months`);
+
+    // The audit trail does not outlive what it describes: an access log about
+    // submissions that were deleted months ago is data kept for nothing.
+    const revealRows = await pruneRevealLog(RETENTION_MONTHS);
+    if (revealRows > 0) console.log(`Retention: deleted ${revealRows} reveal-log row(s)`);
+    const supportRows = await pruneSupportAccess(RETENTION_MONTHS);
+    if (supportRows > 0) console.log(`Retention: deleted ${supportRows} support-access row(s)`);
+  });
 
   // Before the session prune, so a decision a lost webhook never delivered is
   // recorded (and its photos deleted) by the same nightly run.
   if (DIDIT_ENABLED) {
-    const r = await reconcileOpenVerifications();
-    if (r.resolved || r.repurged || r.stuck) {
-      console.log(`Didit: recorded ${r.resolved} late decision(s), purged ${r.repurged} leftover session(s), ${r.stuck} stuck`);
+    await step('Didit reconcile', async () => {
+      const r = await reconcileOpenVerifications();
+      if (r.resolved || r.repurged || r.stuck) {
+        console.log(`Didit: recorded ${r.resolved} late decision(s), purged ${r.repurged} leftover session(s), ${r.stuck} stuck`);
+      }
+      if (r.stuck) alerts.push(`${r.stuck} identity check(s) undecided or undeletable at Didit after 7 days.`);
+    });
+  }
+
+  await step('pruning', async () => {
+    const sessions = await pruneSessions();
+    if (sessions.gaveUp) alerts.push(`${sessions.gaveUp} abandoned Didit session(s) could not be deleted after 30 days of tries — delete them at Didit by hand (ids in the log).`);
+    const events = await pruneEvents();
+    const tokens = await pruneAuthTokens();
+    const limits = await pruneRateLimits();
+    const mail = await pruneMailBudget();
+    if (sessions.pruned || events || tokens || limits || mail) {
+      console.log(`Maintenance: pruned ${sessions.pruned} verification session(s), ${events} webhook event(s), `
+        + `${tokens} auth token(s), ${limits} rate-limit row(s), ${mail} mail budget row(s)`);
     }
-  }
+  });
 
-  const sessions = await pruneSessions();
-  const events = await pruneEvents();
-  const tokens = await pruneAuthTokens();
-  const limits = await pruneRateLimits();
-  const mail = await pruneMailBudget();
-  if (sessions || events || tokens || limits || mail) {
-    console.log(`Maintenance: pruned ${sessions} verification session(s), ${events} webhook event(s), `
-      + `${tokens} auth token(s), ${limits} rate-limit row(s), ${mail} mail budget row(s)`);
-  }
+  await step('account deletion', async () => {
+    const purged = await purgeDeletedCompanies(failed => {
+      alerts.push(`${failed} Didit session(s) of a closed company could not be deleted at Didit — delete them by hand (ids in the log).`);
+    });
+    if (purged > 0) console.log(`Deletion: purged ${purged} company account(s) past the grace period`);
+  });
 
-  const purged = await purgeDeletedCompanies();
-  if (purged > 0) console.log(`Deletion: purged ${purged} company account(s) past the grace period`);
+  await step('error check', async () => {
+    alerts.push(...await errorSpikes());
+  });
+
+  if (alerts.length && await mailBudgetAllows(ADMIN_INBOX, 'ops-alert')) {
+    await sendOpsAlert(alerts).catch((err: any) => console.error(`[nightly] alert mail failed: ${err?.message ?? 'unknown error'}`));
+  }
 });
 
 // Configurable so a test can bring up a second instance with different
@@ -469,6 +508,12 @@ app.listen(PORT, () => {
     }
     if (!IS_PROD) {
       console.warn('[security] NODE_ENV is not "production" on a publicly reachable instance — set it.');
+    }
+    if (!process.env.SMTP_HOST) {
+      console.warn('[mail] SMTP_HOST is not set — no email will be delivered.');
+    }
+    if (!process.env.ADMIN_EMAIL?.trim()) {
+      console.warn('[mail] ADMIN_EMAIL is not set — access requests and maintenance alerts reach nobody.');
     }
   }
   if (!DIDIT_ENABLED) {

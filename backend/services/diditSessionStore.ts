@@ -140,9 +140,10 @@ const PAGE = 500;
  * Didit first, and its row is only dropped once that worked, so a failed purge
  * is retried the next night. Called from the nightly maintenance job.
  */
-export async function pruneSessions({ only }: { only?: string[] } = {}): Promise<number> {
+export async function pruneSessions({ only }: { only?: string[] } = {}): Promise<{ pruned: number; gaveUp: number }> {
   const now = Date.now();
   let pruned = 0;
+  let gaveUp = 0;
   let purges = 0;
   let after = '';
   for (;;) {
@@ -178,6 +179,7 @@ export async function pruneSessions({ only }: { only?: string[] } = {}): Promise
       // when no attempt is possible), never for want of one.
       if (age > PURGE_GIVE_UP_MS) {
         console.error(`[didit] giving up purging abandoned session ${sessionId}; delete it at Didit by hand`);
+        gaveUp++;
         drop.push(sessionId);
       }
     }
@@ -185,5 +187,5 @@ export async function pruneSessions({ only }: { only?: string[] } = {}): Promise
       pruned += (await prisma.verificationSession.deleteMany({ where: { sessionId: { in: drop } } })).count;
     }
   }
-  return pruned;
+  return { pruned, gaveUp };
 }

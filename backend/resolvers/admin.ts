@@ -9,6 +9,7 @@ import { GraphQLError } from 'graphql';
 import { accessStatus } from '../lib/access.ts';
 import { mailBudgetAllows } from '../lib/mailBudget.ts';
 import { sendAccessApproved, sendAccessRejected } from '../services/email.ts';
+import { purgeSessionsOf } from '../lib/diditReconcile.ts';
 
 const APP_URL = (process.env.FRONTEND_URL ?? 'http://localhost:5173').replace(/\/+$/, '');
 
@@ -457,6 +458,8 @@ export const adminResolvers = {
 
     deleteTestSubmissions: async (_: unknown, __: unknown, ctx: Ctx) => {
       requireAdmin(ctx);
+      // The submission is the only link to its Didit session; purge those first.
+      await purgeSessionsOf({ isTest: true });
       const { count } = await prisma.submission.deleteMany({ where: { isTest: true } });
       return count;
     },

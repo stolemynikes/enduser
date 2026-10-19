@@ -8,7 +8,8 @@
 // still open and records it exactly as the webhook would, and retries the
 // purge of any final check whose deletion at Didit failed earlier.
 import { prisma } from './prisma.ts';
-import { deleteSession, retrieveDecision, type DiditDecision } from '../services/didit.ts';
+import { DIDIT_ENABLED, deleteSession, retrieveDecision, type DiditDecision } from '../services/didit.ts';
+import type { Prisma } from '../generated/prisma/client.ts';
 
 const FINAL = new Set(['APPROVED', 'DECLINED', 'EXPIRED']);
 const HOUR_MS = 60 * 60 * 1000;
@@ -102,4 +103,34 @@ export async function reconcileOpenVerifications(
     }
   }
   return result;
+}
+
+/**
+ * Deletes at Didit the unpurged sessions of the submissions matching `where`,
+ * which are about to be deleted. A submission is the only link to its session,
+ * so once it is gone the photos could never be found again. Called before
+ * every deletion of submissions: retention, a closed company's purge, a
+ * seller deleting one, the admin clearing test data. Returns how many could
+ * not be deleted, for the caller to report; the caller still deletes.
+ */
+export async function purgeSessionsOf(where: Prisma.SubmissionWhereInput): Promise<number> {
+  if (!DIDIT_ENABLED) return 0;
+  const open = await prisma.submission.findMany({
+    where: { AND: [where, { idVerificationSessionId: { not: null }, idVerificationPurged: false }] },
+    select: { id: true, idVerificationSessionId: true },
+  });
+  let failed = 0;
+  for (const o of open) {
+    if (await deleteSession(o.idVerificationSessionId as string)) {
+      await prisma.submission.update({ where: { id: o.id }, data: { idVerificationPurged: true } });
+    } else {
+      failed++;
+    }
+  }
+  return failed;
+}
+
+/** `only` scopes it for tests. */
+export function purgeBeforeRetention(cutoff: Date, { only }: { only?: string[] } = {}): Promise<number> {
+  return purgeSessionsOf({ createdAt: { lt: cutoff }, ...(only ? { id: { in: only } } : {}) });
 }

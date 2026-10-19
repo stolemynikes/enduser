@@ -1,6 +1,7 @@
 // Data lifecycle: how long a submission is kept, and what closing a company
 // account actually does.
 import { prisma } from './prisma.ts';
+import { purgeSessionsOf } from './diditReconcile.ts';
 
 /** Every submission is deleted this long after it was made. */
 export const RETENTION_MONTHS = 18;
@@ -18,7 +19,10 @@ export const DELETION_GRACE_DAYS = 30;
  * hand. They describe a tenant that no longer exists and that nobody can sign
  * in to read them for.
  */
-export async function purgeDeletedCompanies(): Promise<number> {
+export async function purgeDeletedCompanies(
+  /** Told how many Didit sessions of a purged company could not be deleted. */
+  onSessionFailures?: (count: number) => void,
+): Promise<number> {
   const cutoff = new Date(Date.now() - DELETION_GRACE_DAYS * 24 * 60 * 60 * 1000);
   const due = await prisma.company.findMany({
     where: { deletedAt: null, deletionRequestedAt: { not: null, lt: cutoff } },
@@ -27,6 +31,8 @@ export async function purgeDeletedCompanies(): Promise<number> {
 
   for (const company of due) {
     const userIds = company.members.map(m => m.userId);
+    const failed = await purgeSessionsOf({ companyId: company.id });
+    if (failed) onSessionFailures?.(failed);
     await prisma.submission.deleteMany({ where: { companyId: company.id } });
     await prisma.revealLog.deleteMany({ where: { companyId: company.id } });
     await prisma.supportAccess.deleteMany({ where: { companyId: company.id } });
