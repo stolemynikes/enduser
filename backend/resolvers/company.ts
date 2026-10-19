@@ -193,6 +193,13 @@ async function availableSlug(base: string) {
   throw new Error('Could not allocate an address for this company. Please try a different name.');
 }
 
+/** Unused invitations for this address in this company, revoked. */
+async function revokeInvites(tx: Pick<typeof prisma, 'companyInvite'>, companyId: string, email: string) {
+  await tx.companyInvite.deleteMany({
+    where: { companyId, usedAt: null, email: { equals: email, mode: 'insensitive' } },
+  });
+}
+
 const APP_URL = () => (process.env.FRONTEND_URL ?? 'http://localhost:5173').replace(/\/+$/, '');
 
 /** Minimum gap between manual substance re-runs for one submission. */
@@ -723,6 +730,15 @@ export const companyResolvers = {
         throw new Error('An invitation was already sent to that address recently.');
       }
 
+      // An invitation only ever brings someone in. A current member's role is
+      // changed with changeMemberRole, which is the one place a role is set
+      // for somebody already inside.
+      const already = await prisma.companyMember.findFirst({
+        where: { companyId, user: { email: { equals: address, mode: 'insensitive' } } },
+        select: { id: true },
+      });
+      if (already) throw new Error('That person is already a member. Change their role instead.');
+
       // Delete any existing unused invite for this email+company
       await prisma.companyInvite.deleteMany({ where: { companyId, email: address, usedAt: null } });
 
@@ -775,7 +791,9 @@ export const companyResolvers = {
       await prisma.companyMember.upsert({
         where: { companyId_userId: { companyId: invite.companyId, userId: user.id } },
         create: { companyId: invite.companyId, userId: user.id, role: invite.role },
-        update: { role: invite.role },
+        // Never changes the role of someone already inside: that is what a
+        // stale invitation would be used for.
+        update: {},
       });
       void notify({
         companyId: invite.companyId,
@@ -820,11 +838,13 @@ export const companyResolvers = {
       if (spent.count !== 1) throw new Error('This invite link is invalid or has expired.');
       const user = await prisma.companyUser.create({ data: { email: invite.email, passwordHash, name: memberName } });
 
-      // Add membership (or update role if already a member)
+      // Add the membership; an existing one keeps its role
       await prisma.companyMember.upsert({
         where: { companyId_userId: { companyId: invite.companyId, userId: user.id } },
         create: { companyId: invite.companyId, userId: user.id, role: invite.role },
-        update: { role: invite.role },
+        // Never changes the role of someone already inside: that is what a
+        // stale invitation would be used for.
+        update: {},
       });
 
 
@@ -1355,7 +1375,14 @@ export const companyResolvers = {
     removeMember: async (_: unknown, { userId }: { userId: string }, ctx: Ctx) => {
       const { companyId, companyUserId } = requireOwner(ctx);
       if (userId === companyUserId) throw new Error('You cannot remove yourself');
-      await prisma.companyMember.deleteMany({ where: { companyId, userId } });
+      // Unused invitations go with the membership. Otherwise a removed member
+      // who still belongs to another company could accept one from that
+      // session (acceptInviteSignedIn) and walk back in.
+      await prisma.$transaction(async (tx) => {
+        const user = await tx.companyUser.findUnique({ where: { id: userId }, select: { email: true } });
+        await tx.companyMember.deleteMany({ where: { companyId, userId } });
+        if (user) await revokeInvites(tx, companyId, user.email);
+      });
       return true;
     },
 
@@ -1366,10 +1393,17 @@ export const companyResolvers = {
     ) => {
       const { companyId, companyUserId } = requireOwner(ctx);
       if (userId === companyUserId) throw new Error('You cannot change your own role');
-      const member = await prisma.companyMember.update({
-        where: { companyId_userId: { companyId, userId } },
-        data: { role: role as any },
-        include: { user: true },
+      // The role change and the revocation of the member's unused invitations
+      // happen together: an invitation carries a role chosen earlier (possibly
+      // OWNER), and accepting it after a demotion used to restore that role.
+      const member = await prisma.$transaction(async (tx) => {
+        const updated = await tx.companyMember.update({
+          where: { companyId_userId: { companyId, userId } },
+          data: { role: role as any },
+          include: { user: true },
+        });
+        await revokeInvites(tx, companyId, updated.user.email);
+        return updated;
       });
       // Addressed to the one person it concerns. They can still log in, which
       // is exactly why this belongs in the bell and not in their email.
