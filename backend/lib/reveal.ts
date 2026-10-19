@@ -27,7 +27,7 @@ export type RevealOutcome =
  * place, but it is exactly what a phishing proxy has already captured, so it
  * proved nothing a stolen session did not.
  */
-async function checkCredential(
+export async function checkCredential(
   kind: 'companyUser' | 'admin', accountId: string, credential: string,
 ): Promise<{ ok: true } | { ok: false; reason: 'missing' | 'invalid' | 'no-credential' }> {
   const account = kind === 'admin'

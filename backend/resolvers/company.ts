@@ -29,7 +29,9 @@ import {
 } from '../lib/mfa.ts';
 import { secondFactorError, mfaSetupRequiredError } from './auth.ts';
 import { GraphQLError } from 'graphql';
-import { revealDocumentNumber, revealHistory, revealsToday } from '../lib/reveal.ts';
+import { checkCredential, revealDocumentNumber, revealHistory, revealsToday } from '../lib/reveal.ts';
+import { buildBuyerExport, buyerStatementIds } from '../lib/buyerData.ts';
+import { deleteSubmissions } from '../lib/submissionDelete.ts';
 import {
   countPasskeys, finishAuthentication, finishRegistration, listPasskeys,
   removePasskey, startAuthentication, startRegistration,
@@ -77,6 +79,30 @@ function requireOwner(ctx: Ctx) {
   const m = requireCompany(ctx);
   if (m.role !== 'OWNER') throw new Error('Owner access required');
   return m;
+}
+
+/**
+ * What every buyer-data request must pass, in this order: not a support
+ * session (platform staff do not take buyers' data out or delete it on a
+ * seller's behalf), the statement belongs to this tenant, and a current
+ * second-factor code — a stolen session alone must not be enough to carry a
+ * buyer's whole history away or to erase it.
+ */
+async function buyerRequestGate(ctx: Ctx, companyId: string, companyUserId: string, id: string, credential: string) {
+  if (ctx.support) throw new GraphQLError('Not available in a support session.', { extensions: { code: 'FORBIDDEN' } });
+  const anchor = await tenantSubmissions(companyId).getOwned(id);
+  const m = await membershipOrThrow(companyId, companyUserId);
+  const check = await checkCredential('companyUser', companyUserId, typeof credential === 'string' ? credential : '');
+  if (!check.ok) throw check.reason === 'no-credential' ? mfaSetupRequiredError() : secondFactorError(check.reason);
+  return { anchor, m };
+}
+
+async function recordBuyerAction(companyId: string, userId: string, userName: string, kind: 'EXPORT' | 'ERASURE', statements: number) {
+  // Not caught: an export or erasure that cannot be written down is refused
+  // after the fact by surfacing the error, rather than going unrecorded.
+  await prisma.buyerDataAction.create({
+    data: { companyId, userId, userName: userName.slice(0, 200), kind, statements },
+  });
 }
 
 function requireOwnerOrPlus(ctx: Ctx) {
@@ -1020,6 +1046,28 @@ export const companyResolvers = {
           : secondFactorError(outcome.reason);
       }
       return { submissionId: id, documentNumber: outcome.documentNumber };
+    },
+
+    exportBuyerData: async (_: unknown, { id, credential }: { id: string; credential: string }, ctx: Ctx) => {
+      const { companyId, companyUserId } = requireOwnerOrPlus(ctx);
+      const { anchor, m } = await buyerRequestGate(ctx, companyId, companyUserId, id, credential);
+      const ids = await buyerStatementIds(companyId, anchor);
+      const out = await buildBuyerExport(companyId, ids, APP_URL());
+      await recordBuyerAction(companyId, companyUserId, m.user.name, 'EXPORT', out.statements);
+      return out;
+    },
+
+    eraseBuyerData: async (_: unknown, { id, credential }: { id: string; credential: string }, ctx: Ctx) => {
+      const { companyId, companyUserId } = requireOwner(ctx);
+      const { anchor, m } = await buyerRequestGate(ctx, companyId, companyUserId, id, credential);
+      const ids = await buyerStatementIds(companyId, anchor);
+      // Written down first: an erasure that cannot be recorded does not happen.
+      await recordBuyerAction(companyId, companyUserId, m.user.name, 'ERASURE', ids.length);
+      // Scoped by companyId as well as by id: the ids came from this tenant,
+      // and the filter makes sure nothing else can be in the set.
+      const { count, sessionFailures } = await deleteSubmissions({ id: { in: ids }, companyId });
+      if (sessionFailures) console.error(`[erasure] ${sessionFailures} Didit session(s) could not be deleted for company ${companyId}`);
+      return count;
     },
 
     markNotificationsRead: async (_: unknown, { ids }: { ids?: string[] }, ctx: Ctx) => {

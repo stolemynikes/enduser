@@ -528,3 +528,27 @@ model OpsEvent {
 
   @@index([kind, createdAt])
 }
+
+/// A seller acting on a buyer's data-protection request: an access export or
+/// an erasure. Who did it, when, and how many statements it covered — never
+/// who the buyer was, so the record of an erasure does not undo it. Kept as
+/// long as the statements themselves (RETENTION_MONTHS).
+model BuyerDataAction {
+  id         String         @id @default(cuid())
+  companyId  String
+  userId     String
+  /// Copied in, so the record still reads after the member leaves.
+  userName   String
+  /// Set when platform support did it inside a support session.
+  adminId    String?
+  kind       BuyerDataKind
+  statements Int
+  createdAt  DateTime       @default(now())
+
+  @@index([companyId, createdAt])
+}
+
+enum BuyerDataKind {
+  EXPORT
+  ERASURE
+}

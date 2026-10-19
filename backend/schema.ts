@@ -375,6 +375,14 @@ export const typeDefs = `#graphql
     translationEnabled: Boolean!
   }
 
+  """A buyer's personal data at one seller, for an access request. The document number is masked."""
+  type BuyerExport {
+    filename: String!
+    pdfBase64: String!
+    json: String!
+    statements: Int!
+  }
+
   type AdminInsights {
     totalCompanies: Int!
     totalSubmissions: Int!
@@ -650,6 +658,10 @@ export const typeDefs = `#graphql
     call is recorded.
     """
     revealDocumentNumber(id: ID!, credential: String!): RevealedDocument!
+    """Everything held about the buyer of this statement, for a GDPR access request. Owner or reviewer, with a current second-factor code; logged."""
+    exportBuyerData(id: ID!, credential: String!): BuyerExport!
+    """Deletes every statement of the buyer of this statement, for a GDPR erasure request. Owner only, with a current second-factor code; logged. Returns how many were deleted."""
+    eraseBuyerData(id: ID!, credential: String!): Int!
     """
     Step one of revealing a document number with a passkey, for accounts that
     have one instead of an authenticator app.

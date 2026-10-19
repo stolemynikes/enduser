@@ -1,5 +1,5 @@
 import { prisma } from './prisma.ts';
-import { purgeSessionsOf } from './diditReconcile.ts';
+import { deleteSubmissions } from './submissionDelete.ts';
 
 // Tenant-scoped access to submissions. Company resolvers must go through this
 // instead of touching prisma.submission directly — the companyId filter is
@@ -34,9 +34,8 @@ export function tenantSubmissions(companyId: string) {
 
     async delete(id: string) {
       await this.getOwned(id);
-      // The submission is the only link to its Didit session; purge it first.
-      await purgeSessionsOf({ id });
-      return prisma.submission.delete({ where: { id } });
+      // Its Didit session and its notifications go with it.
+      return deleteSubmissions({ id, companyId });
     },
   };
 }

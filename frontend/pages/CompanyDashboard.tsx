@@ -14,6 +14,7 @@ import { ActivityNavItem, ActivityFeed } from '../src/components/NotificationBel
 import { PriorApprovals } from '../src/components/PriorApprovals.tsx';
 import { MfaSettings } from '../src/components/MfaSettings.tsx';
 import { RevealDocumentNumber } from '../src/components/RevealDocumentNumber.tsx';
+import { BuyerDataRequest } from '../src/components/BuyerDataRequest.tsx';
 import { RevealLog } from '../src/components/RevealLog.tsx';
 import { PasskeySettings } from '../src/components/PasskeySettings.tsx';
 import { EnrolmentRequired } from '../src/components/EnrolmentRequired.tsx';
@@ -1552,6 +1553,20 @@ export default function CompanyDashboard() {
                       </button>
                     )}
                   </div>
+                  <BuyerDataRequest
+                    key={selected.id}
+                    submissionId={selected.id}
+                    canExport={canManage}
+                    canErase={isOwner}
+                    mfaEnabled={account?.mfaEnabled ?? false}
+                    support={supportMode}
+                    onSetUpMfa={() => { setSelected(null); setTab('account'); }}
+                    onErased={count => {
+                      refetch();
+                      setSelected(null);
+                      toast.success(`Erased ${count} statement${count === 1 ? '' : 's'} from this buyer`);
+                    }}
+                  />
                 </div>
               ) : (
                 <div className="cd-modal-body">

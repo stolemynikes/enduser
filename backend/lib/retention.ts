@@ -1,7 +1,7 @@
 // Data lifecycle: how long a submission is kept, and what closing a company
 // account actually does.
 import { prisma } from './prisma.ts';
-import { purgeSessionsOf } from './diditReconcile.ts';
+import { deleteSubmissions } from './submissionDelete.ts';
 
 /** Every submission is deleted this long after it was made. */
 export const RETENTION_MONTHS = 18;
@@ -31,10 +31,10 @@ export async function purgeDeletedCompanies(
 
   for (const company of due) {
     const userIds = company.members.map(m => m.userId);
-    const failed = await purgeSessionsOf({ companyId: company.id });
-    if (failed) onSessionFailures?.(failed);
-    await prisma.submission.deleteMany({ where: { companyId: company.id } });
+    const { sessionFailures } = await deleteSubmissions({ companyId: company.id });
+    if (sessionFailures) onSessionFailures?.(sessionFailures);
     await prisma.revealLog.deleteMany({ where: { companyId: company.id } });
+    await prisma.buyerDataAction.deleteMany({ where: { companyId: company.id } });
     await prisma.supportAccess.deleteMany({ where: { companyId: company.id } });
     await prisma.company.delete({ where: { id: company.id } });
     // A member who was only ever part of this company has no account left to

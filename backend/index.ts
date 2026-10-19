@@ -33,7 +33,8 @@ import {
   shouldRefresh,
 } from './services/diditSessionStore.ts';
 import { WEBHOOK_CONFIGURED, claimEvent, pruneEvents, verifyWebhook } from './services/diditWebhook.ts';
-import { purgeBeforeRetention, recordDecision, reconcileOpenVerifications } from './lib/diditReconcile.ts';
+import { recordDecision, reconcileOpenVerifications } from './lib/diditReconcile.ts';
+import { deleteSubmissions } from './lib/submissionDelete.ts';
 import { purgeDeletedCompanies, pruneSupportAccess, DELETION_GRACE_DAYS, RETENTION_MONTHS } from './lib/retention.ts';
 import { accessStatus } from './lib/access.ts';
 import { pruneAuthTokens } from './lib/authTokens.ts';
@@ -440,15 +441,18 @@ cron.schedule('0 2 * * *', async () => {
     // A submission is the only link to its Didit session. Deleting one whose
     // session was never purged would orphan the photos at Didit for good, so
     // those are purged first.
-    if (DIDIT_ENABLED) {
-      const failed = await purgeBeforeRetention(cutoff);
-      if (failed) alerts.push(`${failed} Didit session(s) of submissions past retention could not be deleted at Didit — delete them by hand (ids in the log).`);
-    }
-    const { count } = await prisma.submission.deleteMany({ where: { createdAt: { lt: cutoff } } });
+    const { count, sessionFailures } = await deleteSubmissions({ createdAt: { lt: cutoff } });
+    if (sessionFailures) alerts.push(`${sessionFailures} Didit session(s) of submissions past retention could not be deleted at Didit — delete them by hand (ids in the log).`);
+    // Notifications not tied to a submission (a role change, an invitation
+    // accepted) can name people too; none outlives the retention period.
+    await prisma.notification.deleteMany({ where: { createdAt: { lt: cutoff } } });
     if (count > 0) console.log(`Retention: deleted ${count} submission(s) older than ${RETENTION_MONTHS} months`);
 
     // The audit trail does not outlive what it describes: an access log about
     // submissions that were deleted months ago is data kept for nothing.
+    const actionCutoff = new Date();
+    actionCutoff.setMonth(actionCutoff.getMonth() - RETENTION_MONTHS);
+    await prisma.buyerDataAction.deleteMany({ where: { createdAt: { lt: actionCutoff } } });
     const revealRows = await pruneRevealLog(RETENTION_MONTHS);
     if (revealRows > 0) console.log(`Retention: deleted ${revealRows} reveal-log row(s)`);
     const supportRows = await pruneSupportAccess(RETENTION_MONTHS);
