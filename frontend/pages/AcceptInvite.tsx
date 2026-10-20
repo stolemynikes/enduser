@@ -7,6 +7,7 @@ import { PasswordInput } from '../src/components/PasswordInput.tsx';
 import { useDocumentTitle } from '../src/lib/useDocumentTitle.ts';
 import { Wordmark } from '../src/components/Mark.tsx';
 import { BackHome } from '../src/components/BackHome.tsx';
+import { newIdentity } from '../src/lib/apollo.ts';
 
 const ACCEPT_INVITE = gql`
   mutation AcceptInvite($token: String!, $name: String!, $password: String!) {
@@ -47,6 +48,7 @@ export default function AcceptInvite() {
     localStorage.setItem('companyRole', payload.role);
     localStorage.setItem('companyName', payload.company.name);
     localStorage.setItem('companySlug', payload.company.slug);
+    newIdentity();
     navigate('/company/dashboard');
   };
 

@@ -38,6 +38,7 @@ import { Z } from '../src/lib/zLayers.ts';
 import '@fontsource/inter/400.css';
 import '@fontsource/inter/500.css';
 import '@fontsource/inter/600.css';
+import { newIdentity } from '../src/lib/apollo.ts';
 
 const PAGE_SIZE = 100;
 
@@ -648,6 +649,7 @@ export default function CompanyDashboard() {
 
   const logout = () => {
     ['companyToken', 'companyRole', 'companyName', 'companySlug', 'supportMode'].forEach(k => localStorage.removeItem(k));
+    newIdentity();
     navigate('/login');
   };
 
@@ -669,6 +671,7 @@ export default function CompanyDashboard() {
   const exitSupport = (adminTab?: string) => {
     ['companyToken', 'companyRole', 'companyName', 'companySlug', 'supportMode'].forEach(k => localStorage.removeItem(k));
     if (adminTab) localStorage.setItem('admin-tab', adminTab);
+    newIdentity();
     navigate('/admin/dashboard');
   };
   // In support view, opening a document number checks the admin's own factor.

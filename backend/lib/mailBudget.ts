@@ -52,23 +52,20 @@ export async function mailBudgetAllows(recipient: string, kind: keyof typeof BUD
   const recipientHash = pseudonym(recipient);
   const since = new Date(Date.now() - budget.minutes * 60_000);
   try {
-    // Write first, then count with this one included. Counting first let a
-    // burst of requests all see room in the budget before any of them wrote;
-    // now each sees the others, and whichever finds itself past the limit
-    // takes its own entry back and does not send.
-    const mine = await prisma.mailBudget.create({ data: { recipientHash, kind }, select: { id: true, sentAt: true } });
-    const ahead = await prisma.mailBudget.count({
-      where: {
-        recipientHash, kind, sentAt: { gte: since },
-        OR: [{ sentAt: { lt: mine.sentAt } }, { sentAt: mine.sentAt, id: { lt: mine.id } }],
-      },
+    // Count and write under a lock on this recipient and kind, so the
+    // decision is atomic: a burst of parallel requests is admitted one at a
+    // time, and none can see room that another is about to take. The lock is
+    // a transaction-scoped advisory lock, released at commit.
+    return await prisma.$transaction(async tx => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${'mail:' + kind + ':' + recipientHash}))`;
+      const used = await tx.mailBudget.count({ where: { recipientHash, kind, sentAt: { gte: since } } });
+      if (used >= budget.max) {
+        console.warn(`[mail] budget reached for a recipient (${kind}) — message not sent`);
+        return false;
+      }
+      await tx.mailBudget.create({ data: { recipientHash, kind } });
+      return true;
     });
-    if (ahead >= budget.max) {
-      await prisma.mailBudget.deleteMany({ where: { id: mine.id } });
-      console.warn(`[mail] budget reached for a recipient (${kind}) — message not sent`);
-      return false;
-    }
-    return true;
   } catch (err: any) {
     console.error(`[mail] budget check failed: ${err?.message ?? 'unknown error'}`);
     return true;

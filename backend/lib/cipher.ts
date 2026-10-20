@@ -53,6 +53,8 @@ export const PII_FIELDS = [
   // person's name and home address) and the verification's own remarks.
   // Older rows hold these in plain text; decryptField passes those through.
   'viesName', 'viesAddress', 'idVerificationWarnings',
+  // The name as typed, when the verified document says otherwise.
+  'submittedFirstName', 'submittedLastName',
 ] as const;
 
 export function encryptData<T extends Record<string, unknown>>(data: T): T {

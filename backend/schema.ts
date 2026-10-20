@@ -784,9 +784,12 @@ export const typeDefs = `#graphql
     have one instead of an authenticator app.
     """
     startRevealWithPasskey(id: ID!): PasskeyChallenge!
-    """A passkey challenge for one sensitive step; finishStepUp returns a one-time token that counts as a code."""
-    startStepUp: PasskeyChallenge!
-    """purpose: what the token may be spent on — sign-in-methods, delete-statement, buyer-data, decision-export."""
+    """
+    A passkey challenge for one sensitive step; finishStepUp returns a one-time token that counts as a code.
+    purpose: what the token may be spent on — sign-in-methods, delete-statement, buyer-data, decision-export.
+    It is fixed here, in the challenge, and finishStepUp must name the same one.
+    """
+    startStepUp(purpose: String!): PasskeyChallenge!
     finishStepUp(ticket: String!, responseJson: String!, purpose: String!): String!
     finishRevealWithPasskey(id: ID!, ticket: String!, responseJson: String!): RevealedDocument!
     """Marks the given notifications read, or every one of them when no ids are given."""
@@ -816,7 +819,7 @@ export const typeDefs = `#graphql
     removeAdminPasskey(id: ID!, proof: String): PasskeyRemoval!
     beginAdminPasskeyLogin(username: String!, password: String!, turnstileToken: String): PasskeyChallenge!
     finishAdminPasskeyLogin(ticket: String!, responseJson: String!): AuthPayload!
-    startAdminStepUp: PasskeyChallenge!
+    startAdminStepUp(purpose: String!): PasskeyChallenge!
     finishAdminStepUp(ticket: String!, responseJson: String!, purpose: String!): String!
     startAdminMfaEnrolment(proof: String): MfaEnrolment!
     confirmAdminMfaEnrolment(code: String!): MfaActivation!

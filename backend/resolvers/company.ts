@@ -10,7 +10,7 @@ import { REGISTRATION_OPEN, formOpen } from '../lib/access.ts';
 import { consumeToken, issueToken } from '../lib/authTokens.ts';
 import { hashToken, randomToken } from '../lib/tokens.ts';
 import { mailBudgetAllows } from '../lib/mailBudget.ts';
-import { DUMMY_HASH, LOCKED_MESSAGE, checkSecondFactorLimited, recordFailure, recordSuccess, refundAttempt, reserveAttempt } from '../lib/loginGuard.ts';
+import { DUMMY_HASH, LOCKED_MESSAGE, checkSecondFactorLimited, recordFailure, recordSuccess, reserveAttempt } from '../lib/loginGuard.ts';
 import { verifyHumanOrThrow } from '../services/turnstile.ts';
 
 import { statementCopy } from '../lib/statementCopy.ts';
@@ -33,7 +33,7 @@ import { checkCredential, revealDocumentNumber, revealHistory, revealsToday } fr
 import { buildBuyerExport, buyerStatementIds } from '../lib/buyerData.ts';
 import { LEGAL_VERSION, acceptanceRecordPdf, legalStatus, recordAcceptance } from '../lib/legal.ts';
 import { activeNotices } from '../lib/subprocessors.ts';
-import { decisionLogCsv } from '../lib/decisionExport.ts';
+import { decisionHistory, decisionLogCsv } from '../lib/decisionExport.ts';
 import { IS_EXPOSED } from '../lib/exposure.ts';
 import { isStepUpPurpose, issueStepUp, proveExistingFactor, type StepUpPurpose } from '../lib/stepUp.ts';
 import { deleteSubmissions } from '../lib/submissionDelete.ts';
@@ -364,10 +364,11 @@ export const companyResolvers = {
     },
 
     /**
-     * Who decided what, for the owner's Activity page. Read straight off the
-     * statements' own review fields, so it is the current decision on each one
-     * (a reopened statement drops out until it is decided again). Test
-     * submissions stay out. reviewerName is null where it was never recorded.
+     * Who decided what, for the owner's Activity page. Read from the
+     * append-only decision history (lib/decisionExport.ts), so a statement
+     * that was decided, reopened and decided again shows both decisions, each
+     * with its reason and the overrides it rested on. Test submissions stay
+     * out. reviewerName is null where it was never recorded.
      */
     teamDecisions: async (
       _: unknown,
@@ -377,47 +378,55 @@ export const companyResolvers = {
     ) => {
       const { companyId } = requireOwner(ctx);
       // Names and emails are encrypted at rest, so they cannot be matched in
-      // SQL: the decided statements are read (decrypted) and filtered here.
-      // Capped, which is far beyond what one seller decides in the 18 months
-      // a statement is kept.
-      const rows = await tenantSubmissions(companyId).findMany({
-        where: {
-          status: decision === 'APPROVED' || decision === 'DENIED' ? decision : { in: ['APPROVED', 'DENIED'] },
-          isTest: false,
-          ...(reviewerId === 'NONE' ? { reviewedById: null } : reviewerId ? { reviewedById: reviewerId } : {}),
-        },
-        orderBy: [{ reviewedAt: { sort: 'desc', nulls: 'last' } }, { updatedAt: 'desc' }, { id: 'desc' }],
-        take: 5000,
-        include: { _count: { select: { overrides: true } } },
-      });
+      // SQL: the history is read (decrypted) and filtered here. Capped, which
+      // is far beyond what one seller decides in the 18 months it is kept.
+      const { events } = await decisionHistory(companyId, { actions: ['APPROVED', 'DENIED', 'REOPENED', 'OVERRIDE', 'OVERRIDE_CLEARED'] });
+      // The overrides a decision rested on: those made since the statement was
+      // last reopened, less any cleared again before the decision.
+      const standing = new Map<string, Map<string, number>>();
+      const decisions: any[] = [];
+      for (const e of events) {
+        const live = standing.get(e.submissionId) ?? new Map<string, number>();
+        standing.set(e.submissionId, live);
+        if (e.action === 'OVERRIDE' && e.category) live.set(e.category, 1);
+        else if (e.action === 'OVERRIDE_CLEARED' && e.category) live.delete(e.category);
+        else if (e.action === 'REOPENED') live.clear();
+        else if (e.action === 'APPROVED' || e.action === 'DENIED') {
+          const s = e.statement;
+          decisions.push({
+            id: e.id,
+            submissionId: e.submissionId,
+            reviewerId: e.byId || null,
+            buyerName: s ? [s.firstName, s.lastName].filter(Boolean).join(' ') || s.email || 'Unknown buyer' : 'Deleted statement',
+            email: s?.email ?? '',
+            orderNumber: s?.orderNumber || null,
+            decision: e.action,
+            reviewerName: e.byName || null,
+            decidedAt: e.at.toISOString(),
+            reason: e.action === 'DENIED' ? e.reason : null,
+            overrides: live.size,
+          });
+        }
+      }
       const day = (d?: string) => (d && /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : null);
       const fromDay = day(from), toDay = day(to);
       const needle = (search ?? '').trim().toLowerCase().slice(0, 100);
-      const all = rows
-        .map((s: any) => ({
-          submissionId: s.id,
-          reviewerId: s.reviewedById,
-          buyerName: [s.firstName, s.lastName].filter(Boolean).join(' ') || s.email || 'Unknown buyer',
-          email: s.email ?? '',
-          orderNumber: s.orderNumber || null,
-          decision: s.status,
-          reviewerName: s.reviewedByName,
-          decidedAt: (s.reviewedAt ?? s.updatedAt).toISOString(),
-          reason: s.status === 'DENIED' ? s.adminNote : null,
-          overrides: s._count?.overrides ?? 0,
-        }))
+      const all = decisions
+        .reverse()
         .filter(d => {
+          if (decision === 'APPROVED' || decision === 'DENIED') { if (d.decision !== decision) return false; }
+          if (reviewerId === 'NONE') { if (d.reviewerId) return false; } else if (reviewerId && d.reviewerId !== reviewerId) return false;
           const date = d.decidedAt.slice(0, 10);
           if (fromDay && date < fromDay) return false;
           if (toDay && date > toDay) return false;
           if (!needle) return true;
-          return [d.buyerName, d.email, d.orderNumber ?? ''].some(v => v.toLowerCase().includes(needle));
+          return [d.buyerName, d.email, d.orderNumber ?? ''].some((v: string) => v.toLowerCase().includes(needle));
         });
       const start = Math.max(offset ?? 0, 0);
       const size = Math.min(Math.max(limit ?? 20, 1), 100);
       return {
         total: all.length,
-        items: all.slice(start, start + size).map(({ email: _email, ...d }) => d),
+        items: all.slice(start, start + size).map(({ email: _email, id: _id, ...d }: any) => d),
       };
     },
 
@@ -707,10 +716,10 @@ export const companyResolvers = {
       // that would tell a guesser which accounts have a second factor.
       const second = await checkSecondFactor('companyUser', user, totp);
       if (!second.ok) {
-        // A wrong code spends the same budget as a wrong password; a code not
-        // yet given does not.
+        // A wrong code spends the same budget as a wrong password. A code not
+        // yet given keeps the slot the password took until the sign-in
+        // completes: a refund could land on another request's reservation.
         if (second.reason === 'invalid') await recordFailure('companyUser', user);
-        else await refundAttempt('companyUser', user.id);
         throw secondFactorError(second.reason);
       }
       if (second.usedRecoveryCode) {
@@ -1028,8 +1037,8 @@ export const companyResolvers = {
         throw new Error('Invalid email or password');
       }
       if (minutes > 0) throw new Error(LOCKED_MESSAGE(minutes));
-      // The password was right; the passkey still has to sign.
-      await refundAttempt('companyUser', user.id);
+      // The password was right; the passkey still has to sign. The slot taken
+      // above stays taken until that sign-in completes (lib/loginGuard.ts).
 
       const challenge = await startAuthentication('companyUser', user.id);
       if (!challenge) throw new Error('This account has no passkey. Use your authenticator app.');
@@ -1070,20 +1079,23 @@ export const companyResolvers = {
      * finishStepUp exchanges the signed answer for a one-time token that
      * counts as a code (lib/stepUp.ts).
      */
-    startStepUp: async (_: unknown, __: unknown, ctx: Ctx) => {
+    startStepUp: async (_: unknown, { purpose }: { purpose: string }, ctx: Ctx) => {
       const { companyUserId } = requireCompanyEnrolling(ctx);
-      const challenge = await startAuthentication('companyUser', companyUserId, 'step-up');
+      if (!isStepUpPurpose(purpose)) throw new Error('Unknown step-up purpose.');
+      // The purpose is part of what the passkey signs for: a challenge started
+      // for one action cannot be finished as a token for another.
+      const challenge = await startAuthentication('companyUser', companyUserId, `step-up:${purpose}`);
       if (!challenge) throw new Error('This account has no passkey.');
       return challenge;
     },
 
     finishStepUp: async (_: unknown, { ticket, responseJson, purpose }: { ticket: string; responseJson: string; purpose: string }, ctx: Ctx) => {
       const { companyUserId } = requireCompanyEnrolling(ctx);
-      const outcome = await finishAuthentication({ ticket, responseJson, scope: 'step-up' });
+      if (!isStepUpPurpose(purpose)) throw new Error('Unknown step-up purpose.');
+      const outcome = await finishAuthentication({ ticket, responseJson, scope: `step-up:${purpose}` });
       if (!outcome.ok || outcome.kind !== 'companyUser' || outcome.accountId !== companyUserId) {
         throw new Error('That passkey could not be verified. Try again.');
       }
-      if (!isStepUpPurpose(purpose)) throw new Error('Unknown step-up purpose.');
       return issueStepUp('companyUser', companyUserId, purpose);
     },
 
@@ -1181,7 +1193,6 @@ export const companyResolvers = {
         await recordFailure('companyUser', user);
         throw new Error('That password is not correct.');
       }
-      await refundAttempt('companyUser', user.id);
       const second = await checkSecondFactorLimited('companyUser', user, code);
       if (!second.ok) throw secondFactorError(second.reason);
       await disableMfa('companyUser', companyUserId);

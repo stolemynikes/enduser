@@ -23,6 +23,7 @@ import {
   verifyRegistrationResponse,
 } from '@simplewebauthn/server';
 import { prisma } from './prisma.ts';
+import { spendOnce } from './spentTokens.ts';
 
 export type AccountKind = 'companyUser' | 'admin';
 
@@ -73,7 +74,7 @@ type Ticket = {
   accountId: string;
   challenge: string;
   /**
-   * What a passkey signature is for: 'login', 'step-up', or 'reveal:<id>'.
+   * What a passkey signature is for: 'login', 'step-up:<purpose>', or 'reveal:<id>'.
    * Checked by whoever finishes the ceremony, so a signature made to sign in
    * cannot be spent on a reveal, nor one reveal's on another submission.
    */
@@ -82,23 +83,9 @@ type Ticket = {
 
 // Tickets are spent once. A synced passkey reports a signature counter of 0,
 // so the library's replay check never fires for it, and one assertion could be
-// submitted again and again within the ticket's two minutes. One instance
-// (see the Dockerfile), so memory is enough.
-//
-// The memory goes with a restart, so a ticket issued before this process
-// started is refused outright: otherwise one already spent would be accepted
-// again in the two minutes after a restart. The cost is that a ceremony in
-// flight during a deploy has to be started again.
-const spentTickets = new Map<string, number>();
-const BOOT_SECONDS = Math.floor(Date.now() / 1000);
-function spendTicket(jti: string | undefined, exp: number | undefined, iat?: number): boolean {
-  if (!jti || (iat ?? 0) < BOOT_SECONDS) return false;
-  const now = Date.now();
-  for (const [k, e] of spentTickets) if (e < now) spentTickets.delete(k);
-  if (spentTickets.has(jti)) return false;
-  spentTickets.set(jti, (exp ?? 0) * 1000);
-  return true;
-}
+// submitted again and again within the ticket's two minutes. The record of a
+// spent ticket is kept in the database (lib/spentTokens.ts), so a restart
+// does not forget it.
 
 const TICKET_TTL_SECONDS = 120;
 
@@ -113,7 +100,7 @@ function issueTicket(t: Ticket): string {
   });
 }
 
-function readTicket(token: string, purpose: TicketPurpose): Ticket | null {
+async function readTicket(token: string, purpose: TicketPurpose): Promise<Ticket | null> {
   try {
     const claims = jwt.verify(token, process.env.COMPANY_JWT_SECRET!, {
       algorithms: ['HS256'], audience: 'passkey-ticket',
@@ -121,7 +108,7 @@ function readTicket(token: string, purpose: TicketPurpose): Ticket | null {
     // A ticket for one ceremony must never be accepted for the other, and
     // neither may stand in for a session.
     if (claims.purpose !== purpose) return null;
-    return spendTicket(claims.jti, claims.exp, claims.iat) ? claims : null;
+    return (await spendOnce(claims.jti, claims.exp)) ? claims : null;
   } catch {
     return null;
   }
@@ -199,7 +186,7 @@ export async function finishRegistration({
   responseJson: string;
   name: string;
 }): Promise<RegistrationOutcome> {
-  const claims = readTicket(ticket, 'passkey-register');
+  const claims = await readTicket(ticket, 'passkey-register');
   // The ticket says who started the ceremony; the session says who is
   // finishing it. They have to be the same person.
   if (!claims || claims.kind !== kind || claims.accountId !== id) {
@@ -308,7 +295,7 @@ export type AuthOutcome =
 export async function finishAuthentication({
   ticket, responseJson, scope = 'login',
 }: { ticket: string; responseJson: string; scope?: string }): Promise<AuthOutcome> {
-  const claims = readTicket(ticket, 'passkey-login');
+  const claims = await readTicket(ticket, 'passkey-login');
   // The signature must have been asked for this purpose (see Ticket.scope).
   if (!claims || (claims.scope ?? 'login') !== scope) return { ok: false, reason: 'bad-ticket' };
   // A ticket from before the account's sessions were cut off (a password

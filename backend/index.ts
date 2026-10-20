@@ -39,6 +39,7 @@ import { purgeDeletedCompanies, pruneSupportAccess, DELETION_GRACE_DAYS, RETENTI
 import { accessStatus, formOpen } from './lib/access.ts';
 import { pruneAuthTokens } from './lib/authTokens.ts';
 import { mailBudgetAllows, pruneMailBudget } from './lib/mailBudget.ts';
+import { pruneSpentTokens } from './lib/spentTokens.ts';
 import { errorSpikes } from './lib/opsAlerts.ts';
 import { pruneOpsEvents } from './lib/ops.ts';
 import { ADMIN_INBOX, sendOpsAlert } from './services/email.ts';
@@ -524,6 +525,7 @@ cron.schedule('0 2 * * *', async () => {
     const tokens = await pruneAuthTokens();
     const limits = await pruneRateLimits();
     const mail = await pruneMailBudget();
+    await pruneSpentTokens();
     await pruneOpsEvents();
     if (sessions.pruned || events || tokens || limits || mail) {
       console.log(`Maintenance: pruned ${sessions.pruned} verification session(s), ${events} webhook event(s), `

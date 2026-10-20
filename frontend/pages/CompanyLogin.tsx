@@ -11,6 +11,7 @@ import { Turnstile } from '../src/components/Turnstile.tsx';
 import { TotpInput } from '../src/components/TotpInput.tsx';
 import { mfaSignal } from '../src/lib/mfaError.ts';
 import { startAuthentication } from '@simplewebauthn/browser';
+import { newIdentity } from '../src/lib/apollo.ts';
 
 const BEGIN_PASSKEY = gql`
   mutation BeginPasskeyLogin($email: String!, $password: String!, $turnstileToken: String) {
@@ -74,6 +75,7 @@ export default function CompanyLogin() {
     // Back to an invitation after signing in to accept it. Only an invitation
     // path is followed, so the parameter cannot send anyone elsewhere.
     const next = new URLSearchParams(window.location.search).get('next') ?? '';
+    newIdentity();
     navigate(/^\/invite\/[A-Za-z0-9_-]{16,200}$/.test(next) ? next : '/company/dashboard');
   };
 

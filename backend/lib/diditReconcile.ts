@@ -10,6 +10,7 @@
 import { prisma } from './prisma.ts';
 import { DIDIT_ENABLED, deleteSession, retrieveDecision, type DiditDecision } from '../services/didit.ts';
 import { recordEvent } from './ops.ts';
+import { documentKey } from './matchKeys.ts';
 import type { Prisma } from '../generated/prisma/client.ts';
 
 const FINAL = new Set(['APPROVED', 'DECLINED', 'EXPIRED']);
@@ -46,6 +47,35 @@ const BATCH = 200;
 export async function recordDecision(submissionId: string, sessionId: string, decision: DiditDecision): Promise<void> {
   const purged = FINAL.has(decision.status) ? await deleteSession(sessionId) : false;
   const failure = policyFailure(decision);
+  // An answer that arrives after the submission (IN_REVIEW turning APPROVED)
+  // carries the document too. Recorded here as the submit path records it, so
+  // a late approval is not left without the verified name and number, or with
+  // the name check never made.
+  let identity: Record<string, unknown> = {};
+  if (!failure && decision.status === 'APPROVED') {
+    const sub = await prisma.submission.findUnique({
+      where: { id: submissionId },
+      select: { companyId: true, firstName: true, lastName: true, submittedFirstName: true, submittedLastName: true },
+    });
+    if (sub) {
+      const typed = {
+        firstName: sub.submittedFirstName ?? sub.firstName,
+        lastName: sub.submittedLastName ?? sub.lastName,
+      };
+      const name = verifiedName(decision, typed);
+      const number = decision.documentNumber?.slice(0, 50) ?? null;
+      identity = {
+        ...(name ?? {}),
+        ...(name?.idNameMatches === false
+          ? { idVerificationWarnings: [nameMismatchWarning(name), decision.warnings].filter(Boolean).join('; ').slice(0, 1000) }
+          : {}),
+        ...(name && !('firstName' in name) ? { firstName: typed.firstName, lastName: typed.lastName } : {}),
+        idDocumentName: decision.fullName?.slice(0, 200) ?? null,
+        idDocumentNumber: number,
+        ...(sub.companyId ? { idDocumentNumberHash: documentKey(sub.companyId, number) } : {}),
+      };
+    }
+  }
   await prisma.submission.update({
     where: { id: submissionId },
     data: {
@@ -61,6 +91,7 @@ export async function recordDecision(submissionId: string, sessionId: string, de
       idVerificationPurged: purged,
       ...(decision.documentType ? { idDocumentType: decision.documentType } : {}),
       ...(decision.expiryDate ? { idDocumentExpiry: new Date(decision.expiryDate) } : {}),
+      ...identity,
     },
   });
 }
@@ -177,6 +208,44 @@ export function purgeBeforeRetention(cutoff: Date, { only }: { only?: string[] }
 function nameWords(s: string): string[] {
   return s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
     .replace(/[^a-z]+/g, ' ').trim().split(' ').filter(Boolean);
+}
+
+/** "JAN PIETER" → "Jan Pieter"; a name already in mixed case is left alone. */
+function documentCase(name: string): string {
+  if (name !== name.toUpperCase()) return name;
+  return name.toLowerCase().replace(/(^|[\s'-])(\p{L})/gu, (_, sep, c) => sep + c.toUpperCase());
+}
+
+/**
+ * The buyer's name once a document has been verified. The document is the
+ * authority: when the typed name matches it, the typed spelling is kept (it is
+ * the same name, as the buyer writes it); when it does not, the name from the
+ * document takes its place and the typed one is kept apart, so emails, the
+ * dashboard and the PDF never carry a name nobody verified. The mismatch
+ * itself still blocks approval until a reviewer overrides it.
+ */
+export function verifiedName(
+  decision: Pick<DiditDecision, 'status' | 'fullName' | 'firstName' | 'lastName'>,
+  typed: { firstName: string; lastName: string },
+) {
+  if (decision.status !== 'APPROVED' || !decision.fullName) return null;
+  const matches = nameMatchesDocument(typed.firstName, typed.lastName, decision.fullName);
+  if (matches || !decision.firstName || !decision.lastName) {
+    return { idNameMatches: matches, submittedFirstName: null, submittedLastName: null };
+  }
+  return {
+    idNameMatches: false,
+    firstName: documentCase(decision.firstName).slice(0, 200),
+    lastName: documentCase(decision.lastName).slice(0, 200),
+    submittedFirstName: typed.firstName,
+    submittedLastName: typed.lastName,
+  };
+}
+
+/** The reviewer's note on a mismatch, naming what was typed. */
+export function nameMismatchWarning(v: ReturnType<typeof verifiedName>): string {
+  const typed = v?.submittedFirstName ? ` ("${`${v.submittedFirstName} ${v.submittedLastName ?? ''}`.trim()}")` : '';
+  return `The name on the form${typed} does not match the document`;
 }
 
 /**

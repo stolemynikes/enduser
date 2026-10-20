@@ -222,7 +222,7 @@ async function freshSlate(userId: string) {
   check('and a correct code does not get in while locked',
     !whileLocked.data?.companyLogin?.token, JSON.stringify(whileLocked.errors));
 
-  console.log('— A missing code does not spend the budget —');
+  console.log('— A missing code holds its slot until the sign-in completes —');
   await freshSlate(user.id);
   for (let i = 0; i < 5; i++) {
     await prisma.rateLimitHit.deleteMany({});
@@ -231,8 +231,15 @@ async function freshSlate(userId: string) {
   const unspent = await prisma.companyUser.findUnique({
     where: { id: user.id }, select: { failedLogins: true },
   });
-  check('five prompts for a code leave the counter alone', unspent?.failedLogins === 0,
+  // No refund: an anonymous decrement could land on a concurrent guess's
+  // reservation (lib/loginGuard.ts). The slots are released by the sign-in.
+  check('five prompts for a code hold five slots, and lock nothing', unspent?.failedLogins === 5 && !(await prisma.companyUser.findUnique({ where: { id: user.id }, select: { lockedUntil: true } }))?.lockedUntil,
     String(unspent?.failedLogins));
+  await prisma.rateLimitHit.deleteMany({});
+  await prisma.companyUser.update({ where: { id: user.id }, data: { totpLastCounter: null } });
+  await gql(LOGIN, { e: email, p: PASSWORD, t: totp(secret) });
+  const released = await prisma.companyUser.findUnique({ where: { id: user.id }, select: { failedLogins: true } });
+  check('the completed sign-in releases them', released?.failedLogins === 0, String(released?.failedLogins));
 
   console.log('— Turning it off needs the password and a code —');
   await freshSlate(user.id);

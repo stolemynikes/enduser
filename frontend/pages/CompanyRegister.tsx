@@ -9,6 +9,7 @@ import { Wordmark } from '../src/components/Mark.tsx';
 import { BackHome } from '../src/components/BackHome.tsx';
 import { Turnstile } from '../src/components/Turnstile.tsx';
 import { LAST_UPDATED, lastUpdatedLabel } from '../src/lib/legal.ts';
+import { newIdentity } from '../src/lib/apollo.ts';
 
 const REGISTER_COMPANY = gql`
   mutation RegisterCompany($name: String!, $slug: String!, $email: String!, $password: String!, $yourName: String!, $turnstileToken: String, $requestNote: String, $legalVersion: String) {
@@ -69,6 +70,7 @@ export default function CompanyRegister() {
       localStorage.setItem('companyRole', data.registerCompany.role);
       localStorage.setItem('companyName', data.registerCompany.company.name);
       localStorage.setItem('companySlug', data.registerCompany.company.slug);
+      newIdentity();
       navigate('/company/dashboard');
     } catch (err: any) {
       setError(err?.message ?? 'Registration failed');

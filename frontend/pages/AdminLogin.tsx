@@ -14,6 +14,7 @@ import '@fontsource/inter/400.css';
 import '@fontsource/inter/500.css';
 import '@fontsource/inter/600.css';
 import '@fontsource/inter/700.css';
+import { newIdentity } from '../src/lib/apollo.ts';
 
 const ADMIN_LOGIN = gql`
   mutation AdminLogin($username: String!, $password: String!, $turnstileToken: String, $totp: String) {
@@ -77,6 +78,7 @@ export default function AdminLogin() {
         variables: { ticket, responseJson: JSON.stringify(assertion) },
       });
       localStorage.setItem('adminToken', data.finishAdminPasskeyLogin.token);
+      newIdentity();
       navigate('/admin/dashboard');
     } catch (err: any) {
       const name = err?.name ?? '';
@@ -96,6 +98,7 @@ export default function AdminLogin() {
         variables: { username, password, turnstileToken: botToken || undefined, totp: totp || undefined },
       });
       localStorage.setItem('adminToken', data.adminLogin.token);
+      newIdentity();
       navigate('/admin/dashboard');
     } catch (err: any) {
       const signal = mfaSignal(err);

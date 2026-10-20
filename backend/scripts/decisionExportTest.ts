@@ -69,7 +69,16 @@ try {
   const formula = await mk(a.id, { email: 'f@x', firstName: '=HYPERLINK("http://evil")', lastName: 'Buyer', status: 'DENIED', adminNote: 'Not plausible', reviewedAt: inside, reviewedByName: 'Olga Owner' });
   const outside = await mk(a.id, { email: 'o@x', firstName: 'Otto', lastName: 'Outside', orderNumber: `ORD-OUT-${run}`, status: 'APPROVED', reviewedAt: new Date('2026-05-01T12:00:00Z') });
   const test = await mk(a.id, { email: 't@x', firstName: 'Tess', lastName: 'Test', orderNumber: `ORD-TEST-${run}`, status: 'APPROVED', reviewedAt: inside, isTest: true });
-  await mk(b.id, { email: 'b@x', firstName: 'Bert', lastName: 'Other', orderNumber: `ORD-B-${run}`, status: 'APPROVED', reviewedAt: inside });
+  const other = await mk(b.id, { email: 'b@x', firstName: 'Bert', lastName: 'Other', orderNumber: `ORD-B-${run}`, status: 'APPROVED', reviewedAt: inside });
+  // The export reads the decision history, which the decision paths write.
+  const log = (sub: { id: string; companyId: string | null }, action: string, at: Date, byName: string, extra: Record<string, unknown> = {}) =>
+    prisma.decisionLog.create({ data: { submissionId: sub.id, companyId: sub.companyId, action, at, byId: 'u', byName, ...extra } });
+  await log(approved, 'OVERRIDE', inside, 'Raf Reviewer', { category: 'VIES', reason: 'Known customer, VIES down' });
+  await log(approved, 'APPROVED', inside, 'Raf Reviewer', { fromStatus: 'PENDING_REVIEW', toStatus: 'APPROVED' });
+  await log(formula, 'DENIED', inside, 'Olga Owner', { reason: 'Not plausible', fromStatus: 'PENDING_REVIEW', toStatus: 'DENIED' });
+  await log(outside, 'APPROVED', new Date('2026-05-01T12:00:00Z'), 'Raf Reviewer');
+  await log(test, 'APPROVED', inside, 'Raf Reviewer');
+  await log(other, 'APPROVED', inside, 'Otto Other');
 
   const v = (c: string) => ({ f: '2026-03-01', t: '2026-03-31', c });
   console.log('— Who may export —');
@@ -87,21 +96,22 @@ try {
   console.log('— What it holds —');
   const res = await gql(EXPORT, v(await owner.code()), owner.token);
   const csv: string = res.data?.exportDecisions?.csv ?? '';
-  check('the owner with a code gets the CSV', csv.includes('Decided at (UTC)'), JSON.stringify(res.errors));
-  check('it holds the two decisions in the period', res.data?.exportDecisions?.rows === 2 && csv.includes(`ORD-IN-${run}`) && csv.includes(formula.id));
+  check('the owner with a code gets the CSV', csv.includes('At (UTC)'), JSON.stringify(res.errors));
+  check('it holds the three events in the period', res.data?.exportDecisions?.rows === 3 && csv.includes(`ORD-IN-${run}`) && csv.includes(formula.id));
   check('not one outside the period', !csv.includes(`ORD-OUT-${run}`) && !csv.includes(outside.id));
   check('not test data', !csv.includes(`ORD-TEST-${run}`) && !csv.includes(test.id));
   check('not another seller\'s', !csv.includes(`ORD-B-${run}`));
-  check('the override is there with its reason and who', csv.includes('VAT number by Raf Reviewer') && csv.includes('Known customer, VIES down'));
+  check('the override is there with its reason and who', /Check overridden,VAT number,Raf Reviewer,"?Known customer, VIES down/.test(csv));
   check('the reason given for a denial is there', csv.includes('Not plausible'));
   check('a formula in a name is neutralised', csv.includes(`"'=HYPERLINK(""http://evil"") Buyer"`) && !/(^|,)=HYPERLINK/m.test(csv), csv.split('\r\n').find(l => l.includes('HYPERLINK')));
   const otherCsv: string = (await gql(EXPORT, v(await otherOwner.code()), otherOwner.token)).data?.exportDecisions?.csv ?? '';
   check('another seller\'s owner sees only their own', otherCsv.includes(`ORD-B-${run}`) && !otherCsv.includes(`ORD-IN-${run}`));
   const logged = await prisma.buyerDataAction.findFirst({ where: { companyId: a.id, kind: 'DECISION_EXPORT' } });
-  check('the download is recorded', logged?.statements === 2 && logged.userName === 'Olga Owner');
+  check('the download is recorded', logged?.statements === 3 && logged.userName === 'Olga Owner');
 } finally {
   for (const c of companies) {
     await prisma.submission.deleteMany({ where: { companyId: c } });
+    await prisma.decisionLog.deleteMany({ where: { companyId: c } });
     await prisma.buyerDataAction.deleteMany({ where: { companyId: c } });
     await prisma.companyMember.deleteMany({ where: { companyId: c } });
     await prisma.company.delete({ where: { id: c } });

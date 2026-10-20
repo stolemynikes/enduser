@@ -61,7 +61,8 @@ try {
   const cl2 = await gql('mutation($e:String!,$p:String!){ companyLogin(email:$e,password:$p,totp:"123456"){ token } }', { e: pkUser.email, p: PASSWORD });
   check('a typed code does not get around it', !cl2.data?.companyLogin, JSON.stringify(cl2.data));
   const after = await prisma.companyUser.findUnique({ where: { id: pkUser.id }, select: { failedLogins: true } });
-  check('a right password is not counted as a failure', after?.failedLogins === 0, String(after?.failedLogins));
+  // Held, not refunded, until a passkey sign-in completes (lib/loginGuard.ts).
+  check('a right password holds its slots without locking', after?.failedLogins === 2, String(after?.failedLogins));
   const begin = await gql('mutation($e:String!,$p:String!){ beginPasskeyLogin(email:$e,password:$p){ ticket } }', { e: pkUser.email, p: PASSWORD });
   check('the passkey sign-in still starts', !!begin.data?.beginPasskeyLogin?.ticket, JSON.stringify(begin.errors?.[0]));
 

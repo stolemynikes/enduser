@@ -44,7 +44,7 @@ export async function checkCredential(
 
   // A passkey, exchanged for a one-time step-up token, counts as a code.
   if (isStepUpToken(credential)) {
-    return consumeStepUp(credential, kind, accountId, purpose) ? { ok: true } : { ok: false, reason: 'invalid' };
+    return (await consumeStepUp(credential, kind, accountId, purpose)) ? { ok: true } : { ok: false, reason: 'invalid' };
   }
   if (!mfaEnabled(account)) return { ok: false, reason: 'no-credential' };
   const second = await checkSecondFactorLimited(kind, account, credential);

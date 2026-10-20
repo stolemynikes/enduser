@@ -285,7 +285,7 @@ function TeamDecisions({ onOpenSubmission }: { onOpenSubmission?: (id: string) =
           {rows.map((d, i) => {
             const approved = d.decision === 'APPROVED';
             return (
-              <button key={d.submissionId} className="nb-dec" style={{ animationDelay: `${Math.min(i, 10) * 25}ms` }}
+              <button key={`${d.submissionId}-${d.decidedAt}`} className="nb-dec" style={{ animationDelay: `${Math.min(i, 10) * 25}ms` }}
                 onClick={() => onOpenSubmission?.(d.submissionId)}
                 aria-label={`${d.reviewerName ?? 'Someone'} ${approved ? 'approved' : 'denied'} ${d.buyerName} — open the statement`}>
                 <span className={`nb-avatar${d.reviewerName ? '' : ' nb-avatar-unknown'}`} aria-hidden="true">

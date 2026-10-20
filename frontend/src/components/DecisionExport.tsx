@@ -1,5 +1,5 @@
-// Exporting the decision log for an auditor: every approval and denial in a
-// period, with overrides and their reasons, as a CSV.
+// Exporting the decision log for an auditor: every approval, denial,
+// reopening and override in a period, with the reasons given, as a CSV.
 //
 // A quiet button in the Team decisions header opens a dialog: pick a period
 // (the usual ones are one tap), enter a code, download. The file carries
@@ -124,8 +124,8 @@ export function DecisionExport() {
             onClick={e => e.stopPropagation()} onSubmit={submit}>
             <h2 id="de-title" className="de-title">Export decisions for an audit</h2>
             <p className="de-text">
-              A CSV of every approval and denial in the period: who decided, when, the reason given and any
-              overridden checks.
+              A CSV of everything decided in the period — approvals, denials, reopened statements and
+              overridden checks — with who did it, when and the reason given.
             </p>
 
             <fieldset className="de-fieldset">

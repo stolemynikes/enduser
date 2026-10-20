@@ -26,12 +26,12 @@ export function stepUpNeeded(err: unknown): ProofMethod | null {
 
 const OPS = {
   company: {
-    START: gql`mutation StartStepUp { startStepUp { optionsJson ticket } }`,
+    START: gql`mutation StartStepUp($purpose: String!) { startStepUp(purpose: $purpose) { optionsJson ticket } }`,
     FINISH: gql`mutation FinishStepUp($ticket: String!, $responseJson: String!, $purpose: String!) { finishStepUp(ticket: $ticket, responseJson: $responseJson, purpose: $purpose) }`,
     started: 'startStepUp', finished: 'finishStepUp',
   },
   admin: {
-    START: gql`mutation StartAdminStepUp { startAdminStepUp { optionsJson ticket } }`,
+    START: gql`mutation StartAdminStepUp($purpose: String!) { startAdminStepUp(purpose: $purpose) { optionsJson ticket } }`,
     FINISH: gql`mutation FinishAdminStepUp($ticket: String!, $responseJson: String!, $purpose: String!) { finishAdminStepUp(ticket: $ticket, responseJson: $responseJson, purpose: $purpose) }`,
     started: 'startAdminStepUp', finished: 'finishAdminStepUp',
   },
@@ -43,7 +43,7 @@ export type StepUpPurpose = 'sign-in-methods' | 'delete-statement' | 'buyer-data
 /** Signs a challenge with an existing passkey and returns the one-time proof. */
 export async function passkeyProof(client: ApolloClient, account: 'company' | 'admin', purpose: StepUpPurpose): Promise<string> {
   const ops = OPS[account];
-  const { data: began } = await client.mutate<any>({ mutation: ops.START });
+  const { data: began } = await client.mutate<any>({ mutation: ops.START, variables: { purpose } });
   const { optionsJson, ticket } = began[ops.started];
   const assertion = await startAuthentication({ optionsJSON: JSON.parse(optionsJson) });
   const { data: done } = await client.mutate<any>({

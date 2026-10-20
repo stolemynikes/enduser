@@ -35,6 +35,9 @@ export type DiditDecision = {
   /** Present but unmapped document type (e.g. a driver's licence) — rejected upstream. */
   rawDocumentType: string | null;
   fullName: string | null;
+  /** The given names and surname as the document splits them, when it does. */
+  firstName: string | null;
+  lastName: string | null;
   documentNumber: string | null;
   expiryDate: string | null;
   /** ISO date of birth, when the document carried one. */
@@ -228,6 +231,8 @@ function mapDecision(json: any): DiditDecision {
     documentType: mapDocumentType(id.document_type),
     rawDocumentType: str(id.document_type),
     fullName,
+    firstName: str(id.first_name),
+    lastName: str(id.last_name),
     documentNumber: str(id.document_number),
     expiryDate: isoDate(id.expiration_date),
     dateOfBirth,

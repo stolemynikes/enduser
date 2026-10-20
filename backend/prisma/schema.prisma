@@ -13,6 +13,10 @@ model Submission {
   orderNumber         String
   firstName           String
   lastName            String
+  /// The name as the buyer typed it, kept beside the verified one when they
+  /// differ. firstName/lastName hold the name on the verified document.
+  submittedFirstName  String?
+  submittedLastName   String?
   street              String
   zipCode             String
   place               String
@@ -39,6 +43,10 @@ model Submission {
   // encrypted) because the webhook has to look the row up by it.
   idVerificationSessionId String?               @unique
   idVerificationStatus    IdVerificationStatus  @default(NOT_CHECKED)
+  /// Document type, expiry, liveness and face match, sealed together
+  /// (AES-GCM JSON, lib/prisma.ts). Their own columns stay empty on rows
+  /// written since; older rows still hold them there and are read as before.
+  idCheckSealed           String?
   idLivenessPassed        Boolean?
   idFaceMatch             Boolean?
   idVerificationWarnings  String?
@@ -131,6 +139,12 @@ model DecisionLog {
   action        String
   /// The check an override concerns.
   category      String?
+  /// What was said: the override's reason, or the note sent with a denial.
+  /// Encrypted (lib/prisma.ts); it can name the buyer.
+  reason        String?
+  /// The statement's status before and after this action.
+  fromStatus    String?
+  toStatus      String?
   byId          String
   byName        String
   at            DateTime @default(now())
@@ -475,6 +489,18 @@ model RateLimitHit {
 
 /// Outbound mail budget per recipient, so the public form cannot be turned into
 /// a mailer aimed at someone else's inbox.
+/// One-time credentials already used: passkey tickets and step-up tokens.
+///
+/// Kept in the database rather than in memory, so a restart cannot forget
+/// that a still-valid ticket was spent. Rows are useless once the credential
+/// has expired, and are pruned then.
+model SpentToken {
+  jti       String   @id
+  expiresAt DateTime
+
+  @@index([expiresAt])
+}
+
 model MailBudget {
   recipientHash String
   kind          String

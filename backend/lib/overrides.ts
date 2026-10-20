@@ -27,13 +27,22 @@ type Tx = Omit<typeof prisma, '$connect' | '$disconnect' | '$on' | '$transaction
 
 export type Actor = { id: string; name: string };
 
-/** One line in the statement's decision history (DecisionLog). */
+type LogDetail = { category?: string; reason?: string | null; from?: string; to?: string };
+
+/**
+ * One line in the statement's decision history (DecisionLog). Append-only and
+ * complete in itself — who, what, why, and the status before and after — so
+ * the history survives the overrides being replaced or cleared and the review
+ * fields being emptied when a statement is reopened. Activity and the
+ * decision export read it, not the statement's current state.
+ */
 async function logDecision(
-  tx: Tx, sub: { id: string; companyId: string | null }, action: string, by: Actor, category?: string,
+  tx: Tx, sub: { id: string; companyId: string | null }, action: string, by: Actor, d: LogDetail = {},
 ) {
   await tx.decisionLog.create({
     data: {
-      submissionId: sub.id, companyId: sub.companyId, action, category: category ?? null,
+      submissionId: sub.id, companyId: sub.companyId, action, category: d.category ?? null,
+      reason: d.reason ?? null, fromStatus: d.from ?? null, toStatus: d.to ?? null,
       byId: by.id.slice(0, 100), byName: by.name.slice(0, 200),
     },
   });
@@ -72,7 +81,9 @@ export async function decideSubmission(
   return prisma.$transaction(async tx => {
     const sub = await lockPending(tx, id, companyId);
     if (decision === 'APPROVED') gateOrThrow(sub);
-    await logDecision(tx, sub, decision, { id: String(data.reviewedById ?? ''), name: String(data.reviewedByName ?? '') });
+    await logDecision(tx, sub, decision, { id: String(data.reviewedById ?? ''), name: String(data.reviewedByName ?? '') }, {
+      reason: typeof data.adminNote === 'string' ? data.adminNote : null, from: sub.status, to: decision,
+    });
     return tx.submission.update({ where: { id }, data: { ...data, status: decision }, include: { overrides: true } });
   });
 }
@@ -101,7 +112,9 @@ export async function applyOverride(
     await tx.submissionOverride.create({
       data: { submissionId: id, category, reason: trimmed, createdById, createdByName },
     });
-    await logDecision(tx, sub, 'OVERRIDE', { id: createdById, name: createdByName }, category);
+    await logDecision(tx, sub, 'OVERRIDE', { id: createdById, name: createdByName }, {
+      category, reason: trimmed, from: sub.status, to: sub.status,
+    });
   });
   return withOverrides(id);
 }
@@ -109,8 +122,13 @@ export async function applyOverride(
 export async function clearOverride(id: string, category: OverrideCategory, by: Actor) {
   await prisma.$transaction(async tx => {
     const sub = await lockPending(tx, id, null);
+    const cleared = sub.overrides.find(o => o.category === category);
     const { count } = await tx.submissionOverride.deleteMany({ where: { submissionId: id, category } });
-    if (count) await logDecision(tx, sub, 'OVERRIDE_CLEARED', by, category);
+    if (count) {
+      await logDecision(tx, sub, 'OVERRIDE_CLEARED', by, {
+        category, reason: cleared?.reason ?? null, from: sub.status, to: sub.status,
+      });
+    }
   });
   return withOverrides(id);
 }
@@ -122,11 +140,11 @@ export async function clearOverride(id: string, category: OverrideCategory, by: 
  */
 export async function reopenSubmission(id: string, companyId: string, by: Actor) {
   return prisma.$transaction(async tx => {
-    const rows = await tx.$queryRaw<{ id: string }[]>`
-      SELECT id FROM "Submission" WHERE id = ${id} AND "companyId" = ${companyId} FOR UPDATE`;
+    const rows = await tx.$queryRaw<{ id: string; status: string }[]>`
+      SELECT id, status::text AS status FROM "Submission" WHERE id = ${id} AND "companyId" = ${companyId} FOR UPDATE`;
     if (rows.length === 0) throw new Error('Not found');
     await tx.submissionOverride.deleteMany({ where: { submissionId: id } });
-    await logDecision(tx, { id, companyId }, 'REOPENED', by);
+    await logDecision(tx, { id, companyId }, 'REOPENED', by, { from: rows[0].status, to: 'PENDING_REVIEW' });
     return tx.submission.update({
       where: { id },
       data: { status: 'PENDING_REVIEW', adminNote: null, reviewedById: null, reviewedByName: null, reviewedAt: null },

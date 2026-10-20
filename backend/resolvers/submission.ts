@@ -2,7 +2,7 @@ import { prisma } from '../lib/prisma.ts';
 import { applyOverride, claimSubstanceRecheck, clearOverride, decideSubmission } from '../lib/overrides.ts';
 import { type OverrideCategory, type IdVerificationStatus } from '../lib/approvalGate.ts';
 import { checkVies, matchViesAddress, type ViesAddressMatch } from '../services/vies.ts';
-import { DIDIT_ENABLED, retrieveDecision, deleteSession } from '../services/didit.ts';
+import { DIDIT_ENABLED, retrieveDecision, deleteSession, type DiditDecision } from '../services/didit.ts';
 import { consumeSession, sessionMatches } from '../services/diditSessionStore.ts';
 import { checkSubstanceUse, SUBSTANCE_CHECK_ENABLED } from '../services/substanceCheck.ts';
 import { TRANSLATION_ENABLED, translateStatement } from '../services/translate.ts';
@@ -98,7 +98,7 @@ import { notifySubmission, notify } from '../lib/notifications.ts';
 import { findPriorApprovals } from '../lib/duplicates.ts';
 
 /** Nobody under this age may be supplied a listed precursor. */
-import { MINIMUM_AGE, nameMatchesDocument } from '../lib/diditReconcile.ts';
+import { MINIMUM_AGE, nameMismatchWarning, verifiedName } from '../lib/diditReconcile.ts';
 
 
 export const submissionResolvers = {
@@ -184,6 +184,7 @@ export const submissionResolvers = {
       // reviewers and steers translation, so free text has no business here.
       const locale = typeof submittedLocale === 'string' && FORM_LOCALES.has(submittedLocale) ? submittedLocale : null;
       let idExpiry: string | null = null;
+      let verifiedDecision: DiditDecision | null = null;
       let idVerification: {
         sessionId: string | null;
         status: IdVerificationStatus;
@@ -344,6 +345,7 @@ export const submissionResolvers = {
         rest.idDocumentType = decision.documentType;
         rest.idDocumentNumber = decision.documentNumber?.slice(0, 50) ?? null;
         idExpiry = decision.expiryDate;
+        verifiedDecision = decision;
         idVerification = {
           sessionId: diditSessionId,
           status: decision.status,
@@ -400,10 +402,14 @@ export const submissionResolvers = {
       const willCheckSubstance = SUBSTANCE_CHECK_ENABLED && !!(rest.substances as string)?.trim();
 
       // Compared on the verified document only: a name Didit has not confirmed
-      // has nothing to be checked against.
-      const nameMatch = idVerification.status === 'APPROVED'
-        ? nameMatchesDocument(rest.firstName, rest.lastName, rest.idDocumentName as string | null)
+      // has nothing to be checked against. On a mismatch the document's name
+      // becomes the buyer's name and the typed one is kept apart
+      // (lib/diditReconcile.ts verifiedName).
+      const verified = verifiedDecision
+        ? verifiedName(verifiedDecision, { firstName: String(rest.firstName ?? ''), lastName: String(rest.lastName ?? '') })
         : null;
+      const nameMatch = verified ? verified.idNameMatches : null;
+      if (verified) Object.assign(rest, verified);
 
       const submission = await prisma.submission.create({
         data: {
@@ -425,9 +431,8 @@ export const submissionResolvers = {
           idLivenessPassed: idVerification.livenessPassed,
           idFaceMatch: idVerification.faceMatch,
           idVerificationWarnings: nameMatch === false
-            ? ['The name on the form does not match the document', idVerification.warnings].filter(Boolean).join('; ').slice(0, 1000)
+            ? [nameMismatchWarning(verified), idVerification.warnings].filter(Boolean).join('; ').slice(0, 1000)
             : idVerification.warnings,
-          idNameMatches: nameMatch,
           // The terms as the buyer saw them, so the PDF and emails keep
           // showing what was agreed to after the seller edits the form.
           termsText: config.customTermsMode === 'TEXT' ? config.customTermsText || null : null,

@@ -2,7 +2,7 @@ import { prisma } from '../lib/prisma.ts';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import { GraphQLError } from 'graphql';
-import { DUMMY_HASH, LOCKED_MESSAGE, checkSecondFactorLimited, recordFailure, recordSuccess, refundAttempt, reserveAttempt } from '../lib/loginGuard.ts';
+import { DUMMY_HASH, LOCKED_MESSAGE, checkSecondFactorLimited, recordFailure, recordSuccess, reserveAttempt } from '../lib/loginGuard.ts';
 import { verifyHumanOrThrow } from '../services/turnstile.ts';
 import { isStepUpPurpose, issueStepUp, proveExistingFactor } from '../lib/stepUp.ts';
 import {
@@ -109,10 +109,10 @@ export const authResolvers = {
       const second = await checkSecondFactor('admin', admin, totp);
       if (!second.ok) {
         // A wrong code counts against the same budget as a wrong password, so
-        // six digits cannot be ground down. A code not yet given does not: the
-        // form has simply not been filled in.
+        // six digits cannot be ground down. A code not yet given keeps the
+        // slot the password took until the sign-in completes: a refund could
+        // land on another request's reservation.
         if (second.reason === 'invalid') await recordFailure('admin', admin);
-        else await refundAttempt('admin', admin.id);
         throw secondFactorError(second.reason);
       }
       if (second.usedRecoveryCode) {
@@ -135,20 +135,22 @@ export const authResolvers = {
      * Step one of enrolment: a secret the app can scan, not yet in force. The
      * factor only switches on when a code proves the app really has it.
      */
-    startAdminStepUp: async (_: unknown, __: unknown, ctx: AdminCtx) => {
+    startAdminStepUp: async (_: unknown, { purpose }: { purpose: string }, ctx: AdminCtx) => {
       const adminId = requireAdminId(ctx);
-      const challenge = await startAuthentication('admin', adminId, 'step-up');
+      if (!isStepUpPurpose(purpose)) throw new Error('Unknown step-up purpose.');
+      // Bound into the challenge, as for companies (resolvers/company.ts).
+      const challenge = await startAuthentication('admin', adminId, `step-up:${purpose}`);
       if (!challenge) throw new Error('This account has no passkey.');
       return challenge;
     },
 
     finishAdminStepUp: async (_: unknown, { ticket, responseJson, purpose }: { ticket: string; responseJson: string; purpose: string }, ctx: AdminCtx) => {
       const adminId = requireAdminId(ctx);
-      const outcome = await finishAuthentication({ ticket, responseJson, scope: 'step-up' });
+      if (!isStepUpPurpose(purpose)) throw new Error('Unknown step-up purpose.');
+      const outcome = await finishAuthentication({ ticket, responseJson, scope: `step-up:${purpose}` });
       if (!outcome.ok || outcome.kind !== 'admin' || outcome.accountId !== adminId) {
         throw new Error('That passkey could not be verified. Try again.');
       }
-      if (!isStepUpPurpose(purpose)) throw new Error('Unknown step-up purpose.');
       return issueStepUp('admin', adminId, purpose);
     },
 
@@ -201,7 +203,6 @@ export const authResolvers = {
         await recordFailure('admin', admin);
         throw new Error('That password is not correct.');
       }
-      await refundAttempt('admin', admin.id);
       const second = await checkSecondFactorLimited('admin', admin, code);
       if (!second.ok) throw secondFactorError(second.reason);
       await disableMfa('admin', adminId);
@@ -276,7 +277,6 @@ export const authResolvers = {
         throw new Error('Invalid credentials');
       }
       if (minutes > 0) throw new Error(LOCKED_MESSAGE(minutes));
-      await refundAttempt('admin', admin.id);
       const challenge = await startAuthentication('admin', admin.id);
       if (!challenge) throw new Error('This account has no passkey. Use your authenticator app.');
       return challenge;

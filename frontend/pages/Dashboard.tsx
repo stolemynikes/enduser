@@ -20,6 +20,7 @@ import { PasskeySettings } from '../src/components/PasskeySettings.tsx';
 import '@fontsource/inter/400.css';
 import '@fontsource/inter/500.css';
 import '@fontsource/inter/600.css';
+import { newIdentity } from '../src/lib/apollo.ts';
 
 const GET_SUBMISSIONS = gql`
   query GetSubmissions($limit: Int, $offset: Int) {
@@ -382,6 +383,7 @@ export default function Dashboard() {
     localStorage.setItem('companyName', auth.company.name);
     localStorage.setItem('companySlug', auth.company.slug);
     localStorage.setItem('supportMode', '1');
+    newIdentity();
     navigate('/company/dashboard');
   };
 
@@ -392,6 +394,7 @@ export default function Dashboard() {
     const support = localStorage.getItem('supportMode') === '1';
     localStorage.removeItem('adminToken');
     if (support) ['companyToken', 'companyRole', 'companyName', 'companySlug', 'supportMode'].forEach(k => localStorage.removeItem(k));
+    newIdentity();
     navigate('/admin');
   };
 

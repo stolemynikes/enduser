@@ -163,12 +163,12 @@ export const adminResolvers = {
           prisma.submission.count({
             where: { isTest: false, OR: [{ idMrzValid: false }, { idVerificationStatus: 'DECLINED' }] },
           }),
-          prisma.submission.count({
-            where: {
-              isTest: false,
-              OR: [{ idLikelySynthetic: true }, { idLivenessPassed: false }, { idFaceMatch: false }],
-            },
-          }),
+          // Liveness and face match are encrypted (lib/prisma.ts), so they are
+          // counted after reading, not in SQL.
+          prisma.submission.findMany({
+            where: { isTest: false, OR: [{ idLikelySynthetic: true }, { idVerificationStatus: { not: 'NOT_CHECKED' } }] },
+            select: { idLikelySynthetic: true, idLivenessPassed: true, idFaceMatch: true },
+          }).then(rows => rows.filter(r => r.idLikelySynthetic || r.idLivenessPassed === false || r.idFaceMatch === false).length),
           // Average time to review, over the most recent decisions rather than
           // all of them. The figure is indistinguishable; the memory is not.
           prisma.submission.findMany({

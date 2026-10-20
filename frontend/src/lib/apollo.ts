@@ -34,7 +34,17 @@ function identityOf(token: string | null): string {
 // company, entering or leaving a support session — it is emptied first, so
 // nothing one account fetched is shown to the next. A renewed token for the
 // same account keeps it.
+//
+// Every place that changes the account calls newIdentity() before it
+// navigates, so a page that reads the cache first never sees the previous
+// account's data. The check in authLink below is the backstop for a path that
+// forgot: it only runs once a request goes out.
 let lastIdentity: string | null = null;
+
+export function newIdentity(): void {
+  lastIdentity = null;
+  void client.clearStore();
+}
 
 const authLink = setContext((_, { headers }) => {
   // A request may name its token itself (accepting an invitation as the

@@ -53,10 +53,12 @@ export async function reserveAttempt(model: 'companyUser' | 'admin', id: string)
   return lockedFor(account);
 }
 
-/** Gives back a reserved attempt that was not a guess (no code given yet, or a right password). */
-export async function refundAttempt(model: 'companyUser' | 'admin', id: string): Promise<void> {
-  await (prisma[model] as any).updateMany({ where: { id, failedLogins: { gt: 0 } }, data: { failedLogins: { decrement: 1 } } });
-}
+// A reserved attempt is never given back. A refund is an anonymous
+// decrement: under concurrency it can land on another request's reservation,
+// so a burst of harmless requests could hand a guesser's slots back. A step
+// that proved the password but has not finished — the code not yet typed, the
+// passkey not yet signed — keeps its slot until the sign-in completes
+// (recordSuccess clears the count) or the window runs out.
 
 /**
  * After a reserved attempt failed: closes the lock once the budget is spent.
@@ -102,9 +104,7 @@ export const LOCKED_MESSAGE = (minutes: number) =>
 export async function checkSecondFactorLimited(
   model: 'companyUser' | 'admin', account: MfaAccount & Account, code: string | null | undefined,
 ): Promise<SecondFactorResult> {
-  // Nothing typed is not a guess, so it takes nothing from the budget — and
-  // never needs a refund, which could otherwise land on another request's
-  // reservation.
+  // Nothing typed is not a guess, so it takes nothing from the budget.
   if (!String(code ?? '').trim()) return checkSecondFactor(model, account, code);
   const minutes = await reserveAttempt(model, account.id);
   if (minutes > 0) {
@@ -112,7 +112,6 @@ export async function checkSecondFactorLimited(
   }
   const result = await checkSecondFactor(model, account, code);
   if (result.ok) await recordSuccess(model, account.id);
-  else if (result.reason === 'invalid') await recordFailure(model, account);
-  else await refundAttempt(model, account.id);
+  else await recordFailure(model, account);
   return result;
 }
